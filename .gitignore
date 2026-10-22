@@ -1,29 +1,29 @@
-# Dart / Flutter
-.dart_tool/
-.pub/
-build/
-coverage/
-.flutter-plugins
-.flutter-plugins-dependencies
+# Dart / Flutter (including when the app lives under mobile/parchipocket_flutter)
+**/.dart_tool/
+**/.pub/
+**/build/
+**/coverage/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
 
 # Android local build configuration and secrets
-android/local.properties
-android/**/local.properties
-android/.gradle/
-android/captures/
-android/key.properties
-android/app/debug/
-android/app/profile/
-android/app/release/
+**/android/local.properties
+**/android/.gradle/
+**/android/captures/
+**/android/key.properties
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
 
 # IDE and OS noise
 .idea/
+**/.idea/
 *.iml
 .vscode/
 .DS_Store
 Thumbs.db
 
-# Signing material / private keys
+# Signing material / private keys (never commit)
 *.jks
 *.keystore
 *.p12
