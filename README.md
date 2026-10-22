@@ -81,13 +81,12 @@ The current starter is a **front-end demo**, not a production release:
     └── parchipocket_flutter/  # add the extracted Flutter project here
 ```
 
-**Source-code status:** The extracted Flutter starter is not yet checked into this repository. Add the working Flutter project under `mobile/parchipocket_flutter/` using [docs/ADDING_LOCAL_SOURCE.md](docs/ADDING_LOCAL_SOURCE.md). The documentation folders describe the plan and current limitations; they do not imply that planned services are already implemented.
+**Source-code status:** The Flutter starter source is now stored under `mobile/parchipocket_flutter/`. See [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) for setup instructions. The documentation folders describe the plan and current limitations; they do not imply that planned services are already implemented.
 
 ## Run on Windows
 
 1. Install the Flutter SDK and Android Studio, including the Android SDK and either an emulator or a USB-debugging-enabled Android device.
-2. Follow [docs/ADDING_LOCAL_SOURCE.md](docs/ADDING_LOCAL_SOURCE.md) to add the extracted Flutter source under `mobile/parchipocket_flutter/`.
-3. Open `mobile/parchipocket_flutter/` in Android Studio.
+2. Open `mobile/parchipocket_flutter/` in Android Studio.
 4. Open a terminal at that project root and run:
 
    ```powershell
