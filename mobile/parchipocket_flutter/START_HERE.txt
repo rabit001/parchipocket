@@ -1,0 +1,15 @@
+PARCHIPOCKET - FLUTTER FRONTEND STARTER
+
+1. Install Flutter and Android Studio on Windows.
+2. Open PowerShell in this folder.
+3. Run: flutter doctor
+4. Fix any Android SDK / license warnings shown by flutter doctor.
+5. Run: .\setup_android.ps1
+6. Start an Android emulator or connect your Android phone with USB debugging.
+7. Run: flutter run
+
+Demo OTP: 123456
+
+Important: this is frontend code with local in-memory demo data. Google login, OTP delivery, cloud sync, actual QR scanning, PDF export, notifications and Bluetooth thermal printing are not connected yet.
+
+Read README.md for details and the next development stage.
