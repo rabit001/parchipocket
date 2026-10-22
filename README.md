@@ -76,15 +76,15 @@ The current starter is a **front-end demo**, not a production release:
 │   ├── FEATURE_STATUS.md
 │   └── SETUP_GUIDE.md
 └── releases/
-    └── ParchiPocket_Flutter_Frontend_Starter.zip
+    └── ParchiPocket_Flutter_Frontend_Starter.tar.gz
 ```
 
-The ZIP in `releases/` contains the current Flutter starter source snapshot. Extract it before opening the project in Android Studio. The documentation folders describe the plan and current limitations; they do not imply that planned services are already implemented.
+The compressed source archive in `releases/` contains the current Flutter starter snapshot. Extract it before opening the project in Android Studio. The documentation folders describe the plan and current limitations; they do not imply that planned services are already implemented.
 
 ## Run on Windows
 
 1. Install the Flutter SDK and Android Studio, including the Android SDK and either an emulator or a USB-debugging-enabled Android device.
-2. Extract `releases/ParchiPocket_Flutter_Frontend_Starter.zip`.
+2. Extract `releases/ParchiPocket_Flutter_Frontend_Starter.tar.gz`.
 3. Open the extracted `parchipocket_flutter` folder in Android Studio.
 4. Open a terminal at that project root and run:
 
