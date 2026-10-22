@@ -4,7 +4,7 @@ These instructions target Windows with Android Studio and Flutter installed. Set
 
 ## 1. Get the source
 
-Download the archive at `releases/ParchiPocket_Flutter_Frontend_Starter.zip` from this repository and extract it. Open the extracted `parchipocket_flutter` directory, the one containing `pubspec.yaml`, in Android Studio.
+Download `releases/ParchiPocket_Flutter_Frontend_Starter.tar.gz` from this repository and extract it (Windows 11 supports .tar.gz in File Explorer; 7-Zip is another option). Open the extracted `parchipocket_flutter` directory, the one containing `pubspec.yaml`, in Android Studio.
 
 ## 2. Verify tools
 
