@@ -423,7 +423,7 @@ class CustomerDirectoryScreen extends StatelessWidget {
   Widget build(BuildContext context) => PpScaffold(state: state, title: 'Customers', backTo: 'shopSettings', bottomNav: true, bottomTab: 'shopSettings', body: ListView(children: <Widget>[
         Text(state.shopName, style: const TextStyle(fontSize: 12, color: PpColors.secondary)),
         const SizedBox(height: 12),
-        PpMetricCard(label: 'Customer directory', value: 'Demo', subtitle: 'Customer records will come from the backend'),
+        const PpMetricCard(label: 'Customer directory', value: 'Demo', subtitle: 'Customer records will come from the backend'),
         const SizedBox(height: 14),
         for (final bill in state.udhaarBills) PpTransactionTile(title: bill.customerPhone.isEmpty ? 'Walk-in Customer' : 'Customer ${bill.customerPhone}', subtitle: '${bill.id} · Pending udhaar', trailing: money(bill.total), icon: Icons.person_outline, onTap: () { state.selectedBill = bill; state.go('confirmSettlement'); }),
         const SizedBox(height: 10),

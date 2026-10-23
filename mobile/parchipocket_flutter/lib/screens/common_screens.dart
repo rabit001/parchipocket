@@ -61,9 +61,9 @@ class NotificationsScreen extends StatelessWidget {
   Widget build(BuildContext context) => PpScaffold(state: state, title: 'Notifications', backTo: state.role == UserRole.customer ? 'customerProfile' : state.role == UserRole.shopOwner ? 'shopSettings' : 'vendorProfile', body: ListView(children: <Widget>[
         const Text('Choose which updates matter to you.', style: TextStyle(fontSize: 12, color: PpColors.secondary)),
         const SizedBox(height: 12),
-        SwitchListTile(contentPadding: EdgeInsets.zero, value: state.notificationsEnabled, activeColor: PpColors.forest, title: const Text('Bill and account alerts', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)), subtitle: const Text('Security and receipt updates', style: TextStyle(fontSize: 10, color: PpColors.secondary)), onChanged: (value) { state.notificationsEnabled = value; state.notifyListeners(); }),
-        SwitchListTile(contentPadding: EdgeInsets.zero, value: state.spendingSummaryEnabled, activeColor: PpColors.forest, title: const Text('Spending summary', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)), subtitle: const Text('Weekly and monthly overview', style: TextStyle(fontSize: 10, color: PpColors.secondary)), onChanged: (value) { state.spendingSummaryEnabled = value; state.notifyListeners(); }),
-        SwitchListTile(contentPadding: EdgeInsets.zero, value: state.productUpdatesEnabled, activeColor: PpColors.forest, title: const Text('Product news and updates', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)), subtitle: const Text('Optional announcements', style: TextStyle(fontSize: 10, color: PpColors.secondary)), onChanged: (value) { state.productUpdatesEnabled = value; state.notifyListeners(); }),
+        SwitchListTile(contentPadding: EdgeInsets.zero, value: state.notificationsEnabled, activeThumbColor: PpColors.forest, title: const Text('Bill and account alerts', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)), subtitle: const Text('Security and receipt updates', style: TextStyle(fontSize: 10, color: PpColors.secondary)), onChanged: state.setNotificationsEnabled),
+        SwitchListTile(contentPadding: EdgeInsets.zero, value: state.spendingSummaryEnabled, activeThumbColor: PpColors.forest, title: const Text('Spending summary', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)), subtitle: const Text('Weekly and monthly overview', style: TextStyle(fontSize: 10, color: PpColors.secondary)), onChanged: state.setSpendingSummaryEnabled),
+        SwitchListTile(contentPadding: EdgeInsets.zero, value: state.productUpdatesEnabled, activeThumbColor: PpColors.forest, title: const Text('Product news and updates', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)), subtitle: const Text('Optional announcements', style: TextStyle(fontSize: 10, color: PpColors.secondary)), onChanged: state.setProductUpdatesEnabled),
         const SizedBox(height: 14),
         PpPrimaryButton('Save Preferences', onPressed: () { state.lastNotice = 'Notification preferences saved locally.'; state.go(state.role == UserRole.customer ? 'settings' : state.role == UserRole.shopOwner ? 'shopSettings' : 'vendorProfile'); }),
         const SizedBox(height: 12),
@@ -129,7 +129,7 @@ class _SupportScreenState extends State<SupportScreen> {
         const SizedBox(height: 16),
         const Text('Issue type', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: PpColors.secondary)),
         const SizedBox(height: 7),
-        DropdownButtonFormField<String>(value: issueType, items: const <String>['Incorrect bill', 'Can’t access a bill', 'Login or account', 'App problem', 'Printer issue', 'Other'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => issueType = v ?? 'Other')),
+        DropdownButtonFormField<String>(initialValue: issueType, items: const <String>['Incorrect bill', 'Can’t access a bill', 'Login or account', 'App problem', 'Printer issue', 'Other'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => issueType = v ?? 'Other')),
         const SizedBox(height: 13),
         PpField(label: 'Bill ID (optional)', controller: billId, hint: 'e.g. PP-10482'),
         const SizedBox(height: 13),
@@ -306,7 +306,7 @@ class LanguageScreen extends StatelessWidget {
   Widget build(BuildContext context) => PpScaffold(state: state, title: 'Language', backTo: state.role == UserRole.customer ? 'settings' : state.role == UserRole.shopOwner ? 'shopSettings' : 'vendorProfile', body: ListView(children: <Widget>[
         const Text('Choose your preferred language.', style: TextStyle(fontSize: 12, color: PpColors.secondary)),
         const SizedBox(height: 12),
-        for (final option in <String>['English', 'हिन्दी (Hindi)', 'मराठी (Marathi)']) Card(child: RadioListTile<String>(value: option, groupValue: state.language, activeColor: PpColors.forest, title: Text(option, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)), onChanged: (v) { if (v != null) { state.language = v; state.notifyListeners(); } })),
+        for (final option in <String>['English', 'हिन्दी (Hindi)', 'मराठी (Marathi)']) Card(child: ListTile(title: Text(option, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)), trailing: Radio<String>(value: option, groupValue: state.language, activeColor: PpColors.forest, onChanged: (v) { if (v != null) { state.setLanguage(v); } }), onTap: () => state.setLanguage(option))),
         const SizedBox(height: 14),
         PpPrimaryButton('Save Language', onPressed: () { state.lastNotice = 'Language preference changed to ${state.language}.'; state.go(state.role == UserRole.customer ? 'settings' : state.role == UserRole.shopOwner ? 'shopSettings' : 'vendorProfile'); }),
         const SizedBox(height: 12),
@@ -318,18 +318,18 @@ class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key, required this.state});
   final AppState state;
   @override
-  Widget build(BuildContext context) => PpScaffold(state: state, title: 'About ParchiPocket', backTo: state.role == UserRole.customer ? 'customerProfile' : state.role == UserRole.shopOwner ? 'shopSettings' : 'vendorProfile', body: ListView(children: <Widget>[
-        const SizedBox(height: 20),
-        const Center(child: CircleAvatar(radius: 39, backgroundColor: PpColors.forest, child: Text('P', style: TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.w800)))),
-        const SizedBox(height: 12),
-        const Text('ParchiPocket', textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 5),
-        const Text('Version 0.1.0 · Frontend starter', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: PpColors.secondary)),
-        const SizedBox(height: 22),
-        const PpDemoNotice(message: 'This is a functional UI starter with local in-memory demo state. Authentication, remote database, secure receipt links, actual QR scanning, PDF export and printer integration remain to be built.'),
-        const SizedBox(height: 18),
-        const _PrivacyTile(title: 'Purpose', detail: 'Help customers keep small purchase receipts and help small sellers organise bills, sales, expenses and udhaar.'),
-        const _PrivacyTile(title: 'Data shown in this build', detail: 'Sample records are for testing interface and workflow only. Do not use this demo as a business ledger.'),
+  Widget build(BuildContext context) => PpScaffold(state: state, title: 'About ParchiPocket', backTo: state.role == UserRole.customer ? 'customerProfile' : state.role == UserRole.shopOwner ? 'shopSettings' : 'vendorProfile', body: ListView(children: const <Widget>[
+        SizedBox(height: 20),
+        Center(child: CircleAvatar(radius: 39, backgroundColor: PpColors.forest, child: Text('P', style: TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.w800)))),
+        SizedBox(height: 12),
+        Text('ParchiPocket', textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+        SizedBox(height: 5),
+        Text('Version 0.1.0 · Frontend starter', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: PpColors.secondary)),
+        SizedBox(height: 22),
+        PpDemoNotice(message: 'This is a functional UI starter with local in-memory demo state. Authentication, remote database, secure receipt links, actual QR scanning, PDF export and printer integration remain to be built.'),
+        SizedBox(height: 18),
+        _PrivacyTile(title: 'Purpose', detail: 'Help customers keep small purchase receipts and help small sellers organise bills, sales, expenses and udhaar.'),
+        _PrivacyTile(title: 'Data shown in this build', detail: 'Sample records are for testing interface and workflow only. Do not use this demo as a business ledger.'),
       ]));
 }
 

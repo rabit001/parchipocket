@@ -221,4 +221,24 @@ class AppState extends ChangeNotifier {
     page = 'vendorHome';
     notifyListeners();
   }
+
+  void setNotificationsEnabled(bool value) {
+    notificationsEnabled = value;
+    notifyListeners();
+  }
+
+  void setSpendingSummaryEnabled(bool value) {
+    spendingSummaryEnabled = value;
+    notifyListeners();
+  }
+
+  void setProductUpdatesEnabled(bool value) {
+    productUpdatesEnabled = value;
+    notifyListeners();
+  }
+
+  void setLanguage(String value) {
+    language = value;
+    notifyListeners();
+  }
 }
