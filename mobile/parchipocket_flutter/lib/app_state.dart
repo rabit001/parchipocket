@@ -1,5 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
+import 'services/firestore_service.dart';
 
 enum UserRole { customer, shopOwner, streetVendor }
 
@@ -54,15 +56,35 @@ class DemoExpense {
 }
 
 class AppState extends ChangeNotifier {
+  AppState() {
+    _initAuthListener();
+  }
+
   FirebaseAuth? _auth;
-  FirebaseAuth get auth => _auth ??= FirebaseAuth.instance;
+  FirebaseAuth get auth {
+    if (_auth != null) return _auth!;
+    try {
+      if (Firebase.apps.isNotEmpty) {
+        _auth = FirebaseAuth.instance;
+      }
+    } catch (_) {}
+    return _auth ??= FirebaseAuth.instance;
+  }
   set auth(FirebaseAuth instance) => _auth = instance;
+
+  FirestoreService? _firestoreService;
+  FirestoreService get firestoreService => _firestoreService ??= FirestoreService(auth: auth);
+  set firestoreService(FirestoreService service) => _firestoreService = service;
 
   String verificationId = '';
   int? resendToken;
   String phoneNumber = '';
   bool isPhoneAuthLoading = false;
   String? phoneAuthError;
+
+  bool isDemoMode = true;
+  bool isCloudLoading = false;
+  String? cloudError;
 
   String page = 'splash';
   UserRole role = UserRole.customer;
@@ -114,6 +136,76 @@ class AppState extends ChangeNotifier {
   int _billSequence = 10500;
   int _vendorBillSequence = 2403;
 
+  void _initAuthListener() {
+    try {
+      if (Firebase.apps.isNotEmpty) {
+        auth.authStateChanges().listen((User? user) {
+          if (user != null) {
+            isDemoMode = false;
+            loadUserDataFromCloud();
+          } else {
+            isDemoMode = true;
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> loadUserDataFromCloud() async {
+    final user = auth.currentUser;
+    if (user == null) {
+      isDemoMode = true;
+      return;
+    }
+
+    isCloudLoading = true;
+    cloudError = null;
+    notifyListeners();
+
+    try {
+      isDemoMode = false;
+      final profile = await firestoreService.loadUserProfile();
+      if (profile != null) {
+        if (profile['role'] != null) {
+          final roleStr = profile['role'] as String;
+          role = UserRole.values.firstWhere(
+            (r) => r.name == roleStr,
+            orElse: () => UserRole.customer,
+          );
+        }
+        customerName = profile['name'] as String? ?? customerName;
+        customerEmail = profile['email'] as String? ?? customerEmail;
+        city = profile['city'] as String? ?? city;
+        shopName = profile['shopName'] as String? ?? shopName;
+        shopCategory = profile['shopCategory'] as String? ?? shopCategory;
+        shopAddress = profile['shopAddress'] as String? ?? shopAddress;
+        vendorName = profile['vendorName'] as String? ?? vendorName;
+        vendorCategory = profile['vendorCategory'] as String? ?? vendorCategory;
+      }
+
+      final cloudBills = await firestoreService.loadBills();
+      bills.clear();
+      bills.addAll(cloudBills);
+
+      final cloudExpenses = await firestoreService.loadExpenses();
+      expenses.clear();
+      expenses.addAll(cloudExpenses);
+
+      final cloudSavedShops = await firestoreService.loadSavedShops();
+      savedShops.clear();
+      savedShops.addAll(cloudSavedShops);
+
+      isCloudLoading = false;
+      cloudError = null;
+      notifyListeners();
+    } catch (e) {
+      isCloudLoading = false;
+      cloudError = e.toString();
+      lastNotice = 'Cloud sync error: $e';
+      notifyListeners();
+    }
+  }
+
   void go(String nextPage) {
     page = nextPage;
     notifyListeners();
@@ -127,6 +219,9 @@ class AppState extends ChangeNotifier {
       UserRole.streetVendor => 'vendorSetup',
     };
     notifyListeners();
+    if (!isDemoMode && auth.currentUser != null) {
+      updateProfile(name: customerName, email: customerEmail, location: city);
+    }
   }
 
   String get activeStoreName => role == UserRole.streetVendor ? vendorName : shopName;
@@ -169,36 +264,89 @@ class AppState extends ChangeNotifier {
     bills.insert(0, bill);
     selectedBill = bill;
     page = vendorMode ? 'vendorReceipt' : 'receipt';
+    lastNotice = isDemoMode ? 'Bill created (demo).' : 'Bill created successfully.';
     notifyListeners();
+
+    if (!isDemoMode && auth.currentUser != null) {
+      firestoreService.saveBill(bill).catchError((e) {
+        cloudError = e.toString();
+        lastNotice = 'Failed to save bill to cloud: $e';
+        notifyListeners();
+      });
+    }
     return bill;
   }
 
   void saveSelectedBill() {
     if (selectedBill != null) {
       selectedBill!.isSaved = true;
-      lastNotice = 'Receipt saved to My Bills (demo).';
+      lastNotice = isDemoMode ? 'Receipt saved (demo).' : 'Receipt saved to cloud.';
       notifyListeners();
+
+      if (!isDemoMode && auth.currentUser != null) {
+        firestoreService.saveBill(selectedBill!).catchError((e) {
+          cloudError = e.toString();
+          lastNotice = 'Failed to save receipt to cloud: $e';
+          notifyListeners();
+        });
+      }
     }
   }
 
   void markSettled(DemoBill bill) {
     bill.isSettled = true;
-    lastNotice = '${bill.id} marked as settled (demo).';
+    lastNotice = isDemoMode ? '${bill.id} settled (demo).' : '${bill.id} marked as settled.';
     notifyListeners();
+
+    if (!isDemoMode && auth.currentUser != null) {
+      firestoreService.saveBill(bill).catchError((e) {
+        cloudError = e.toString();
+        lastNotice = 'Failed to update settlement: $e';
+        notifyListeners();
+      });
+    }
   }
 
   void addExpense({required String title, required String category, required double amount}) {
-    expenses.insert(0, DemoExpense(title: title.trim().isEmpty ? 'Other expense' : title.trim(), category: category, amount: amount, createdAt: DateTime.now()));
-    lastNotice = 'Expense recorded locally (demo).';
+    final expense = DemoExpense(
+      title: title.trim().isEmpty ? 'Other expense' : title.trim(),
+      category: category,
+      amount: amount,
+      createdAt: DateTime.now(),
+    );
+    expenses.insert(0, expense);
+    lastNotice = isDemoMode ? 'Expense recorded (demo).' : 'Expense saved to cloud.';
     page = 'expenseSaved';
     notifyListeners();
+
+    if (!isDemoMode && auth.currentUser != null) {
+      firestoreService.addExpense(expense).catchError((e) {
+        cloudError = e.toString();
+        lastNotice = 'Failed to record expense: $e';
+        notifyListeners();
+      });
+    }
   }
 
   void toggleSavedShop(String name) {
     if (savedShops.contains(name)) {
       savedShops.remove(name);
+      lastNotice = 'Removed from saved shops.';
+      if (!isDemoMode && auth.currentUser != null) {
+        firestoreService.removeSavedShop(name).catchError((e) {
+          cloudError = e.toString();
+          lastNotice = 'Failed to remove shop: $e';
+        });
+      }
     } else {
       savedShops.add(name);
+      lastNotice = 'Shop saved.';
+      if (!isDemoMode && auth.currentUser != null) {
+        firestoreService.saveShop(name).catchError((e) {
+          cloudError = e.toString();
+          lastNotice = 'Failed to save shop: $e';
+        });
+      }
     }
     notifyListeners();
   }
@@ -213,24 +361,80 @@ class AppState extends ChangeNotifier {
     customerName = name.trim().isEmpty ? customerName : name.trim();
     customerEmail = email.trim();
     city = location.trim().isEmpty ? city : location.trim();
-    lastNotice = 'Profile updated locally (demo).';
+    lastNotice = isDemoMode ? 'Profile updated (demo).' : 'Profile updated in cloud.';
     page = 'customerProfile';
     notifyListeners();
+
+    if (!isDemoMode && auth.currentUser != null) {
+      firestoreService.saveUserProfile(
+        role: role,
+        name: customerName,
+        email: customerEmail,
+        city: city,
+        shopName: shopName,
+        shopCategory: shopCategory,
+        shopAddress: shopAddress,
+        vendorName: vendorName,
+        vendorCategory: vendorCategory,
+      ).catchError((e) {
+        cloudError = e.toString();
+        lastNotice = 'Failed to update profile: $e';
+        notifyListeners();
+      });
+    }
   }
 
   void updateShop({required String name, required String category, required String address}) {
     shopName = name.trim().isEmpty ? shopName : name.trim();
     shopCategory = category;
     shopAddress = address.trim().isEmpty ? shopAddress : address.trim();
+    lastNotice = isDemoMode ? 'Shop updated (demo).' : 'Shop profile updated in cloud.';
     page = 'shopHome';
     notifyListeners();
+
+    if (!isDemoMode && auth.currentUser != null) {
+      firestoreService.saveUserProfile(
+        role: role,
+        name: customerName,
+        email: customerEmail,
+        city: city,
+        shopName: shopName,
+        shopCategory: shopCategory,
+        shopAddress: shopAddress,
+        vendorName: vendorName,
+        vendorCategory: vendorCategory,
+      ).catchError((e) {
+        cloudError = e.toString();
+        lastNotice = 'Failed to update shop: $e';
+        notifyListeners();
+      });
+    }
   }
 
   void updateVendor({required String name, required String category}) {
     vendorName = name.trim().isEmpty ? vendorName : name.trim();
     vendorCategory = category;
+    lastNotice = isDemoMode ? 'Vendor updated (demo).' : 'Vendor profile updated in cloud.';
     page = 'vendorHome';
     notifyListeners();
+
+    if (!isDemoMode && auth.currentUser != null) {
+      firestoreService.saveUserProfile(
+        role: role,
+        name: customerName,
+        email: customerEmail,
+        city: city,
+        shopName: shopName,
+        shopCategory: shopCategory,
+        shopAddress: shopAddress,
+        vendorName: vendorName,
+        vendorCategory: vendorCategory,
+      ).catchError((e) {
+        cloudError = e.toString();
+        lastNotice = 'Failed to update vendor: $e';
+        notifyListeners();
+      });
+    }
   }
 
   void setNotificationsEnabled(bool value) {
@@ -308,9 +512,11 @@ class AppState extends ChangeNotifier {
         verificationCompleted: (PhoneAuthCredential credential) async {
           try {
             await auth.signInWithCredential(credential);
+            isDemoMode = false;
             isPhoneAuthLoading = false;
             phoneAuthError = null;
             notifyListeners();
+            await loadUserDataFromCloud();
             go('roleSelection');
           } catch (e) {
             isPhoneAuthLoading = false;
@@ -379,9 +585,11 @@ class AppState extends ChangeNotifier {
         smsCode: cleanCode,
       );
       await auth.signInWithCredential(credential);
+      isDemoMode = false;
       isPhoneAuthLoading = false;
       phoneAuthError = null;
       notifyListeners();
+      await loadUserDataFromCloud();
       go('roleSelection');
     } catch (e) {
       isPhoneAuthLoading = false;

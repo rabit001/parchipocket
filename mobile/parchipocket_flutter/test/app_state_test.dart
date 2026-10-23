@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:parchipocket/app_state.dart';
 
 void main() {
-  group('AppState local demo workflows', () {
+  group('AppState local demo workflows & serialization', () {
     test('creates a bill and calculates its total', () {
       final state = AppState();
       final bill = state.createBill(
@@ -65,6 +65,24 @@ void main() {
       expect(state.formatPhoneNumber('12345'), isNull);
       expect(state.formatPhoneNumber(''), isNull);
       state.dispose();
+    });
+
+    test('DemoBill item serialization & calculation check', () {
+      final bill = DemoBill(
+        id: 'PP-TEST',
+        store: 'Test Store',
+        items: <BillLine>[BillLine(name: 'Item 1', quantity: 3, unitPrice: 20)],
+        createdAt: DateTime(2026, 1, 1),
+        paymentMode: 'Cash',
+        customerPhone: '+919876543210',
+        isUdhaar: false,
+        isSettled: false,
+        isSaved: true,
+      );
+
+      expect(bill.id, 'PP-TEST');
+      expect(bill.total, 60.0);
+      expect(bill.items.first.total, 60.0);
     });
   });
 }
