@@ -10,7 +10,15 @@ class CustomerHomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final recent = state.customerBills.take(3).toList();
-    return PpScaffold(state: state, title: 'ParchiPocket', showBack: false, bottomNav: true, bottomTab: 'customerHome', padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
+    final modeLabel = state.isDemoMode ? 'Local demo' : 'Cloud synced';
+
+    return PpScaffold(
+      state: state,
+      title: 'ParchiPocket',
+      showBack: false,
+      bottomNav: true,
+      bottomTab: 'customerHome',
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
       trailing: IconButton(onPressed: () => state.go('notifications'), icon: const Icon(Icons.notifications_none_rounded)),
       body: ListView(children: <Widget>[
         const Text('Good afternoon', style: TextStyle(fontSize: 11, color: PpColors.secondary)),
@@ -22,9 +30,9 @@ class CustomerHomeScreen extends StatelessWidget {
         Container(padding: const EdgeInsets.all(17), decoration: BoxDecoration(color: PpColors.forest, borderRadius: BorderRadius.circular(17)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
           const Text('TOTAL SAVED BILLS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white70)),
           const SizedBox(height: 7),
-          Text('${state.customerBills.length} receipts', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white)),
+          Text('${state.customerBills.length} receipts ($modeLabel)', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white)),
           const SizedBox(height: 6),
-          const Text('Keep your everyday purchases organised.', style: TextStyle(fontSize: 11, color: Colors.white)),
+          Text(state.isDemoMode ? 'Explore sample features in demo mode.' : 'Your purchases are saved securely in Firestore.', style: const TextStyle(fontSize: 11, color: Colors.white)),
         ])),
         const SizedBox(height: 14),
         Card(child: InkWell(borderRadius: BorderRadius.circular(14), onTap: () => state.go('scan'), child: const Padding(padding: EdgeInsets.all(15), child: Row(children: <Widget>[
@@ -35,8 +43,8 @@ class CustomerHomeScreen extends StatelessWidget {
         ])))),
         const SizedBox(height: 16),
         PpSectionTitle('Recent purchases', action: 'See all', onAction: () => state.go('bills')),
-        if (recent.isEmpty) const PpEmptyState(icon: Icons.receipt_long_outlined, title: 'No saved bills yet', message: 'Scan the QR code on a receipt to start your digital bill history.')
-        else ...recent.map((bill) => PpTransactionTile(title: bill.store, subtitle: '${formatShortDate(bill.createdAt)} · ${bill.id}', trailing: money(bill.total), onTap: () => state.openBill(bill))),
+        if (recent.isEmpty) const PpEmptyState(icon: Icons.receipt_long_outlined, title: 'No saved bills yet', message: 'Scan or create a receipt to start your digital bill history.')
+        else ...recent.map((bill) => PpTransactionTile(title: bill.store, subtitle: '${formatShortDate(bill.createdAt)} · ${bill.displayNumber}', trailing: money(bill.total), onTap: () => state.openBill(bill))),
       ]),
     );
   }
@@ -57,11 +65,13 @@ class _BillsScreenState extends State<BillsScreen> {
   Widget build(BuildContext context) {
     final all = widget.state.customerBills.where((bill) {
       final q = search.text.toLowerCase();
-      final matches = bill.store.toLowerCase().contains(q) || bill.id.toLowerCase().contains(q);
+      final matches = bill.store.toLowerCase().contains(q) || bill.id.toLowerCase().contains(q) || bill.displayNumber.toLowerCase().contains(q);
       final now = DateTime.now();
       final dateMatches = filter == 'All' || (filter == 'This Month' && bill.createdAt.year == now.year && bill.createdAt.month == now.month) || (filter == 'This Year' && bill.createdAt.year == now.year);
       return matches && dateMatches;
     }).toList();
+    final modeText = widget.state.isDemoMode ? 'local demo receipts' : 'cloud synced receipts';
+
     return PpScaffold(state: widget.state, title: 'My Bills', showBack: false, bottomNav: true, bottomTab: 'bills', body: Column(children: <Widget>[
       TextField(controller: search, onChanged: (_) => setState(() {}), decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Search store or bill ID')),
       const SizedBox(height: 10),
@@ -70,9 +80,9 @@ class _BillsScreenState extends State<BillsScreen> {
           Expanded(child: Padding(padding: const EdgeInsets.only(right: 6), child: ChoiceChip(label: Text(value), selected: filter == value, onSelected: (_) => setState(() => filter = value)))),
       ]),
       const SizedBox(height: 4),
-      Align(alignment: Alignment.centerLeft, child: Text('${all.length} saved receipts', style: const TextStyle(fontSize: 11, color: PpColors.secondary, fontWeight: FontWeight.w600))),
+      Align(alignment: Alignment.centerLeft, child: Text('${all.length} $modeText', style: const TextStyle(fontSize: 11, color: PpColors.secondary, fontWeight: FontWeight.w600))),
       const SizedBox(height: 8),
-      Expanded(child: all.isEmpty ? const PpEmptyState(icon: Icons.search_off, title: 'No bills found', message: 'Try another store name or bill ID.') : ListView.builder(itemCount: all.length, itemBuilder: (context, index) { final bill = all[index]; return PpTransactionTile(title: bill.store, subtitle: '${formatDateTime(bill.createdAt)} · ${bill.id}', trailing: money(bill.total), onTap: () => widget.state.openBill(bill), icon: Icons.receipt_long_outlined); })),
+      Expanded(child: all.isEmpty ? const PpEmptyState(icon: Icons.search_off, title: 'No bills found', message: 'Try another store name or bill ID.') : ListView.builder(itemCount: all.length, itemBuilder: (context, index) { final bill = all[index]; return PpTransactionTile(title: bill.store, subtitle: '${formatDateTime(bill.createdAt)} · ${bill.displayNumber}', trailing: money(bill.total), onTap: () => widget.state.openBill(bill), icon: Icons.receipt_long_outlined); })),
     ]));
   }
 }
@@ -84,37 +94,62 @@ class BillDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final bill = state.selectedBill;
     if (bill == null) return PpScaffold(state: state, title: 'Bill details', body: const PpEmptyState(icon: Icons.receipt_long, title: 'No receipt selected', message: 'Select a receipt from My Bills or Bill History.'));
-    return PpScaffold(state: state, title: 'Bill details', backTo: state.role == UserRole.shopOwner ? 'billHistory' : 'bills', bottomNav: state.role == UserRole.customer, bottomTab: 'bills', body: ListView(children: <Widget>[
-      Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-        Container(width: 48, height: 48, decoration: BoxDecoration(color: PpColors.soft, borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.storefront_outlined, color: PpColors.forest)),
-        const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text(bill.store, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)), const SizedBox(height: 5), Text(formatDateTime(bill.createdAt), style: const TextStyle(fontSize: 10, color: PpColors.secondary)), const SizedBox(height: 4), Text('Bill ID: ${bill.id}', style: const TextStyle(fontSize: 10, color: PpColors.secondary))])),
+
+    final isSavedInState = bill.isSaved;
+
+    return PpScaffold(
+      state: state,
+      title: 'Bill details',
+      backTo: state.role == UserRole.shopOwner ? 'billHistory' : 'bills',
+      bottomNav: state.role == UserRole.customer,
+      bottomTab: 'bills',
+      body: ListView(children: <Widget>[
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          Container(width: 48, height: 48, decoration: BoxDecoration(color: PpColors.soft, borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.storefront_outlined, color: PpColors.forest)),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text(bill.store, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)), const SizedBox(height: 5), Text(formatDateTime(bill.createdAt), style: const TextStyle(fontSize: 10, color: PpColors.secondary)), const SizedBox(height: 4), Text('Bill ID: ${bill.displayNumber}', style: const TextStyle(fontSize: 10, color: PpColors.secondary))])),
+        ]),
+        const SizedBox(height: 18),
+        PpCard(child: Column(children: <Widget>[
+          for (final item in bill.items) Padding(padding: const EdgeInsets.symmetric(vertical: 9), child: Row(children: <Widget>[
+            Expanded(flex: 4, child: Text(item.name, style: const TextStyle(fontSize: 12))),
+            Expanded(flex: 4, child: Text('${item.quantity} × ${money(item.unitPrice)}', style: const TextStyle(fontSize: 10, color: PpColors.secondary))),
+            Expanded(flex: 2, child: Text(money(item.total), textAlign: TextAlign.end, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+          ])),
+          const Divider(),
+          Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Row(children: <Widget>[
+            const Expanded(child: Text('Total paid', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13))),
+            Text(money(bill.total), style: const TextStyle(color: PpColors.forest, fontSize: 23, fontWeight: FontWeight.w800)),
+          ])),
+          Row(children: <Widget>[const Expanded(child: Text('Payment method', style: TextStyle(fontSize: 11, color: PpColors.secondary))), Text(bill.paymentMode, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700))]),
+        ])),
+        const SizedBox(height: 18),
+        PpPrimaryButton(
+          isSavedInState ? 'Saved to My Bills' : 'Save to My Bills',
+          icon: Icons.bookmark_add_outlined,
+          onPressed: () async {
+            final success = await state.saveSelectedBill();
+            if (context.mounted) {
+              final snackText = success
+                  ? (state.isDemoMode
+                      ? 'Saved to My Bills (local demo mode).'
+                      : 'Receipt saved to your cloud account.')
+                  : 'Failed to save: ${state.cloudError ?? 'Cloud error'}';
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(snackText)));
+            }
+          },
+        ),
+        const SizedBox(height: 9),
+        PpSecondaryButton('Download / Share Receipt', icon: Icons.share_outlined, onPressed: () => state.go('shareReceipt')),
+        const SizedBox(height: 4),
+        TextButton(onPressed: () => state.go('support'), child: const Text('Report an issue with this bill', style: TextStyle(color: PpColors.error))),
+        PpDemoNotice(
+          message: state.isDemoMode
+              ? 'Receipt data in demo mode is sample data. Sign in with your phone number to save and sync receipts securely in Firestore.'
+              : 'Receipt synced to your ParchiPocket cloud account under users/${state.auth?.currentUser?.uid ?? 'me'}/bills/${bill.id}.',
+        ),
       ]),
-      const SizedBox(height: 18),
-      PpCard(child: Column(children: <Widget>[
-        for (final item in bill.items) Padding(padding: const EdgeInsets.symmetric(vertical: 9), child: Row(children: <Widget>[
-          Expanded(flex: 4, child: Text(item.name, style: const TextStyle(fontSize: 12))),
-          Expanded(flex: 4, child: Text('${item.quantity} × ${money(item.unitPrice)}', style: const TextStyle(fontSize: 10, color: PpColors.secondary))),
-          Expanded(flex: 2, child: Text(money(item.total), textAlign: TextAlign.end, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-        ])),
-        const Divider(),
-        Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Row(children: <Widget>[
-          const Expanded(child: Text('Total paid', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13))),
-          Text(money(bill.total), style: const TextStyle(color: PpColors.forest, fontSize: 23, fontWeight: FontWeight.w800)),
-        ])),
-        Row(children: <Widget>[const Expanded(child: Text('Payment method', style: TextStyle(fontSize: 11, color: PpColors.secondary))), Text(bill.paymentMode, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700))]),
-      ])),
-      const SizedBox(height: 18),
-      PpPrimaryButton(bill.isSaved ? 'Saved to My Bills' : 'Save to My Bills', icon: Icons.bookmark_add_outlined, onPressed: () {
-        state.saveSelectedBill();
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved locally in this demo.')));
-      }),
-      const SizedBox(height: 9),
-      PpSecondaryButton('Download / Share Receipt', icon: Icons.share_outlined, onPressed: () => state.go('shareReceipt')),
-      const SizedBox(height: 4),
-      TextButton(onPressed: () => state.go('support'), child: const Text('Report an issue with this bill', style: TextStyle(color: PpColors.error))),
-      const PpDemoNotice(message: 'Receipt data in this starter is sample/local data. Secure sharing and PDF export need backend and platform integration.'),
-    ]));
+    );
   }
 }
 
@@ -133,7 +168,7 @@ class _ScanBillScreenState extends State<ScanBillScreen> {
         const Text('Point the camera at a QR code on the printed receipt.', style: TextStyle(fontSize: 12, color: PpColors.secondary)),
         const SizedBox(height: 18),
         Container(height: 265, decoration: BoxDecoration(color: PpColors.soft, borderRadius: BorderRadius.circular(18), border: Border.all(color: PpColors.border)), child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: <Widget>[
-          Icon(Icons.qr_code_scanner, color: PpColors.forest, size: 84), SizedBox(height: 12), Text('Scanner preview', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)), SizedBox(height: 5), Text('Camera access is not connected in this build.', style: TextStyle(fontSize: 10, color: PpColors.secondary)),
+          Icon(Icons.qr_code_scanner, color: PpColors.forest, size: 84), SizedBox(height: 12), Text('Scanner preview', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)), SizedBox(height: 5), Text('Camera access is a sample feature in this prototype.', style: TextStyle(fontSize: 10, color: PpColors.secondary)),
         ])),
         const SizedBox(height: 22),
         const Text('Enter bill code manually', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
@@ -141,15 +176,16 @@ class _ScanBillScreenState extends State<ScanBillScreen> {
         TextField(controller: code, decoration: const InputDecoration(prefixIcon: Icon(Icons.receipt_long_outlined), hintText: 'e.g. PP-10482')),
         const SizedBox(height: 12),
         PpPrimaryButton('Find Receipt', onPressed: () {
-          final found = widget.state.bills.where((bill) => bill.id.toLowerCase() == code.text.trim().toLowerCase()).firstOrNull;
+      final searchCode = code.text.trim().toLowerCase();
+      final found = widget.state.bills.where((bill) => bill.id.toLowerCase() == searchCode || bill.displayNumber.toLowerCase() == searchCode).firstOrNull;
           if (found == null) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No demo receipt matched that code.')));
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No receipt matched that code.')));
           } else {
             widget.state.openBill(found);
           }
         }),
         const SizedBox(height: 12),
-        const PpDemoNotice(message: 'QR camera scanning is a placeholder. The manual bill-code lookup works against local demo data.'),
+        const PpDemoNotice(message: 'QR camera scanning is a sample preview. The manual bill-code lookup searches your current bills.'),
       ]));
 }
 
@@ -160,10 +196,12 @@ class InsightsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final total = state.customerBills.fold<double>(0, (sum, bill) => sum + bill.total);
     final categoryValues = <String, double>{'Groceries': total * .45, 'Snacks': total * .20, 'Household': total * .20, 'Other': total * .15};
+    final modeNotice = state.isDemoMode ? 'From ${state.customerBills.length} sample receipts (demo mode)' : 'From ${state.customerBills.length} cloud saved receipts';
+
     return PpScaffold(state: state, title: 'Spending insights', showBack: false, bottomNav: true, bottomTab: 'insights', body: ListView(children: <Widget>[
       const Text('Know where your everyday money goes.', style: TextStyle(fontSize: 12, color: PpColors.secondary)),
       const SizedBox(height: 15),
-      PpMetricCard(label: 'Recorded spending', value: money(total), subtitle: 'From ${state.customerBills.length} saved demo receipts'),
+      PpMetricCard(label: 'Recorded spending', value: money(total), subtitle: modeNotice),
       const SizedBox(height: 20),
       const PpSectionTitle('By category'),
       const SizedBox(height: 9),
@@ -173,7 +211,7 @@ class InsightsScreen extends StatelessWidget {
         ClipRRect(borderRadius: BorderRadius.circular(5), child: LinearProgressIndicator(value: total == 0 ? 0 : entry.value / total, minHeight: 8, color: PpColors.forest, backgroundColor: PpColors.soft)),
       ])),
       const SizedBox(height: 6),
-      const PpDemoNotice(message: 'Insights are calculated from locally saved demo receipts, not bank transactions or every purchase you make.'),
+      PpDemoNotice(message: state.isDemoMode ? 'Insights are calculated from local sample receipts.' : 'Insights are calculated from your cloud-saved receipts.'),
     ]));
   }
 }
@@ -208,7 +246,7 @@ class _NearbyShopsScreenState extends State<NearbyShopsScreen> {
         final shop = shops[index];
         return PpTransactionTile(title: shop.name, subtitle: '${shop.distance} · ${shop.category}', trailing: widget.state.savedShops.contains(shop.name) ? '♥' : '♡', icon: Icons.storefront_outlined, onTap: () { widget.state.lastNotice = shop.name; widget.state.go('shopDetails'); });
       })),
-      const PpDemoNotice(message: 'Shop names and distances are sample data. Live location and verified shop listings have not been connected.'),
+      const PpDemoNotice(message: 'Shop names and distances are sample data. Live location and verified shop listings are sample previews.'),
     ]));
   }
 }
@@ -226,11 +264,25 @@ class ShopDetailsScreen extends StatelessWidget {
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text(shop.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)), const SizedBox(height: 5), Text('${shop.category} · Ujjain', style: const TextStyle(fontSize: 11, color: PpColors.secondary)), const SizedBox(height: 6), Text('${shop.distance} away', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: PpColors.forest))])),
       ])),
       const SizedBox(height: 12),
-      PpCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[const Text('Address', style: TextStyle(fontSize: 11, color: PpColors.secondary, fontWeight: FontWeight.w700)), const SizedBox(height: 6), Text(shop.address, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)), const SizedBox(height: 4), const Text('Demo address, not live-verified.', style: TextStyle(fontSize: 10, color: PpColors.secondary))])),
+      PpCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[const Text('Address', style: TextStyle(fontSize: 11, color: PpColors.secondary, fontWeight: FontWeight.w700)), const SizedBox(height: 6), Text(shop.address, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)), const SizedBox(height: 4), const Text('Sample directory address.', style: TextStyle(fontSize: 10, color: PpColors.secondary))])),
       const SizedBox(height: 16),
-      PpPrimaryButton(state.savedShops.contains(shop.name) ? 'Remove Saved Shop' : 'Save Shop', icon: Icons.favorite_border, onPressed: () { state.toggleSavedShop(shop.name); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(state.savedShops.contains(shop.name) ? 'Shop saved in this demo.' : 'Shop removed from saved list.'))); }),
+      PpPrimaryButton(state.savedShops.contains(shop.name) ? 'Remove Saved Shop' : 'Save Shop', icon: Icons.favorite_border, onPressed: () async {
+        final success = await state.toggleSavedShop(shop.name);
+        if (context.mounted) {
+          if (success) {
+            final isSavedNow = state.savedShops.contains(shop.name);
+            final msg = state.isDemoMode
+                ? (isSavedNow ? 'Shop saved (demo mode).' : 'Shop removed (demo mode).')
+                : (isSavedNow ? 'Shop saved to your cloud profile.' : 'Shop removed from your cloud profile.');
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update saved shop: ${state.cloudError ?? 'Error'}')));
+          }
+        }
+      }),
       const SizedBox(height: 10),
-      PpSecondaryButton('View a Sample Receipt', icon: Icons.receipt_long_outlined, onPressed: () => state.openBill(state.customerBills.first)),
+      if (state.customerBills.isNotEmpty)
+        PpSecondaryButton('View a Sample Receipt', icon: Icons.receipt_long_outlined, onPressed: () => state.openBill(state.customerBills.first)),
       const SizedBox(height: 10),
       PpSecondaryButton('Report shop issue', icon: Icons.support_agent, onPressed: () => state.go('support')),
     ]));
@@ -243,8 +295,10 @@ class SavedShopsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final shops = demoShops.where((s) => state.savedShops.contains(s.name)).toList();
+    final modeLabel = state.isDemoMode ? 'local demo' : 'cloud saved';
+
     return PpScaffold(state: state, title: 'Saved shops', backTo: 'customerProfile', bottomNav: true, bottomTab: 'customerProfile', body: ListView(children: <Widget>[
-      const Text('Stores you want to find again.', style: TextStyle(fontSize: 12, color: PpColors.secondary)),
+      Text('Stores you want to find again ($modeLabel).', style: const TextStyle(fontSize: 12, color: PpColors.secondary)),
       const SizedBox(height: 12),
       if (shops.isEmpty) const PpEmptyState(icon: Icons.favorite_border, title: 'No saved shops', message: 'Save a local shop to find it quickly later.'),
       for (final shop in shops) PpTransactionTile(title: shop.name, subtitle: '${shop.distance} · ${shop.category}', trailing: '♥', onTap: () { state.lastNotice = shop.name; state.go('shopDetails'); }),
@@ -258,13 +312,16 @@ class CustomerProfileScreen extends StatelessWidget {
   const CustomerProfileScreen({super.key, required this.state});
   final AppState state;
   @override
-  Widget build(BuildContext context) => PpScaffold(state: state, title: 'Profile', showBack: false, bottomNav: true, bottomTab: 'customerProfile', body: ListView(children: <Widget>[
+  Widget build(BuildContext context) {
+    final modeLabel = state.isDemoMode ? 'Customer account · Local demo mode' : 'Customer account · Cloud authenticated';
+
+    return PpScaffold(state: state, title: 'Profile', showBack: false, bottomNav: true, bottomTab: 'customerProfile', body: ListView(children: <Widget>[
         const SizedBox(height: 6),
         const Center(child: CircleAvatar(radius: 35, backgroundColor: PpColors.soft, child: Text('RM', style: TextStyle(color: PpColors.forest, fontSize: 22, fontWeight: FontWeight.w800)))),
         const SizedBox(height: 11),
         Center(child: Text(state.customerName, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800))),
         const SizedBox(height: 4),
-        const Center(child: Text('Customer account · Demo', style: TextStyle(fontSize: 11, color: PpColors.secondary))),
+        Center(child: Text(modeLabel, style: const TextStyle(fontSize: 11, color: PpColors.secondary))),
         const SizedBox(height: 14),
         PpSecondaryButton('Edit Profile', onPressed: () => state.go('editProfile')),
         const SizedBox(height: 14),
@@ -277,6 +334,7 @@ class CustomerProfileScreen extends StatelessWidget {
         _ProfileLink(icon: Icons.star_border, label: 'Rate the App', onTap: () => _demoSnack(context, 'App rating will be available after publishing.')),
         _ProfileLink(icon: Icons.info_outline, label: 'About ParchiPocket', onTap: () => state.go('about')),
       ]));
+  }
 }
 
 class _ProfileLink extends StatelessWidget {
@@ -300,6 +358,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late final TextEditingController name = TextEditingController(text: widget.state.customerName);
   late final TextEditingController email = TextEditingController(text: widget.state.customerEmail);
   late final TextEditingController city = TextEditingController(text: widget.state.city);
+  bool _isSubmitting = false;
   @override
   void dispose() { name.dispose(); email.dispose(); city.dispose(); super.dispose(); }
   @override
@@ -311,12 +370,43 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         const SizedBox(height: 15),
         const Text('Mobile number', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: PpColors.secondary)),
         const SizedBox(height: 7),
-        const TextField(readOnly: true, decoration: InputDecoration(hintText: '+91 •••••• ••42 · Demo verified')),
+        TextField(
+          readOnly: true,
+          decoration: InputDecoration(
+            hintText: widget.state.phoneNumber.isNotEmpty
+                ? widget.state.phoneNumber
+                : '+91 Verified Number',
+          ),
+        ),
         const SizedBox(height: 15),
         PpField(label: 'Email address (optional)', controller: email, hint: 'name@example.com', keyboardType: TextInputType.emailAddress),
         const SizedBox(height: 15),
         PpField(label: 'City', controller: city, hint: 'City, state'),
         const SizedBox(height: 20),
-        PpPrimaryButton('Save Changes', onPressed: () => widget.state.updateProfile(name: name.text, email: email.text, location: city.text)),
+        PpPrimaryButton(_isSubmitting ? 'Saving…' : 'Save Changes', onPressed: _isSubmitting ? null : () async {
+          final messenger = ScaffoldMessenger.of(context);
+          setState(() => _isSubmitting = true);
+          try {
+            final success = await widget.state.updateProfile(
+              name: name.text,
+              email: email.text,
+              location: city.text,
+              successPage: null,
+            );
+            if (!mounted) return;
+            final msg = success
+                ? (widget.state.isDemoMode ? 'Profile updated (local demo mode).' : 'Profile updated in cloud.')
+                : 'Profile was not saved: ${widget.state.cloudError ?? 'Please wait for other account work to finish and retry.'}';
+            messenger.showSnackBar(SnackBar(content: Text(msg)));
+            if (success) widget.state.go('customerProfile');
+          } catch (error) {
+            if (!mounted) return;
+            messenger.showSnackBar(
+              SnackBar(content: Text('Profile was not saved. Check your connection and retry. ($error)')),
+            );
+          } finally {
+            if (mounted) setState(() => _isSubmitting = false);
+          }
+        }),
       ]));
 }

@@ -1,19 +1,164 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Role is a user-selected app mode (customer, shopOwner, streetVendor), not an admin role.
+    function isValidRole(role) {
+      return role is string && (role == 'customer' || role == 'shopOwner' || role == 'streetVendor');
+    }
+
+    function isValidProfile(data) {
+      return data.keys().hasAll(['name', 'role', 'updatedAt']) &&
+             data.keys().hasOnly(['name', 'email', 'city', 'role', 'shopName', 'shopCategory', 'shopAddress', 'vendorName', 'vendorCategory', 'updatedAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             isValidRole(data.role) &&
+             data.updatedAt is timestamp &&
+             (!data.keys().hasAny(['email']) || (data.email is string && data.email.size() <= 100)) &&
+             (!data.keys().hasAny(['city']) || (data.city is string && data.city.size() <= 100)) &&
+             (!data.keys().hasAny(['shopName']) || (data.shopName is string && data.shopName.size() <= 100)) &&
+             (!data.keys().hasAny(['shopCategory']) || (data.shopCategory is string && data.shopCategory.size() <= 50)) &&
+             (!data.keys().hasAny(['shopAddress']) || (data.shopAddress is string && data.shopAddress.size() <= 200)) &&
+             (!data.keys().hasAny(['vendorName']) || (data.vendorName is string && data.vendorName.size() <= 100)) &&
+             (!data.keys().hasAny(['vendorCategory']) || (data.vendorCategory is string && data.vendorCategory.size() <= 50));
+    }
+
+    function isProfileUpdateAllowed(existingData, newData) {
+      // Preserve existing role and prevent unauthorized injection of privileged system/admin fields
+      return newData.role == existingData.role &&
+             !newData.keys().hasAny(['admin', 'balance', 'plan', 'creditLimit']) &&
+             isValidProfile(newData);
+    }
+
+    function isValidBillItem(item) {
+      return item is map &&
+             item.keys().size() == 3 &&
+             item.name is string && item.name.size() > 0 && item.name.size() <= 100 &&
+             item.quantity is int && item.quantity > 0 && item.quantity <= 1000 &&
+             item.unitPrice is number && item.unitPrice >= 0 && item.unitPrice <= 10000000;
+    }
+
+    function hasValidBillItems(items) {
+      return items is list
+          && items.size() >= 1
+          && items.size() <= 10
+          && isValidBillItem(items[0])
+          && (items.size() < 2 || isValidBillItem(items[1]))
+          && (items.size() < 3 || isValidBillItem(items[2]))
+          && (items.size() < 4 || isValidBillItem(items[3]))
+          && (items.size() < 5 || isValidBillItem(items[4]))
+          && (items.size() < 6 || isValidBillItem(items[5]))
+          && (items.size() < 7 || isValidBillItem(items[6]))
+          && (items.size() < 8 || isValidBillItem(items[7]))
+          && (items.size() < 9 || isValidBillItem(items[8]))
+          && (items.size() < 10 || isValidBillItem(items[9]));
+    }
+
+    function isValidBill(data) {
+      return data.keys().hasAll(['id', 'store', 'items', 'createdAt', 'paymentMode']) &&
+             data.keys().hasOnly(['id', 'store', 'items', 'createdAt', 'paymentMode', 'customerPhone', 'isUdhaar', 'isSettled', 'isSaved']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 50 &&
+             data.store is string && data.store.size() > 0 && data.store.size() <= 100 &&
+             data.paymentMode is string && data.paymentMode.size() > 0 && data.paymentMode.size() <= 50 &&
+             data.createdAt is timestamp &&
+             hasValidBillItems(data.items) &&
+             (!data.keys().hasAny(['customerPhone']) || (data.customerPhone is string && data.customerPhone.size() <= 30)) &&
+             (!data.keys().hasAny(['isUdhaar']) || data.isUdhaar is bool) &&
+             (!data.keys().hasAny(['isSettled']) || data.isSettled is bool) &&
+             (!data.keys().hasAny(['isSaved']) || data.isSaved is bool);
+    }
+
+    function isBillUpdateAllowed(existingData, newData) {
+      return newData.id == existingData.id &&
+             newData.store == existingData.store &&
+             newData.items == existingData.items &&
+             newData.createdAt == existingData.createdAt &&
+             newData.paymentMode == existingData.paymentMode &&
+
+             // customerPhone cannot be added, removed, or changed.
+             (existingData.keys().hasAny(['customerPhone']) ==
+              newData.keys().hasAny(['customerPhone'])) &&
+             (!existingData.keys().hasAny(['customerPhone']) ||
+              newData.customerPhone == existingData.customerPhone) &&
+
+             // isUdhaar cannot be added, removed, or changed.
+             (existingData.keys().hasAny(['isUdhaar']) ==
+              newData.keys().hasAny(['isUdhaar'])) &&
+             (!existingData.keys().hasAny(['isUdhaar']) ||
+              newData.isUdhaar == existingData.isUdhaar) &&
+
+             // isSaved: unchanged or false -> true only.
+             (existingData.keys().hasAny(['isSaved']) ==
+              newData.keys().hasAny(['isSaved'])) &&
+             (!existingData.keys().hasAny(['isSaved']) ||
+              newData.isSaved == existingData.isSaved ||
+              (existingData.isSaved == false &&
+               newData.isSaved == true)) &&
+
+             // isSettled: unchanged or false -> true only.
+             (existingData.keys().hasAny(['isSettled']) ==
+              newData.keys().hasAny(['isSettled'])) &&
+             (!existingData.keys().hasAny(['isSettled']) ||
+              newData.isSettled == existingData.isSettled ||
+              (existingData.isSettled == false &&
+               newData.isSettled == true)) &&
+
+             isValidBill(newData);
+    }
+
+    function isValidExpense(data) {
+      return data.keys().hasAll(['title', 'category', 'amount', 'createdAt']) &&
+             data.keys().hasOnly(['title', 'category', 'amount', 'createdAt']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 100 &&
+             data.category is string && data.category.size() > 0 && data.category.size() <= 50 &&
+             data.amount is number && data.amount >= 0 && data.amount <= 10000000 &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidSavedShop(data) {
+      return data.keys().hasAll(['shopName']) &&
+             data.keys().hasOnly(['shopName', 'updatedAt']) &&
+             data.shopName is string && data.shopName.size() > 0 && data.shopName.size() <= 100 &&
+             (!data.keys().hasAny(['updatedAt']) || data.updatedAt is timestamp);
+    }
+
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) && isValidProfile(request.resource.data);
+      allow update: if isOwner(userId) && isProfileUpdateAllowed(resource.data, request.resource.data);
+      // Deny client profile deletion until cascade-delete handling is implemented.
+      allow delete: if false;
 
       match /bills/{billId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && billId == request.resource.data.id && isValidBill(request.resource.data);
+        allow update: if isOwner(userId) && billId == request.resource.data.id && isBillUpdateAllowed(resource.data, request.resource.data);
+        // Financial bill deletion policy: DISALLOWED to preserve financial audit trail & integrity.
+        allow delete: if false;
       }
 
       match /expenses/{expenseId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidExpense(request.resource.data);
+        // Expense update policy: DISALLOWED because expense editing is not in app features.
+        allow update: if false;
+        // Financial expense deletion policy: DISALLOWED to preserve financial audit trail.
+        allow delete: if false;
       }
 
       match /savedShops/{shopId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidSavedShop(request.resource.data);
+        allow update: if isOwner(userId) && isValidSavedShop(request.resource.data);
+        allow delete: if isOwner(userId);
       }
     }
   }

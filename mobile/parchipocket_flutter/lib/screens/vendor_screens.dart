@@ -54,7 +54,7 @@ class _VendorSalesScreenState extends State<VendorSalesScreen> {
       Wrap(spacing: 7, children: <Widget>[for (final value in <String>['Today', '7 days', 'This Month']) ChoiceChip(label: Text(value), selected: period == value, onSelected: (_) => setState(() => period = value))]),
       const SizedBox(height: 10),
       if (bills.isEmpty) const PpEmptyState(icon: Icons.receipt_long, title: 'No receipts yet', message: 'Create a quick bill to start your sales history.'),
-      for (final bill in bills) PpTransactionTile(title: bill.id, subtitle: '${formatDateTime(bill.createdAt)} · ${bill.paymentMode}', trailing: money(bill.total), icon: Icons.receipt_long_outlined, onTap: () => widget.state.openBill(bill)),
+      for (final bill in bills) PpTransactionTile(title: bill.displayNumber, subtitle: '${formatDateTime(bill.createdAt)} · ${bill.paymentMode}', trailing: money(bill.total), icon: Icons.receipt_long_outlined, onTap: () => widget.state.openBill(bill)),
       const SizedBox(height: 8),
       const PpDemoNotice(message: 'Date chips demonstrate the UI; period-specific filtering will be added with the live data layer.'),
     ]));

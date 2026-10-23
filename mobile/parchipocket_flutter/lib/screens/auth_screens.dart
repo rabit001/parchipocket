@@ -3,6 +3,68 @@ import '../app_state.dart';
 import '../theme.dart';
 import '../widgets/ui.dart';
 
+class AuthSessionLoadingScreen extends StatelessWidget {
+  const AuthSessionLoadingScreen({super.key, required this.state});
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) => const Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Checking your account…'),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+class ProfileLoadErrorScreen extends StatelessWidget {
+  const ProfileLoadErrorScreen({super.key, required this.state});
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Icon(Icons.cloud_off_outlined, size: 42, color: PpColors.error),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Could not verify your account',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    state.cloudError ?? 'Check your connection and try again.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12, color: PpColors.secondary),
+                  ),
+                  const SizedBox(height: 20),
+                  PpPrimaryButton(
+                    'Retry',
+                    onPressed: state.isCloudLoading ? null : () => state.retryProfileLoad(),
+                  ),
+                  const SizedBox(height: 8),
+                  PpSecondaryButton('Log Out', onPressed: () => state.go('logout')),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+}
+
 class SplashScreen extends StatelessWidget {
   const SplashScreen({super.key, required this.state});
   final AppState state;
@@ -94,6 +156,8 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
   Widget build(BuildContext context) {
     final isLoading = widget.state.isPhoneAuthLoading;
     final errorMessage = widget.state.phoneAuthError;
+    final cooldown = widget.state.otpCooldownSecondsRemaining;
+    final buttonText = cooldown > 0 ? 'Send OTP (Wait ${cooldown}s)' : 'Send OTP';
 
     return PpScaffold(
       state: widget.state,
@@ -138,11 +202,15 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
               ),
             )
           else
-            PpPrimaryButton('Send OTP', icon: Icons.sms_outlined, onPressed: _sendOtp),
+            PpPrimaryButton(
+              buttonText,
+              icon: Icons.sms_outlined,
+              onPressed: cooldown > 0 ? null : _sendOtp,
+            ),
           const SizedBox(height: 18),
           const PpDemoNotice(
             message:
-                'Firebase Phone Auth enabled. Enter your 10-digit phone number or use configured Firebase Console test numbers.',
+                'Firebase Phone Auth enabled with 60s cooldown protection. Enter your 10-digit phone number or use configured Firebase Console test numbers.',
           ),
         ],
       ),
@@ -209,6 +277,8 @@ class _OtpScreenState extends State<OtpScreen> {
     final phoneDisplay = widget.state.phoneNumber.isEmpty
         ? 'your mobile number'
         : widget.state.phoneNumber;
+    final cooldown = widget.state.otpCooldownSecondsRemaining;
+    final resendText = cooldown > 0 ? 'Resend OTP (${cooldown}s)' : 'Didn\'t receive code? Resend OTP';
 
     return PpScaffold(
       state: widget.state,
@@ -257,8 +327,8 @@ class _OtpScreenState extends State<OtpScreen> {
             const SizedBox(height: 12),
             Center(
               child: TextButton(
-                onPressed: _resendCode,
-                child: const Text('Didn\'t receive code? Resend OTP'),
+                onPressed: cooldown > 0 ? null : _resendCode,
+                child: Text(resendText),
               ),
             ),
           ],
@@ -311,8 +381,44 @@ class CustomerSetupScreen extends StatefulWidget {
 class _CustomerSetupScreenState extends State<CustomerSetupScreen> {
   late final TextEditingController name = TextEditingController(text: widget.state.customerName);
   late final TextEditingController email = TextEditingController(text: widget.state.customerEmail);
+  bool _isSubmitting = false;
+
   @override
   void dispose() { name.dispose(); email.dispose(); super.dispose(); }
+
+  Future<void> _saveProfile() async {
+    if (_isSubmitting) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _isSubmitting = true);
+    try {
+      final success = await widget.state.updateProfile(
+        name: name.text,
+        email: email.text,
+        location: widget.state.city,
+        successPage: null,
+      );
+      if (!mounted) return;
+      if (success) {
+        final message = widget.state.isDemoMode
+            ? 'Profile saved in local demo mode.'
+            : 'Profile saved to your account.';
+        messenger.showSnackBar(SnackBar(content: Text(message)));
+        widget.state.go('customerHome');
+      } else {
+        final error = widget.state.cloudError ?? 'Profile was not saved. Please retry.';
+        messenger.showSnackBar(SnackBar(content: Text(error)));
+      }
+    } catch (error) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('Profile was not saved. Check your connection and retry. ($error)')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => PpScaffold(state: widget.state, title: 'Set up your profile', backTo: 'roleSelection', body: ListView(children: <Widget>[
         const SizedBox(height: 10),
@@ -337,10 +443,10 @@ class _CustomerSetupScreenState extends State<CustomerSetupScreen> {
         const SizedBox(height: 18),
         const PpDemoNotice(message: 'A seller should link a receipt to your account only with verified details and your permission.'),
         const SizedBox(height: 20),
-        PpPrimaryButton('Save & Continue', onPressed: () {
-          widget.state.updateProfile(name: name.text, email: email.text, location: widget.state.city);
-          widget.state.go('customerHome');
-        }),
+        PpPrimaryButton(
+          _isSubmitting ? 'Saving…' : 'Save & Continue',
+          onPressed: _isSubmitting ? null : _saveProfile,
+        ),
       ]));
 }
 
@@ -354,8 +460,43 @@ class _ShopSetupScreenState extends State<ShopSetupScreen> {
   late final TextEditingController name = TextEditingController(text: widget.state.shopName);
   late final TextEditingController address = TextEditingController(text: widget.state.shopAddress);
   String category = 'Kirana';
+  bool _isSubmitting = false;
+
   @override
   void dispose() { name.dispose(); address.dispose(); super.dispose(); }
+
+  Future<void> _saveShop() async {
+    if (_isSubmitting) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _isSubmitting = true);
+    try {
+      final success = await widget.state.updateShop(
+        name: name.text,
+        category: category,
+        address: address.text,
+      );
+      if (!mounted) return;
+      if (success) {
+        final message = widget.state.isDemoMode
+            ? 'Shop profile saved in local demo mode.'
+            : 'Shop profile saved to your account.';
+        messenger.showSnackBar(SnackBar(content: Text(message)));
+        widget.state.go('shopHome');
+      } else {
+        final error = widget.state.cloudError ?? 'Shop profile was not saved. Please retry.';
+        messenger.showSnackBar(SnackBar(content: Text(error)));
+      }
+    } catch (error) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('Shop profile was not saved. Check your connection and retry. ($error)')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => PpScaffold(state: widget.state, title: 'Register your shop', backTo: 'roleSelection', body: ListView(children: <Widget>[
         const Text('Set up billing for your business.', style: TextStyle(fontSize: 13, color: PpColors.secondary)),
@@ -370,7 +511,10 @@ class _ShopSetupScreenState extends State<ShopSetupScreen> {
         const SizedBox(height: 17),
         const PpDemoNotice(message: 'GSTIN and Bluetooth printer setup can be added later. This screen does not register a legal business.'),
         const SizedBox(height: 20),
-        PpPrimaryButton('Create Shop Profile', onPressed: () => widget.state.updateShop(name: name.text, category: category, address: address.text)),
+        PpPrimaryButton(
+          _isSubmitting ? 'Saving…' : 'Create Shop Profile',
+          onPressed: _isSubmitting ? null : _saveShop,
+        ),
       ]));
 }
 
@@ -383,8 +527,39 @@ class VendorSetupScreen extends StatefulWidget {
 class _VendorSetupScreenState extends State<VendorSetupScreen> {
   late final TextEditingController name = TextEditingController(text: widget.state.vendorName);
   String category = 'Tea / Snacks';
+  bool _isSubmitting = false;
+
   @override
   void dispose() { name.dispose(); super.dispose(); }
+
+  Future<void> _saveVendor() async {
+    if (_isSubmitting) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _isSubmitting = true);
+    try {
+      final success = await widget.state.updateVendor(name: name.text, category: category);
+      if (!mounted) return;
+      if (success) {
+        final message = widget.state.isDemoMode
+            ? 'Vendor profile saved in local demo mode.'
+            : 'Vendor profile saved to your account.';
+        messenger.showSnackBar(SnackBar(content: Text(message)));
+        widget.state.go('vendorHome');
+      } else {
+        final error = widget.state.cloudError ?? 'Vendor profile was not saved. Please retry.';
+        messenger.showSnackBar(SnackBar(content: Text(error)));
+      }
+    } catch (error) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('Vendor profile was not saved. Check your connection and retry. ($error)')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => PpScaffold(state: widget.state, title: 'Quick setup', backTo: 'roleSelection', body: ListView(children: <Widget>[
         const Text('Start billing without creating a product catalogue.', style: TextStyle(fontSize: 13, color: PpColors.secondary)),
@@ -397,7 +572,10 @@ class _VendorSetupScreenState extends State<VendorSetupScreen> {
         const SizedBox(height: 20),
         const PpDemoNotice(message: 'Quick mode keeps setup minimal. Item entry, saving and receipt generation are local demo flows.'),
         const SizedBox(height: 20),
-        PpPrimaryButton('Start Quick Billing', onPressed: () => widget.state.updateVendor(name: name.text, category: category)),
+        PpPrimaryButton(
+          _isSubmitting ? 'Saving…' : 'Start Quick Billing',
+          onPressed: _isSubmitting ? null : _saveVendor,
+        ),
         const SizedBox(height: 10),
         PpSecondaryButton('Skip for now', onPressed: () => widget.state.go('vendorHome')),
       ]));

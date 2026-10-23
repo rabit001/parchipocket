@@ -56,6 +56,9 @@ class PpScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasError = state.cloudError != null && state.cloudError!.isNotEmpty;
+    final isLoading = state.isCloudLoading;
+
     return Scaffold(
       appBar: AppBar(
         leading: showBack
@@ -70,7 +73,42 @@ class PpScaffold extends StatelessWidget {
       ),
       body: SafeArea(
         top: false,
-        child: Padding(padding: padding, child: body),
+        child: Padding(
+          padding: padding,
+          child: Column(
+            children: <Widget>[
+              if (isLoading)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: LinearProgressIndicator(minHeight: 3),
+                ),
+              if (hasError)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(Icons.error_outline, size: 16, color: Colors.red.shade800),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          state.cloudError!,
+                          style: TextStyle(fontSize: 11, color: Colors.red.shade800),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Expanded(child: body),
+            ],
+          ),
+        ),
       ),
       bottomNavigationBar: bottomNav
           ? NavigationBar(
