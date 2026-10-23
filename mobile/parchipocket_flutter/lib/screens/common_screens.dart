@@ -176,7 +176,7 @@ class ShareReceiptScreen extends StatelessWidget {
     return PpScaffold(state: state, title: 'Share receipt', backTo: bill == null ? 'customerHome' : 'billDetail', body: ListView(children: <Widget>[
         PpCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
           Text((bill?.store ?? state.activeStoreName).toUpperCase(), style: const TextStyle(fontSize: 10, color: PpColors.secondary, fontWeight: FontWeight.w700)), const SizedBox(height: 7),
-          Text('Bill ${bill?.id ?? 'Sample'}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)), const SizedBox(height: 5),
+          Text('Bill ${bill?.displayNumber ?? 'Sample'}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)), const SizedBox(height: 5),
           Text(bill == null ? 'Sample receipt preview' : formatDateTime(bill.createdAt), style: const TextStyle(fontSize: 10, color: PpColors.secondary)), const SizedBox(height: 8),
           Align(alignment: Alignment.centerRight, child: Text(money(bill?.total ?? 0), style: const TextStyle(color: PpColors.forest, fontSize: 22, fontWeight: FontWeight.w800))),
         ])),
@@ -224,11 +224,36 @@ class LogoutScreen extends StatelessWidget {
         const SizedBox(height: 10),
         const Text('You will need to sign in again to access your account in the live app.', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: PpColors.secondary)),
         const SizedBox(height: 22),
-        const PpDemoNotice(message: 'This is a demo session with no real authentication. Logging out only returns to the welcome screen.'),
+        PpDemoNotice(message: state.isDemoMode
+            ? 'Logging out returns to the welcome screen and clears demo session data.'
+            : 'Logging out ends your Firebase session and clears account data from this device.'),
         const SizedBox(height: 21),
-        PpPrimaryButton('Log Out', onPressed: () => state.go('splash')),
+        if (state.signOutError != null) ...<Widget>[
+          PpCard(color: PpColors.errorSoft, child: Text(
+            state.signOutError!,
+            style: const TextStyle(color: PpColors.error, fontSize: 11),
+          )),
+          const SizedBox(height: 12),
+        ],
+        PpPrimaryButton(
+          state.isSigningOut ? 'Logging out…' : 'Log Out',
+          onPressed: state.isSigningOut || state.isCloudLoading
+              ? null
+              : () async {
+                  final success = await state.signOut();
+                  if (!context.mounted || success) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(state.signOutError ?? 'Could not log out. Please retry.')),
+                  );
+                },
+        ),
         const SizedBox(height: 10),
-        PpSecondaryButton('Stay Signed In', onPressed: () => state.go(state.role == UserRole.customer ? 'settings' : state.role == UserRole.shopOwner ? 'shopSettings' : 'vendorProfile')),
+        PpSecondaryButton(
+          'Stay Signed In',
+          onPressed: state.isSigningOut || state.isCloudLoading
+              ? null
+              : () => state.go(state.role == UserRole.customer ? 'settings' : state.role == UserRole.shopOwner ? 'shopSettings' : 'vendorProfile'),
+        ),
       ]));
 }
 
@@ -306,7 +331,22 @@ class LanguageScreen extends StatelessWidget {
   Widget build(BuildContext context) => PpScaffold(state: state, title: 'Language', backTo: state.role == UserRole.customer ? 'settings' : state.role == UserRole.shopOwner ? 'shopSettings' : 'vendorProfile', body: ListView(children: <Widget>[
         const Text('Choose your preferred language.', style: TextStyle(fontSize: 12, color: PpColors.secondary)),
         const SizedBox(height: 12),
-        for (final option in <String>['English', 'हिन्दी (Hindi)', 'मराठी (Marathi)']) Card(child: ListTile(title: Text(option, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)), trailing: Radio<String>(value: option, groupValue: state.language, activeColor: PpColors.forest, onChanged: (v) { if (v != null) { state.setLanguage(v); } }), onTap: () => state.setLanguage(option))),
+        RadioGroup<String>(
+          groupValue: state.language,
+          onChanged: (value) {
+            if (value != null) state.setLanguage(value);
+          },
+          child: Column(children: <Widget>[
+            for (final option in <String>['English', 'हिन्दी (Hindi)', 'मराठी (Marathi)'])
+              Card(
+                child: ListTile(
+                  title: Text(option, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                  trailing: Radio<String>(value: option, activeColor: PpColors.forest),
+                  onTap: () => state.setLanguage(option),
+                ),
+              ),
+          ]),
+        ),
         const SizedBox(height: 14),
         PpPrimaryButton('Save Language', onPressed: () { state.lastNotice = 'Language preference changed to ${state.language}.'; state.go(state.role == UserRole.customer ? 'settings' : state.role == UserRole.shopOwner ? 'shopSettings' : 'vendorProfile'); }),
         const SizedBox(height: 12),
@@ -346,7 +386,7 @@ class _SearchScreenState extends State<SearchScreen> {
   void dispose() { search.dispose(); super.dispose(); }
   @override
   Widget build(BuildContext context) {
-    final bills = widget.state.customerBills.where((b) => '${b.store} ${b.id}'.toLowerCase().contains(search.text.toLowerCase())).toList();
+    final bills = widget.state.customerBills.where((b) => '${b.store} ${b.id} ${b.displayNumber}'.toLowerCase().contains(search.text.toLowerCase())).toList();
     final shops = <String>['Sharma Kirana Store', 'Gupta General Store', 'Fresh Mart', 'Singh Dairy', 'Raju Vegetables'].where((s) => s.toLowerCase().contains(search.text.toLowerCase())).toList();
     return PpScaffold(state: widget.state, title: 'Search', backTo: 'customerHome', bottomNav: true, bottomTab: 'customerHome', body: Column(children: <Widget>[
       TextField(controller: search, onChanged: (_) => setState(() {}), decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Shop name, item or bill ID')),
@@ -361,7 +401,7 @@ class _SearchScreenState extends State<SearchScreen> {
         if (type != 'Shops') ...<Widget>[
           const SizedBox(height: 8),
           const PpSectionTitle('Bills'),
-          for (final bill in bills) PpTransactionTile(title: bill.store, subtitle: '${bill.id} · ${formatShortDate(bill.createdAt)}', trailing: money(bill.total), onTap: () => widget.state.openBill(bill), icon: Icons.receipt_long_outlined),
+          for (final bill in bills) PpTransactionTile(title: bill.store, subtitle: '${bill.displayNumber} · ${formatShortDate(bill.createdAt)}', trailing: money(bill.total), onTap: () => widget.state.openBill(bill), icon: Icons.receipt_long_outlined),
         ],
         const SizedBox(height: 10),
         const PpDemoNotice(message: 'Search covers local demo shop and receipt data only.'),

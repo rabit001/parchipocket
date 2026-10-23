@@ -1,4 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/material.dart';
 import 'app_state.dart';
 import 'firebase_options.dart';
@@ -14,6 +15,12 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  try {
+    await FirebaseAppCheck.instance.activate(
+      androidProvider: AndroidProvider.playIntegrity,
+      appleProvider: AppleProvider.deviceCheck,
+    );
+  } catch (_) {}
   runApp(const ParchiPocketApp());
 }
 
@@ -34,6 +41,8 @@ class _ParchiPocketAppState extends State<ParchiPocketApp> {
   }
 
   Widget _screenForCurrentPage() => switch (state.page) {
+        'authLoading' => AuthSessionLoadingScreen(state: state),
+        'profileLoadError' => ProfileLoadErrorScreen(state: state),
         'splash' => SplashScreen(state: state),
         'login' => LoginScreen(state: state),
         'phoneLogin' => PhoneLoginScreen(state: state),

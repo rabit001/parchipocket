@@ -39,7 +39,7 @@ class ShopHomeScreen extends StatelessWidget {
       const SizedBox(height: 17),
       PpSectionTitle('Recent bills', action: 'See all', onAction: () => state.go('billHistory')),
       const SizedBox(height: 5),
-      for (final bill in state.shopBills.take(3)) PpTransactionTile(title: bill.id, subtitle: '${bill.store} · ${formatDateTime(bill.createdAt)}', trailing: money(bill.total), onTap: () => state.openBill(bill), icon: Icons.receipt_long_outlined),
+      for (final bill in state.shopBills.take(3)) PpTransactionTile(title: bill.displayNumber, subtitle: '${bill.store} · ${formatDateTime(bill.createdAt)}', trailing: money(bill.total), onTap: () => state.openBill(bill), icon: Icons.receipt_long_outlined),
       const SizedBox(height: 10),
       const PpDemoNotice(message: 'Figures are based on sample/local records. This is not a profit calculation and is not synced to a server.'),
     ]));
@@ -76,6 +76,7 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   final List<BillLine> lines = <BillLine>[];
   String paymentMode = 'Cash';
   String? validationError;
+  bool _isSubmitting = false;
 
   @override
   void dispose() { itemName.dispose(); quantity.dispose(); unitPrice.dispose(); customerPhone.dispose(); super.dispose(); }
@@ -83,6 +84,11 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   double get total => lines.fold<double>(0, (sum, line) => sum + line.total);
 
   void addItem({String? name, double? price}) {
+    if (_isSubmitting) return;
+    if (lines.length >= 10) {
+      setState(() => validationError = 'Maximum 10 items allowed per bill.');
+      return;
+    }
     final item = name ?? itemName.text.trim();
     final count = int.tryParse(quantity.text.trim()) ?? 1;
     final parsedPrice = price ?? double.tryParse(unitPrice.text.trim());
@@ -97,6 +103,35 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       quantity.text = '1';
       unitPrice.clear();
     });
+  }
+
+  Future<void> _createBill() async {
+    if (_isSubmitting) return;
+    if (lines.isEmpty) {
+      setState(() => validationError = 'Add at least one item before generating the bill.');
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      validationError = null;
+    });
+    try {
+      await widget.state.createBill(
+        items: lines,
+        paymentMode: paymentMode,
+        customerPhone: customerPhone.text.trim(),
+        vendorMode: widget.vendorMode,
+      );
+    } catch (error) {
+      if (mounted) {
+        final message = widget.state.cloudError ??
+            'Bill was not saved. Check your connection and retry. ($error)';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
   }
 
   @override
@@ -145,13 +180,11 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       const SizedBox(height: 15),
       PpCard(child: Row(children: <Widget>[const Expanded(child: Text('Bill total', style: TextStyle(fontWeight: FontWeight.w800))), Text(money(total), style: const TextStyle(color: PpColors.forest, fontSize: 21, fontWeight: FontWeight.w800))])),
       const SizedBox(height: 12),
-      PpPrimaryButton(widget.vendorMode ? 'Generate Simple Bill' : 'Generate Bill', icon: Icons.receipt_long_outlined, onPressed: () {
-        if (lines.isEmpty) {
-          setState(() => validationError = 'Add at least one item before generating the bill.');
-          return;
-        }
-        widget.state.createBill(items: lines, paymentMode: paymentMode, customerPhone: customerPhone.text.trim(), vendorMode: widget.vendorMode);
-      }),
+       PpPrimaryButton(
+         _isSubmitting ? 'Saving bill…' : (widget.vendorMode ? 'Generate Simple Bill' : 'Generate Bill'),
+         icon: _isSubmitting ? null : Icons.receipt_long_outlined,
+         onPressed: _isSubmitting ? null : _createBill,
+       ),
       const SizedBox(height: 10),
       const PpDemoNotice(message: 'This saves a receipt to local demo state. Customer number linking is not verified, and no message or printer action is triggered.'),
     ]));
@@ -192,7 +225,7 @@ class ReceiptScreen extends StatelessWidget {
       const SizedBox(height: 12),
       const Text('Receipt ready', textAlign: TextAlign.center, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
       const SizedBox(height: 4),
-      Text('Bill ID: ${bill.id}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: PpColors.secondary)),
+      Text('Bill ID: ${bill.displayNumber}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: PpColors.secondary)),
       const SizedBox(height: 18),
       PpCard(padding: const EdgeInsets.all(18), child: Column(children: <Widget>[
         Text(bill.store.toUpperCase(), textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
@@ -234,7 +267,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   Widget build(BuildContext context) {
     final bills = widget.state.shopBills.where((bill) {
       final q = search.text.toLowerCase();
-      final matches = bill.id.toLowerCase().contains(q) || bill.customerPhone.toLowerCase().contains(q) || bill.store.toLowerCase().contains(q);
+      final matches = bill.id.toLowerCase().contains(q) || bill.displayNumber.toLowerCase().contains(q) || bill.customerPhone.toLowerCase().contains(q) || bill.store.toLowerCase().contains(q);
       final paymentMatches = filter == 'All' || (filter == 'Paid' && !bill.isUdhaar) || (filter == 'Udhaar' && bill.isUdhaar);
       return matches && paymentMatches;
     }).toList();
@@ -243,7 +276,7 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
       const SizedBox(height: 10),
       Wrap(spacing: 7, children: <Widget>[for (final value in <String>['All', 'Paid', 'Udhaar']) ChoiceChip(label: Text(value), selected: filter == value, onSelected: (_) => setState(() => filter = value))]),
       const SizedBox(height: 8),
-      Expanded(child: bills.isEmpty ? const PpEmptyState(icon: Icons.receipt_long, title: 'No bills found', message: 'Create a bill or change your search.') : ListView.builder(itemCount: bills.length, itemBuilder: (context, index) { final bill = bills[index]; return PpTransactionTile(title: bill.id, subtitle: '${bill.store} · ${formatDateTime(bill.createdAt)} · ${bill.paymentMode}', trailing: money(bill.total), icon: Icons.receipt_long_outlined, onTap: () => widget.state.openBill(bill)); })),
+      Expanded(child: bills.isEmpty ? const PpEmptyState(icon: Icons.receipt_long, title: 'No bills found', message: 'Create a bill or change your search.') : ListView.builder(itemCount: bills.length, itemBuilder: (context, index) { final bill = bills[index]; return PpTransactionTile(title: bill.displayNumber, subtitle: '${bill.store} · ${formatDateTime(bill.createdAt)} · ${bill.paymentMode}', trailing: money(bill.total), icon: Icons.receipt_long_outlined, onTap: () => widget.state.openBill(bill)); })),
     ]));
   }
 }
@@ -259,8 +292,36 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   final TextEditingController note = TextEditingController();
   String category = 'Stock';
   String? error;
+  bool _isSubmitting = false;
   @override
   void dispose() { amount.dispose(); note.dispose(); super.dispose(); }
+
+  Future<void> _saveExpense(double value) async {
+    if (_isSubmitting) return;
+    setState(() {
+      _isSubmitting = true;
+      error = null;
+    });
+    try {
+      final success = await widget.state.addExpense(
+        title: note.text.isEmpty ? '$category expense' : note.text,
+        category: category,
+        amount: value,
+      );
+      if (!mounted || success) return;
+      final message = widget.state.cloudError ?? 'Expense was not saved. Please retry.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } catch (exception) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Expense was not saved. Check your connection and retry. ($exception)')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => PpScaffold(state: widget.state, title: 'Expenses', backTo: 'shopHome', bottomNav: true, bottomTab: 'shopSettings', body: ListView(children: <Widget>[
         PpMetricCard(label: 'Expenses recorded', value: money(widget.state.expensesTotal), subtitle: '${widget.state.expenses.length} sample/local entries', color: PpColors.error),
@@ -276,10 +337,10 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         Wrap(spacing: 7, children: <Widget>[for (final item in <String>['Stock', 'Transport', 'Rent', 'Other']) ChoiceChip(label: Text(item), selected: category == item, onSelected: (_) => setState(() => category = item))]),
         if (error != null) Padding(padding: const EdgeInsets.only(top: 9), child: Text(error!, style: const TextStyle(color: PpColors.error, fontSize: 11))),
         const SizedBox(height: 15),
-        PpPrimaryButton('Save Expense', icon: Icons.save_outlined, onPressed: () {
+        PpPrimaryButton(_isSubmitting ? 'Saving…' : 'Save Expense', icon: Icons.save_outlined, onPressed: _isSubmitting ? null : () {
           final value = double.tryParse(amount.text.trim());
           if (value == null || value <= 0) { setState(() => error = 'Enter an amount greater than ₹0.'); return; }
-          widget.state.addExpense(title: note.text.isEmpty ? '$category expense' : note.text, category: category, amount: value);
+          _saveExpense(value);
         }),
         const SizedBox(height: 19),
         const PpSectionTitle('Recent expenses'),
@@ -304,7 +365,7 @@ class ExpenseSavedScreen extends StatelessWidget {
       const SizedBox(height: 20),
       if (item != null) PpCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[const Text('Amount', style: TextStyle(fontSize: 10, color: PpColors.secondary)), const SizedBox(height: 7), Text(money(item.amount), style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w800, color: PpColors.error)), const SizedBox(height: 8), Text(item.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)), const SizedBox(height: 5), Text('${item.category} · ${formatDateTime(item.createdAt)}', style: const TextStyle(fontSize: 10, color: PpColors.secondary))])),
       const SizedBox(height: 15),
-      const PpDemoNotice(message: 'This expense was added only to local demo state.'),
+      PpDemoNotice(message: state.isDemoMode ? 'This expense was added to local demo state.' : 'Expense saved to your ParchiPocket cloud account.'),
       const SizedBox(height: 20),
       PpPrimaryButton('Back to Expenses', onPressed: () => state.go('expenses')),
       const SizedBox(height: 10),
@@ -326,32 +387,70 @@ class UdhaarScreen extends StatelessWidget {
         for (final bill in state.udhaarBills) Padding(padding: const EdgeInsets.only(bottom: 9), child: PpCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
           Row(children: <Widget>[Expanded(child: Text(bill.customerPhone.isEmpty ? 'Walk-in Customer' : 'Customer ${bill.customerPhone}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800))), Text(money(bill.total), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: PpColors.error))]),
           const SizedBox(height: 5),
-          Text('${bill.id} · ${formatShortDate(bill.createdAt)}', style: const TextStyle(fontSize: 10, color: PpColors.secondary)),
+          Text('${bill.displayNumber} · ${formatShortDate(bill.createdAt)}', style: const TextStyle(fontSize: 10, color: PpColors.secondary)),
           const SizedBox(height: 10),
           Align(alignment: Alignment.centerRight, child: OutlinedButton(onPressed: () { state.selectedBill = bill; state.go('confirmSettlement'); }, child: const Text('Mark settled'))),
         ]))),
       ]));
 }
 
-class ConfirmSettlementScreen extends StatelessWidget {
+class ConfirmSettlementScreen extends StatefulWidget {
   const ConfirmSettlementScreen({super.key, required this.state});
   final AppState state;
+
+  @override
+  State<ConfirmSettlementScreen> createState() => _ConfirmSettlementScreenState();
+}
+
+class _ConfirmSettlementScreenState extends State<ConfirmSettlementScreen> {
+  bool _isSubmitting = false;
+
+  Future<void> _confirmSettlement(DemoBill bill) async {
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
+    try {
+      final success = await widget.state.markSettled(bill);
+      if (!mounted) return;
+      if (success) {
+        final message = widget.state.isDemoMode
+            ? 'Marked settled (local demo mode).'
+            : 'Settlement updated in cloud.';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+        widget.state.go('udhaar');
+      } else {
+        final message = widget.state.cloudError ?? 'Settlement was not updated. Please retry.';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Settlement was not updated. Check your connection and retry. ($error)')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bill = state.selectedBill;
-    return PpScaffold(state: state, title: 'Confirm settlement', backTo: 'udhaar', body: ListView(children: <Widget>[
+    final bill = widget.state.selectedBill;
+    return PpScaffold(state: widget.state, title: 'Confirm settlement', backTo: 'udhaar', body: ListView(children: <Widget>[
       const SizedBox(height: 9),
       const Text('Confirm payment received?', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
       const SizedBox(height: 7),
       const Text('Only mark a bill as settled after verifying that the customer has paid.', style: TextStyle(fontSize: 12, color: PpColors.secondary)),
       const SizedBox(height: 17),
-      if (bill != null) PpCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[const Text('SAMPLE RECORD', style: TextStyle(fontSize: 10, color: PpColors.secondary, fontWeight: FontWeight.w700)), const SizedBox(height: 12), Text(bill.customerPhone.isEmpty ? 'Walk-in Customer' : 'Customer ${bill.customerPhone}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)), const SizedBox(height: 4), Text('${bill.id} · ${formatShortDate(bill.createdAt)}', style: const TextStyle(fontSize: 10, color: PpColors.secondary)), const SizedBox(height: 15), Row(children: <Widget>[const Expanded(child: Text('Outstanding amount', style: TextStyle(fontSize: 11, color: PpColors.secondary))), Text(money(bill.total), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: PpColors.error))])])) ,
+      if (bill != null) PpCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[const Text('SAMPLE RECORD', style: TextStyle(fontSize: 10, color: PpColors.secondary, fontWeight: FontWeight.w700)), const SizedBox(height: 12), Text(bill.customerPhone.isEmpty ? 'Walk-in Customer' : 'Customer ${bill.customerPhone}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)), const SizedBox(height: 4), Text('${bill.displayNumber} · ${formatShortDate(bill.createdAt)}', style: const TextStyle(fontSize: 10, color: PpColors.secondary)), const SizedBox(height: 15), Row(children: <Widget>[const Expanded(child: Text('Outstanding amount', style: TextStyle(fontSize: 11, color: PpColors.secondary))), Text(money(bill.total), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: PpColors.error))])])) ,
       const SizedBox(height: 17),
-      const PpDemoNotice(message: 'Confirmation updates only this local prototype state. No real payment or bank account is changed.'),
+      const PpDemoNotice(message: 'Confirmation updates settlement status. No real payment or bank account is changed.'),
       const SizedBox(height: 18),
-      PpPrimaryButton('Confirm Settlement', onPressed: bill == null ? null : () { state.markSettled(bill); state.go('udhaar'); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Marked settled in the local demo.'))); }),
+      PpPrimaryButton(
+        _isSubmitting ? 'Updating…' : 'Confirm Settlement',
+        onPressed: bill == null || _isSubmitting ? null : () => _confirmSettlement(bill),
+      ),
       const SizedBox(height: 9),
-      PpSecondaryButton('Cancel', onPressed: () => state.go('udhaar')),
+      PpSecondaryButton('Cancel', onPressed: _isSubmitting ? null : () => widget.state.go('udhaar')),
     ]));
   }
 }
@@ -375,7 +474,7 @@ class SalesReportsScreen extends StatelessWidget {
       const SizedBox(height: 16),
       const PpSectionTitle('Recent sales'),
       const SizedBox(height: 6),
-      for (final bill in bills.take(5)) PpTransactionTile(title: bill.id, subtitle: '${bill.paymentMode} · ${formatShortDate(bill.createdAt)}', trailing: money(bill.total), onTap: () => state.openBill(bill)),
+      for (final bill in bills.take(5)) PpTransactionTile(title: bill.displayNumber, subtitle: '${bill.paymentMode} · ${formatShortDate(bill.createdAt)}', trailing: money(bill.total), onTap: () => state.openBill(bill)),
       const SizedBox(height: 12),
       PpSecondaryButton('Export Report (Demo)', icon: Icons.file_download_outlined, onPressed: () => state.go('exportPreview')),
       const SizedBox(height: 10),
@@ -425,7 +524,7 @@ class CustomerDirectoryScreen extends StatelessWidget {
         const SizedBox(height: 12),
         const PpMetricCard(label: 'Customer directory', value: 'Demo', subtitle: 'Customer records will come from the backend'),
         const SizedBox(height: 14),
-        for (final bill in state.udhaarBills) PpTransactionTile(title: bill.customerPhone.isEmpty ? 'Walk-in Customer' : 'Customer ${bill.customerPhone}', subtitle: '${bill.id} · Pending udhaar', trailing: money(bill.total), icon: Icons.person_outline, onTap: () { state.selectedBill = bill; state.go('confirmSettlement'); }),
+        for (final bill in state.udhaarBills) PpTransactionTile(title: bill.customerPhone.isEmpty ? 'Walk-in Customer' : 'Customer ${bill.customerPhone}', subtitle: '${bill.displayNumber} · Pending udhaar', trailing: money(bill.total), icon: Icons.person_outline, onTap: () { state.selectedBill = bill; state.go('confirmSettlement'); }),
         const SizedBox(height: 10),
         const PpDemoNotice(message: 'Customer identity and phone details shown here are demo placeholders. In the live app, store and use contact information only with permission.'),
       ]));
