@@ -54,5 +54,17 @@ void main() {
       expect(state.outstandingTotal, previousOutstanding - bill.total);
       state.dispose();
     });
+
+    test('validates and formats phone numbers to E.164', () {
+      final state = AppState();
+      expect(state.formatPhoneNumber('9876543210'), '+919876543210');
+      expect(state.formatPhoneNumber('+919876543210'), '+919876543210');
+      expect(state.formatPhoneNumber('+91 98765 43210'), '+919876543210');
+      expect(state.formatPhoneNumber('09876543210'), '+919876543210');
+      expect(state.formatPhoneNumber('+16505553434'), '+16505553434');
+      expect(state.formatPhoneNumber('12345'), isNull);
+      expect(state.formatPhoneNumber(''), isNull);
+      state.dispose();
+    });
   });
 }

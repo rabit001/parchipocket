@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 enum UserRole { customer, shopOwner, streetVendor }
@@ -53,6 +54,16 @@ class DemoExpense {
 }
 
 class AppState extends ChangeNotifier {
+  FirebaseAuth? _auth;
+  FirebaseAuth get auth => _auth ??= FirebaseAuth.instance;
+  set auth(FirebaseAuth instance) => _auth = instance;
+
+  String verificationId = '';
+  int? resendToken;
+  String phoneNumber = '';
+  bool isPhoneAuthLoading = false;
+  String? phoneAuthError;
+
   String page = 'splash';
   UserRole role = UserRole.customer;
   String customerName = 'Rabit Mansuri';
@@ -240,5 +251,175 @@ class AppState extends ChangeNotifier {
   void setLanguage(String value) {
     language = value;
     notifyListeners();
+  }
+
+  String? formatPhoneNumber(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+
+    String cleaned = trimmed.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+
+    if (cleaned.startsWith('+')) {
+      final digitsOnly = cleaned.substring(1).replaceAll(RegExp(r'\D'), '');
+      if (digitsOnly.length >= 7 && digitsOnly.length <= 15) {
+        return '+$digitsOnly';
+      }
+      return null;
+    }
+
+    cleaned = cleaned.replaceAll(RegExp(r'\D'), '');
+    if (cleaned.startsWith('0') && cleaned.length == 11) {
+      cleaned = cleaned.substring(1);
+    }
+
+    if (cleaned.length == 10) {
+      return '+91$cleaned';
+    }
+
+    return null;
+  }
+
+  Future<void> sendPhoneOtp({
+    required String rawPhone,
+    required VoidCallback onSuccessCodeSent,
+    required void Function(String error) onError,
+    bool isResend = false,
+  }) async {
+    final formatted = formatPhoneNumber(rawPhone);
+    if (formatted == null) {
+      const err =
+          'Please enter a valid 10-digit mobile number (e.g. 9876543210 or +919876543210).';
+      phoneAuthError = err;
+      notifyListeners();
+      onError(err);
+      return;
+    }
+
+    phoneNumber = formatted;
+    isPhoneAuthLoading = true;
+    phoneAuthError = null;
+    notifyListeners();
+
+    try {
+      await auth.verifyPhoneNumber(
+        phoneNumber: formatted,
+        timeout: const Duration(seconds: 60),
+        forceResendingToken: isResend ? resendToken : null,
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          try {
+            await auth.signInWithCredential(credential);
+            isPhoneAuthLoading = false;
+            phoneAuthError = null;
+            notifyListeners();
+            go('roleSelection');
+          } catch (e) {
+            isPhoneAuthLoading = false;
+            final err = _mapAuthException(e);
+            phoneAuthError = err;
+            notifyListeners();
+            onError(err);
+          }
+        },
+        verificationFailed: (FirebaseAuthException e) {
+          isPhoneAuthLoading = false;
+          final err = _mapAuthException(e);
+          phoneAuthError = err;
+          notifyListeners();
+          onError(err);
+        },
+        codeSent: (String verId, int? forceResendingToken) {
+          verificationId = verId;
+          resendToken = forceResendingToken;
+          isPhoneAuthLoading = false;
+          phoneAuthError = null;
+          notifyListeners();
+          onSuccessCodeSent();
+        },
+        codeAutoRetrievalTimeout: (String verId) {
+          verificationId = verId;
+        },
+      );
+    } catch (e) {
+      isPhoneAuthLoading = false;
+      final err = _mapAuthException(e);
+      phoneAuthError = err;
+      notifyListeners();
+      onError(err);
+    }
+  }
+
+  Future<void> verifySmsCode({
+    required String smsCode,
+    required void Function(String error) onError,
+  }) async {
+    final cleanCode = smsCode.trim();
+    if (cleanCode.length != 6) {
+      const err = 'Please enter a valid 6-digit OTP.';
+      phoneAuthError = err;
+      notifyListeners();
+      onError(err);
+      return;
+    }
+
+    if (verificationId.isEmpty) {
+      const err = 'Verification session expired. Please request a new OTP.';
+      phoneAuthError = err;
+      notifyListeners();
+      onError(err);
+      return;
+    }
+
+    isPhoneAuthLoading = true;
+    phoneAuthError = null;
+    notifyListeners();
+
+    try {
+      final credential = PhoneAuthProvider.credential(
+        verificationId: verificationId,
+        smsCode: cleanCode,
+      );
+      await auth.signInWithCredential(credential);
+      isPhoneAuthLoading = false;
+      phoneAuthError = null;
+      notifyListeners();
+      go('roleSelection');
+    } catch (e) {
+      isPhoneAuthLoading = false;
+      final err = _mapAuthException(e);
+      phoneAuthError = err;
+      notifyListeners();
+      onError(err);
+    }
+  }
+
+  String _mapAuthException(dynamic e) {
+    if (e is FirebaseAuthException) {
+      switch (e.code) {
+        case 'invalid-phone-number':
+          return 'The phone number entered is invalid. Please check the number and try again.';
+        case 'quota-exceeded':
+          return 'SMS quota for this project has been exceeded. Please try again later.';
+        case 'too-many-requests':
+          return 'Too many requests from this device. Please try again later.';
+        case 'network-request-failed':
+          return 'Network error. Please check your internet connection.';
+        case 'invalid-verification-code':
+          return 'Invalid OTP entered. Please check and try again.';
+        case 'invalid-verification-id':
+          return 'Verification session expired. Please request a new OTP.';
+        case 'session-expired':
+          return 'OTP has expired. Please request a new OTP.';
+        case 'user-disabled':
+          return 'This user account has been disabled.';
+        case 'operation-not-allowed':
+          return 'Phone authentication is not enabled in Firebase Console.';
+        default:
+          if (e.message != null && e.message!.isNotEmpty) {
+            return e.message!;
+          }
+          return 'Authentication failed (${e.code}). Please try again.';
+      }
+    }
+    return e.toString();
   }
 }
