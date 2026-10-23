@@ -1,5 +1,7 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'app_state.dart';
+import 'firebase_options.dart';
 import 'screens/auth_screens.dart';
 import 'screens/common_screens.dart';
 import 'screens/customer_screens.dart';
@@ -7,7 +9,13 @@ import 'screens/shop_screens.dart';
 import 'screens/vendor_screens.dart';
 import 'theme.dart';
 
-void main() => runApp(const ParchiPocketApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  runApp(const ParchiPocketApp());
+}
 
 class ParchiPocketApp extends StatefulWidget {
   const ParchiPocketApp({super.key});

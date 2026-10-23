@@ -38,7 +38,7 @@ class LoginScreen extends StatelessWidget {
           const SizedBox(height: 12),
           PpPrimaryButton('Continue with Phone Number', icon: Icons.phone_android, onPressed: () => state.go('phoneLogin')),
           const SizedBox(height: 16),
-          const PpDemoNotice(message: 'Authentication is simulated for this frontend demo. No Google account is connected and no OTP is sent.'),
+          const PpDemoNotice(message: 'Phone authentication uses Firebase Authentication. Google sign-in is simulated for this prototype.'),
           const SizedBox(height: 22),
           TextButton(onPressed: () => state.go('roleSelection'), child: const Text('Skip sign-in and explore demo')),
         ]),
@@ -54,25 +54,100 @@ class PhoneLoginScreen extends StatefulWidget {
 
 class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
   final TextEditingController phone = TextEditingController();
+
   @override
-  void dispose() { phone.dispose(); super.dispose(); }
+  void initState() {
+    super.initState();
+    if (widget.state.phoneNumber.isNotEmpty) {
+      phone.text = widget.state.phoneNumber.startsWith('+91')
+          ? widget.state.phoneNumber.substring(3)
+          : widget.state.phoneNumber;
+    }
+  }
+
   @override
-  Widget build(BuildContext context) => PpScaffold(state: widget.state, title: 'Continue with phone', backTo: 'login', body: ListView(children: <Widget>[
-        const SizedBox(height: 8),
-        const Text('Enter your number to keep your bills safe and accessible.', style: TextStyle(fontSize: 13, color: PpColors.secondary)),
-        const SizedBox(height: 26),
-        PpField(label: 'Mobile number', controller: phone, hint: '+91  Enter 10-digit number', keyboardType: TextInputType.phone),
-        const SizedBox(height: 18),
-        PpPrimaryButton('Send OTP', onPressed: () {
-          if (phone.text.trim().length < 10) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter a 10-digit mobile number for the demo.')));
-          } else {
-            widget.state.go('verifyOtp');
-          }
-        }),
-        const SizedBox(height: 18),
-        const PpDemoNotice(message: 'Demo OTP: 123456. Real SMS delivery and number verification are not connected yet.'),
-      ]));
+  void dispose() {
+    phone.dispose();
+    super.dispose();
+  }
+
+  void _sendOtp() {
+    FocusScope.of(context).unfocus();
+    widget.state.sendPhoneOtp(
+      rawPhone: phone.text,
+      onSuccessCodeSent: () {
+        if (mounted) {
+          widget.state.go('verifyOtp');
+        }
+      },
+      onError: (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: Colors.red[800]),
+          );
+        }
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isLoading = widget.state.isPhoneAuthLoading;
+    final errorMessage = widget.state.phoneAuthError;
+
+    return PpScaffold(
+      state: widget.state,
+      title: 'Continue with phone',
+      backTo: 'login',
+      body: ListView(
+        children: <Widget>[
+          const SizedBox(height: 8),
+          const Text(
+            'Enter your mobile number to keep your bills safe and accessible.',
+            style: TextStyle(fontSize: 13, color: PpColors.secondary),
+          ),
+          const SizedBox(height: 24),
+          PpField(
+            label: 'Mobile number',
+            controller: phone,
+            hint: 'e.g. 9876543210 or +919876543210',
+            keyboardType: TextInputType.phone,
+            readOnly: isLoading,
+          ),
+          const SizedBox(height: 18),
+          if (errorMessage != null && errorMessage.isNotEmpty) ...<Widget>[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Text(
+                errorMessage,
+                style: TextStyle(color: Colors.red.shade800, fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (isLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: CircularProgressIndicator(),
+              ),
+            )
+          else
+            PpPrimaryButton('Send OTP', icon: Icons.sms_outlined, onPressed: _sendOtp),
+          const SizedBox(height: 18),
+          const PpDemoNotice(
+            message:
+                'Firebase Phone Auth enabled. Enter your 10-digit phone number or use configured Firebase Console test numbers.',
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class OtpScreen extends StatefulWidget {
@@ -81,27 +156,116 @@ class OtpScreen extends StatefulWidget {
   @override
   State<OtpScreen> createState() => _OtpScreenState();
 }
+
 class _OtpScreenState extends State<OtpScreen> {
   final TextEditingController code = TextEditingController();
+
   @override
-  void dispose() { code.dispose(); super.dispose(); }
+  void dispose() {
+    code.dispose();
+    super.dispose();
+  }
+
+  void _verifyCode() {
+    FocusScope.of(context).unfocus();
+    widget.state.verifySmsCode(
+      smsCode: code.text,
+      onError: (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: Colors.red[800]),
+          );
+        }
+      },
+    );
+  }
+
+  void _resendCode() {
+    FocusScope.of(context).unfocus();
+    widget.state.sendPhoneOtp(
+      rawPhone: widget.state.phoneNumber,
+      isResend: true,
+      onSuccessCodeSent: () {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('A new OTP code has been sent.')),
+          );
+        }
+      },
+      onError: (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: Colors.red[800]),
+          );
+        }
+      },
+    );
+  }
+
   @override
-  Widget build(BuildContext context) => PpScaffold(state: widget.state, title: 'Verify number', backTo: 'phoneLogin', body: ListView(children: <Widget>[
-        const SizedBox(height: 8),
-        const Text('Enter the 6-digit code sent to your phone.', style: TextStyle(fontSize: 13, color: PpColors.secondary)),
-        const SizedBox(height: 26),
-        PpField(label: 'One-time password', controller: code, hint: '123456', keyboardType: TextInputType.number),
-        const SizedBox(height: 12),
-        const Center(child: Text('Demo code: 123456', style: TextStyle(color: PpColors.forest, fontWeight: FontWeight.w700))),
-        const SizedBox(height: 20),
-        PpPrimaryButton('Verify & Continue', onPressed: () {
-          if (code.text.trim() != '123456') {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Use demo code 123456.')));
-          } else {
-            widget.state.go('roleSelection');
-          }
-        }),
-      ]));
+  Widget build(BuildContext context) {
+    final isLoading = widget.state.isPhoneAuthLoading;
+    final errorMessage = widget.state.phoneAuthError;
+    final phoneDisplay = widget.state.phoneNumber.isEmpty
+        ? 'your mobile number'
+        : widget.state.phoneNumber;
+
+    return PpScaffold(
+      state: widget.state,
+      title: 'Verify number',
+      backTo: 'phoneLogin',
+      body: ListView(
+        children: <Widget>[
+          const SizedBox(height: 8),
+          Text(
+            'Enter the 6-digit code sent to $phoneDisplay.',
+            style: const TextStyle(fontSize: 13, color: PpColors.secondary),
+          ),
+          const SizedBox(height: 24),
+          PpField(
+            label: 'One-time password',
+            controller: code,
+            hint: 'Enter 6-digit code',
+            keyboardType: TextInputType.number,
+            readOnly: isLoading,
+          ),
+          const SizedBox(height: 18),
+          if (errorMessage != null && errorMessage.isNotEmpty) ...<Widget>[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Text(
+                errorMessage,
+                style: TextStyle(color: Colors.red.shade800, fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (isLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: CircularProgressIndicator(),
+              ),
+            )
+          else ...<Widget>[
+            PpPrimaryButton('Verify & Continue', icon: Icons.check_circle_outline, onPressed: _verifyCode),
+            const SizedBox(height: 12),
+            Center(
+              child: TextButton(
+                onPressed: _resendCode,
+                child: const Text('Didn\'t receive code? Resend OTP'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class RoleSelectionScreen extends StatelessWidget {
@@ -160,7 +324,14 @@ class _CustomerSetupScreenState extends State<CustomerSetupScreen> {
         const SizedBox(height: 15),
         const Text('Verified phone number', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: PpColors.secondary)),
         const SizedBox(height: 7),
-        const TextField(readOnly: true, decoration: InputDecoration(hintText: '+91  •••••• ••42  Demo only')),
+        TextField(
+          readOnly: true,
+          decoration: InputDecoration(
+            hintText: widget.state.phoneNumber.isNotEmpty
+                ? widget.state.phoneNumber
+                : '+91 Verified Number',
+          ),
+        ),
         const SizedBox(height: 15),
         PpField(label: 'Email (optional)', controller: email, hint: 'name@example.com', keyboardType: TextInputType.emailAddress),
         const SizedBox(height: 18),

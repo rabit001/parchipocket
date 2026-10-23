@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1090179494873",
+    "project_id": "parchipocket",
+    "storage_bucket": "parchipocket.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1090179494873:android:25e358bbb0b9a5a1c19fc8",
+        "android_client_info": {
+          "package_name": "com.parchipocket.app.parchipocket"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBb0yu_-oy8ukeEjGsWyIx69iZqA2sPOIo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
