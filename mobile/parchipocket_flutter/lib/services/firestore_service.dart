@@ -638,9 +638,8 @@ class FirestoreService {
   }
 
   // Saved Shops serialization & persistence
-  String _savedShopId(String shopName) => sha256
-      .convert(utf8.encode(shopName.trim().toLowerCase()))
-      .toString();
+  String _savedShopId(String shopName) =>
+      'shop_${sha256.convert(utf8.encode(shopName.trim().toLowerCase()))}';
 
   String _legacySavedShopId(String shopName) =>
       shopName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
