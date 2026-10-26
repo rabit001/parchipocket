@@ -595,6 +595,28 @@ async function runTests() {
   });
 
   await assertRule({
+    description: '13.3a Owner cannot update an existing expense',
+    method: 'PATCH',
+    path: '/users/userA/expenses/exp1',
+    data: wrapDocument({
+      title: 'Transport',
+      category: 'Transport',
+      amount: 999.0,
+      createdAt: validExpense.createdAt,
+    }),
+    userId: 'userA',
+    expectedStatus: 403,
+  });
+
+  await assertRule({
+    description: '13.3b Owner cannot delete an expense',
+    method: 'DELETE',
+    path: '/users/userA/expenses/exp1',
+    userId: 'userA',
+    expectedStatus: 403,
+  });
+
+  await assertRule({
     description: '13.4 User B denied read on User A expense',
     method: 'GET',
     path: '/users/userA/expenses/exp1',
