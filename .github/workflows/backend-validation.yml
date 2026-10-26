@@ -1,0 +1,136 @@
+name: Backend validation
+
+on:
+  push:
+    branches:
+      - main
+      - 'backend/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  flutter:
+    name: Flutter tests and analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Fetch dependencies
+        working-directory: mobile/parchipocket_flutter
+        run: flutter pub get
+      - name: Unit and widget tests
+        working-directory: mobile/parchipocket_flutter
+        run: flutter test --reporter compact
+      - name: Static analysis
+        working-directory: mobile/parchipocket_flutter
+        run: flutter analyze
+      - name: Whitespace validation
+        run: git diff --check HEAD^ HEAD
+
+  firestore-rules:
+    name: Firestore rules emulator harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run rules harness in isolated demo emulators
+        run: npx --yes firebase-tools@latest emulators:exec --only firestore,auth --project demo-parchipocket-ci "node test_rules.js"
+
+  firestore-integration:
+    name: Dart Firestore/Auth integration on Android emulator
+    needs:
+      - flutter
+      - firestore-rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim
+          script: |
+            set -euo pipefail
+            npx --yes firebase-tools@latest emulators:start --only firestore,auth --project demo-parchipocket-ci > "$RUNNER_TEMP/firebase-emulators.log" 2>&1 &
+            firebase_pid=$!
+            cleanup() {
+              kill "$firebase_pid" 2>/dev/null || true
+              wait "$firebase_pid" 2>/dev/null || true
+            }
+            trap cleanup EXIT
+
+            node <<'NODE'
+            const net = require('net');
+            const ports = [8088, 9099];
+            function waitForPort(port) {
+              return new Promise((resolve, reject) => {
+                let attempts = 0;
+                const probe = () => {
+                  const socket = net.createConnection({ host: '127.0.0.1', port });
+                  socket.once('connect', () => {
+                    socket.end();
+                    resolve();
+                  });
+                  socket.once('error', () => {
+                    socket.destroy();
+                    attempts += 1;
+                    if (attempts >= 90) {
+                      reject(new Error('Timed out waiting for emulator port ' + port));
+                    } else {
+                      setTimeout(probe, 1000);
+                    }
+                  });
+                };
+                probe();
+              });
+            }
+            Promise.all(ports.map(waitForPort))
+              .then(() => console.log('Firestore and Auth emulators are ready.'))
+              .catch((error) => {
+                console.error(error);
+                process.exit(1);
+              });
+            NODE
+
+            cd mobile/parchipocket_flutter
+            flutter pub get
+            flutter test integration_test/firestore_service_emulator_test.dart -d emulator-5554
