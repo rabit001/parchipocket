@@ -340,6 +340,66 @@ void main() {
         .get();
     expect(index.docs, isEmpty);
   });
+
+  testWidgets(
+    'expense retry is idempotent and conflicting ID reuse cannot overwrite',
+    (tester) async {
+      final ownerUid = _auth.currentUser!.uid;
+      final expenseId = _service.newExpenseId();
+      final expense = DemoExpense(
+        id: expenseId,
+        title: 'Integration transport',
+        category: 'Transport',
+        amount: 42,
+        createdAt: DateTime.utc(2026, 10, 26, 10),
+      );
+
+      await _service.addExpense(expense);
+      await _service.addExpense(expense);
+
+      final expenseRef = _firestore
+          .collection('users')
+          .doc(ownerUid)
+          .collection('expenses')
+          .doc(expenseId);
+      final saved = await expenseRef.get();
+      expect(saved.exists, isTrue);
+      expect(saved.data()!['title'], 'Integration transport');
+
+      await expectLater(
+        _service.addExpense(
+          DemoExpense(
+            id: expenseId,
+            title: 'Altered transport',
+            category: 'Transport',
+            amount: 999,
+            createdAt: expense.createdAt,
+          ),
+        ),
+        throwsA(isA<ExpenseIdCollisionException>()),
+      );
+      final unchanged = await expenseRef.get();
+      expect(unchanged.data()!['title'], 'Integration transport');
+      expect(unchanged.data()!['amount'], 42);
+    },
+  );
+
+  testWidgets(
+    'saved-shop IDs do not collide for names that sanitize to the same legacy ID',
+    (tester) async {
+      await _service.saveShop('A/B');
+      await _service.saveShop('A_B');
+
+      final shops = await _service.loadSavedShops();
+      expect(shops, containsAll(<String>['A/B', 'A_B']));
+
+      await _service.removeSavedShop('A/B');
+      final afterRemoval = await _service.loadSavedShops();
+      expect(afterRemoval, isNot(contains('A/B')));
+      expect(afterRemoval, contains('A_B'));
+    },
+  );
+
 }
 
 Future<void> _saveRoleProfile(FirestoreService service, UserRole role) =>
