@@ -282,7 +282,6 @@ class FirestoreService {
         transaction.update(claimRef, {
           'status': 'claimed',
           'claimedBy': uid,
-          'claimedAt': FieldValue.serverTimestamp(),
         });
         return false;
       });
