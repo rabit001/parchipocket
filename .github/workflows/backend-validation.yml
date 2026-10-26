@@ -9,6 +9,12 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      run_android_integration:
+        description: "Run the Android emulator integration suite (slow; use when the emulator runner is available)"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -79,6 +85,7 @@ jobs:
 
   firestore-integration:
     name: Dart Firestore/Auth integration on Android emulator
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_android_integration }}
     needs:
       - flutter
       - firestore-rules
