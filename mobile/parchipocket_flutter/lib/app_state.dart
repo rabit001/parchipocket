@@ -1083,7 +1083,7 @@ class AppState extends ChangeNotifier {
 
     final DemoExpense expense;
     if (isRetry) {
-      expense = pending;
+      expense = pending!;
     } else {
       expense = DemoExpense(
         id: cloudWrite ? firestoreService.newExpenseId() : '',
