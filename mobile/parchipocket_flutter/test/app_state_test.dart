@@ -439,6 +439,7 @@ void main() {
         ..auth = auth
         ..isDemoMode = false
         ..firestoreService = service;
+      state.expenses.clear();
 
       final first = await state.addExpense(
         title: 'Transport',
