@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../app_state.dart';
 import '../theme.dart';
@@ -96,13 +98,30 @@ class LoginScreen extends StatelessWidget {
           const SizedBox(height: 15),
           const Text('Your everyday bills, in one place.', textAlign: TextAlign.center, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           const SizedBox(height: 28),
-          PpSecondaryButton('Continue with Google (Demo)', icon: Icons.account_circle_outlined, onPressed: () => state.go('roleSelection')),
+          PpSecondaryButton('Continue with Google (Demo)', icon: Icons.account_circle_outlined, onPressed: () => unawaited(state.enterDemoMode())),
           const SizedBox(height: 12),
-          PpPrimaryButton('Continue with Phone Number', icon: Icons.phone_android, onPressed: () => state.go('phoneLogin')),
+          PpPrimaryButton('Continue with Phone Number', icon: Icons.phone_android, onPressed: () async {
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              final started = await state.beginAuthentication();
+              if (!context.mounted) return;
+              if (started) {
+                state.go('phoneLogin');
+              } else {
+                messenger.showSnackBar(SnackBar(
+                  content: Text(state.signOutError ?? 'Could not start sign-in. Please retry.'),
+                ));
+              }
+            } catch (error) {
+              if (context.mounted) {
+                messenger.showSnackBar(SnackBar(content: Text('Could not start sign-in: $error')));
+              }
+            }
+          }),
           const SizedBox(height: 16),
           const PpDemoNotice(message: 'Phone authentication uses Firebase Authentication. Google sign-in is simulated for this prototype.'),
           const SizedBox(height: 22),
-          TextButton(onPressed: () => state.go('roleSelection'), child: const Text('Skip sign-in and explore demo')),
+          TextButton(onPressed: () => unawaited(state.enterDemoMode()), child: const Text('Skip sign-in and explore demo')),
         ]),
       );
 }
