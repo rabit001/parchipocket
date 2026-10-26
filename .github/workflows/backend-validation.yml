@@ -85,7 +85,7 @@ jobs:
 
   firestore-integration:
     name: Dart Firestore/Auth integration on Android emulator
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_android_integration) || github.event_name == 'pull_request' }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_android_integration) || github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
     needs:
       - flutter
       - firestore-rules
