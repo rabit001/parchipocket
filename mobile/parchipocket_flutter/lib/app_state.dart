@@ -1124,14 +1124,21 @@ class AppState extends ChangeNotifier {
       cloudError = null;
       return true;
     } catch (e) {
+      // A write from the previous account/session must not surface an error
+      // into a demo session or a newly authenticated account.
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
       // Keep the same expense ID for an identical retry after an ambiguous
       // acknowledgement, preventing duplicate ledger entries.
       cloudError = e.toString();
       lastNotice = 'Failed to record expense: $e';
       return false;
     } finally {
-      isCloudLoading = false;
-      notifyListeners();
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        isCloudLoading = false;
+        notifyListeners();
+      }
     }
   }
 

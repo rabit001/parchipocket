@@ -104,10 +104,10 @@ flutter analyze
 From the repository root, run the Firestore Rules harness through local emulators:
 
 ```powershell
-npx firebase-tools emulators:exec --only firestore,auth --project demo-parchipocket-ci "node test_rules.js"
+npx firebase-tools emulators:exec --only firestore,auth --project demo-parchipocket-phase4 "node test_rules.js"
 ```
 
-See [docs/BACKEND_RUNBOOK.md](docs/BACKEND_RUNBOOK.md) for the schema, emulator setup, and the separate production-rules deployment procedure.
+Use scripts/verify-backend.ps1 for Flutter tests, analysis, and rules tests; add -RunAndroidIntegration -DeviceId emulator-5554 only when an Android emulator is online. See docs/BACKEND_RUNBOOK.md for the schema, emulator setup, and the separately gated production-rules deployment procedure.
 
 ## Production release gate
 

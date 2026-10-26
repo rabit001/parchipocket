@@ -1,7 +1,7 @@
 const http = require('http');
 
 const PORT = 8088;
-const PROJECT_ID = process.env.FIRESTORE_EMULATOR_PROJECT_ID || 'demo-parchipocket-phase3';
+const PROJECT_ID = process.env.FIRESTORE_EMULATOR_PROJECT_ID || 'demo-parchipocket-phase4';
 if (!PROJECT_ID.startsWith('demo-')) {
   throw new Error('Rules tests must use an isolated demo- Firestore Emulator project ID.');
 }

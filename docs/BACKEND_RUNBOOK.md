@@ -37,7 +37,7 @@ Raw claim codes are not persisted. The official client generates 128 bits with `
 From repository root:
 
 ```powershell
-npx firebase-tools emulators:exec --only firestore,auth --project demo-parchipocket-ci "node test_rules.js"
+npx firebase-tools emulators:exec --only firestore,auth --project demo-parchipocket-phase4 "node test_rules.js"
 ```
 
 From the Flutter project directory:
@@ -50,6 +50,22 @@ flutter test integration_test/firestore_service_emulator_test.dart -d emulator-5
 ```
 
 The Dart integration test expects Firestore on port 8088 and Auth on port 9099. The Android emulator connects through `10.0.2.2`. If an emulator failed to start, that run is not a test pass.
+
+## Repeatable Windows scripts
+
+From the repository root, run:
+
+    .\scripts\verify-backend.ps1
+
+This runs Flutter unit/widget tests, analysis, JavaScript syntax validation, and the rules harness against local demo emulators. To also run the Dart Firestore/Auth integration suite, an Android emulator must be online:
+
+    .\scripts\verify-backend.ps1 -RunAndroidIntegration -DeviceId emulator-5554
+
+The production deployment script is separate and interactive:
+
+    .\scripts\deploy-firestore-rules.ps1
+
+It reruns all preflight checks and requires the Android integration suite to pass before asking for the exact target-project confirmation string. It has not been run as part of this change.
 
 ## Manual Firestore rules deployment
 

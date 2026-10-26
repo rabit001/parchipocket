@@ -31,7 +31,7 @@ void main() {
     }
 
     _firebaseApp = await Firebase.initializeApp(
-      name: 'parchipocket-phase3-emulator-tests',
+      name: 'parchipocket-phase4-owner-tests',
       options: const FirebaseOptions(
         apiKey: 'fake-emulator-api-key',
         appId: '1:123456789012:android:0123456789abcdef',

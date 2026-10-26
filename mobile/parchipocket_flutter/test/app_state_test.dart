@@ -188,6 +188,15 @@ class BlockingBillFirestoreService extends FirestoreService {
   }
 }
 
+class BlockingExpenseFirestoreService extends FirestoreService {
+  final Completer<void> expenseWrite = Completer<void>();
+
+  @override
+  String newExpenseId() => 'blocking-expense';
+
+  @override
+  Future<void> addExpense(DemoExpense expense) => expenseWrite.future;
+}
 class InMemoryBillFirestoreService extends FirestoreService {
   int _nextId = 0;
   String? firstId;
@@ -357,6 +366,34 @@ void main() {
       state.dispose();
     });
 
+    test('late expense failure from a previous session cannot contaminate demo mode',
+        () async {
+      final auth = MockFirebaseAuth();
+      final service = BlockingExpenseFirestoreService();
+      final state = AppState()
+        ..auth = auth
+        ..firestoreService = service
+        ..isDemoMode = false;
+
+      final pendingWrite = state.addExpense(
+        title: 'Previous account expense',
+        category: 'Transport',
+        amount: 25,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(state.isCloudLoading, isTrue);
+
+      await state.enterDemoMode();
+      service.expenseWrite.completeError(
+        Exception('Late permission-denied response'),
+      );
+
+      expect(await pendingWrite, isFalse);
+      expect(state.isDemoMode, isTrue);
+      expect(state.cloudError, isNull);
+      expect(state.isCloudLoading, isFalse);
+      state.dispose();
+    });
     test('stale profile failure cannot set cloud error after entering demo',
         () async {
       final auth = ControlledFirebaseAuth();
