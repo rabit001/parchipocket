@@ -73,11 +73,16 @@ class ClaimedReceipt {
 }
 
 class DemoExpense {
-  DemoExpense(
-      {required this.title,
-      required this.category,
-      required this.amount,
-      required this.createdAt});
+  DemoExpense({
+    this.id = '',
+    required this.title,
+    required this.category,
+    required this.amount,
+    required this.createdAt,
+  });
+
+  /// Stable Firestore document ID for cloud writes; empty for local demo rows.
+  final String id;
   final String title;
   final String category;
   final double amount;
@@ -169,6 +174,7 @@ class AppState extends ChangeNotifier {
   int _billSequence = 10500;
   int _vendorBillSequence = 2403;
   DemoBill? _retryableCloudBill;
+  DemoExpense? _retryableCloudExpense;
 
   void _initAuthListener() {
     final authInstance = auth;
@@ -310,18 +316,20 @@ class AppState extends ChangeNotifier {
     }
 
     try {
+      // Stage all reads first. If one collection fails, do not apply only a
+      // subset of cloud data alongside demo or stale records.
       final cloudBills = await firestoreService.loadBills();
       if (!isCurrentLoad()) return CloudProfileStatus.unknown;
       final cloudExpenses = await firestoreService.loadExpenses();
       if (!isCurrentLoad()) return CloudProfileStatus.unknown;
       final cloudSavedShops = await firestoreService.loadSavedShops();
       if (!isCurrentLoad()) return CloudProfileStatus.unknown;
+      final cloudClaims = await firestoreService.loadClaimedReceipts();
+      if (!isCurrentLoad()) return CloudProfileStatus.unknown;
 
       bills
         ..clear()
         ..addAll(cloudBills);
-      final cloudClaims = await firestoreService.loadClaimedReceipts();
-      if (!isCurrentLoad()) return CloudProfileStatus.unknown;
       claimedReceipts
         ..clear()
         ..addAll(cloudClaims);
@@ -519,6 +527,7 @@ class AppState extends ChangeNotifier {
 
   void _clearCloudAccountState() {
     _retryableCloudBill = null;
+    _retryableCloudExpense = null;
     hasExistingCloudProfile = false;
     profileStatus = CloudProfileStatus.loading;
     customerName = '';
@@ -547,6 +556,7 @@ class AppState extends ChangeNotifier {
 
   void _restoreDemoState() {
     _retryableCloudBill = null;
+    _retryableCloudExpense = null;
     isDemoMode = true;
     isCloudLoading = false;
     hasExistingCloudProfile = false;
@@ -1054,19 +1064,38 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> addExpense(
-      {required String title,
-      required String category,
-      required double amount}) async {
+  Future<bool> addExpense({
+    required String title,
+    required String category,
+    required double amount,
+  }) async {
     if (isCloudLoading || isSigningOut) return false;
-    final expense = DemoExpense(
-      title: title.trim().isEmpty ? 'Other expense' : title.trim(),
-      category: category,
-      amount: amount,
-      createdAt: DateTime.now(),
-    );
 
-    if (isDemoMode || !isAuthenticated) {
+    final normalizedTitle =
+        title.trim().isEmpty ? 'Other expense' : title.trim();
+    final cloudWrite = !isDemoMode && isAuthenticated;
+    final pending = _retryableCloudExpense;
+    final isRetry = cloudWrite &&
+        pending != null &&
+        pending.title == normalizedTitle &&
+        pending.category == category &&
+        pending.amount == amount;
+
+    final DemoExpense expense;
+    if (isRetry) {
+      expense = pending;
+    } else {
+      expense = DemoExpense(
+        id: cloudWrite ? firestoreService.newExpenseId() : '',
+        title: normalizedTitle,
+        category: category,
+        amount: amount,
+        createdAt: DateTime.now(),
+      );
+      if (cloudWrite) _retryableCloudExpense = expense;
+    }
+
+    if (!cloudWrite) {
       expenses.insert(0, expense);
       lastNotice = 'Expense recorded (demo).';
       page = 'expenseSaved';
@@ -1087,22 +1116,22 @@ class AppState extends ChangeNotifier {
         return false;
       }
       expenses.insert(0, expense);
+      if (identical(_retryableCloudExpense, expense)) {
+        _retryableCloudExpense = null;
+      }
       lastNotice = 'Expense saved to cloud.';
       page = 'expenseSaved';
       cloudError = null;
       return true;
     } catch (e) {
-      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
-        return false;
-      }
+      // Keep the same expense ID for an identical retry after an ambiguous
+      // acknowledgement, preventing duplicate ledger entries.
       cloudError = e.toString();
       lastNotice = 'Failed to record expense: $e';
       return false;
     } finally {
-      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
-        isCloudLoading = false;
-        notifyListeners();
-      }
+      isCloudLoading = false;
+      notifyListeners();
     }
   }
 
