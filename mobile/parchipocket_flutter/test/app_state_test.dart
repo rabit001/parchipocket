@@ -92,6 +92,9 @@ class CountingFirestoreService extends FirestoreService {
   String newBillId() => 'test-cloud-bill';
 
   @override
+  String newExpenseId() => 'test-cloud-expense';
+
+  @override
   Future<void> createBill(DemoBill bill) async {
     writes++;
   }
@@ -133,10 +136,21 @@ class CountingFirestoreService extends FirestoreService {
 }
 
 class ProfileFirestoreService extends FirestoreService {
-  ProfileFirestoreService({this.profile, this.profileError});
+  ProfileFirestoreService({
+    this.profile,
+    this.profileError,
+    this.claimedReceiptError,
+    this.loadedBills = const <DemoBill>[],
+    this.loadedExpenses = const <DemoExpense>[],
+    this.loadedSavedShops = const <String>{},
+  });
 
   final Map<String, dynamic>? profile;
   final Object? profileError;
+  final Object? claimedReceiptError;
+  final List<DemoBill> loadedBills;
+  final List<DemoExpense> loadedExpenses;
+  final Set<String> loadedSavedShops;
 
   @override
   Future<Map<String, dynamic>?> loadUserProfile() async {
@@ -145,17 +159,19 @@ class ProfileFirestoreService extends FirestoreService {
   }
 
   @override
-  Future<List<DemoBill>> loadBills() async => <DemoBill>[];
+  Future<List<DemoBill>> loadBills() async => loadedBills;
 
   @override
-  Future<List<DemoExpense>> loadExpenses() async => <DemoExpense>[];
+  Future<List<DemoExpense>> loadExpenses() async => loadedExpenses;
 
   @override
-  Future<Set<String>> loadSavedShops() async => <String>{};
+  Future<Set<String>> loadSavedShops() async => loadedSavedShops;
 
   @override
-  Future<List<ClaimedReceipt>> loadClaimedReceipts() async =>
-      <ClaimedReceipt>[];
+  Future<List<ClaimedReceipt>> loadClaimedReceipts() async {
+    if (claimedReceiptError != null) throw claimedReceiptError!;
+    return <ClaimedReceipt>[];
+  }
 }
 
 class BlockingBillFirestoreService extends FirestoreService {
@@ -172,6 +188,15 @@ class BlockingBillFirestoreService extends FirestoreService {
   }
 }
 
+class BlockingExpenseFirestoreService extends FirestoreService {
+  final Completer<void> expenseWrite = Completer<void>();
+
+  @override
+  String newExpenseId() => 'blocking-expense';
+
+  @override
+  Future<void> addExpense(DemoExpense expense) => expenseWrite.future;
+}
 class InMemoryBillFirestoreService extends FirestoreService {
   int _nextId = 0;
   String? firstId;
@@ -222,9 +247,30 @@ class InMemoryBillFirestoreService extends FirestoreService {
   }
 }
 
+class RetryExpenseFirestoreService extends FirestoreService {
+  int _nextId = 0;
+  bool failNextWrite = true;
+  final List<String> attemptedIds = <String>[];
+
+  @override
+  String newExpenseId() => 'retry-expense-${_nextId++}';
+
+  @override
+  Future<void> addExpense(DemoExpense expense) async {
+    attemptedIds.add(expense.id);
+    if (failNextWrite) {
+      failNextWrite = false;
+      throw Exception('Simulated lost expense acknowledgement');
+    }
+  }
+}
+
 class FailingFirestoreService extends FirestoreService {
   @override
   String newBillId() => 'failed-test-bill';
+
+  @override
+  String newExpenseId() => 'failed-test-expense';
 
   @override
   Future<void> createBill(DemoBill bill) async {
@@ -320,6 +366,34 @@ void main() {
       state.dispose();
     });
 
+    test('late expense failure from a previous session cannot contaminate demo mode',
+        () async {
+      final auth = MockFirebaseAuth();
+      final service = BlockingExpenseFirestoreService();
+      final state = AppState()
+        ..auth = auth
+        ..firestoreService = service
+        ..isDemoMode = false;
+
+      final pendingWrite = state.addExpense(
+        title: 'Previous account expense',
+        category: 'Transport',
+        amount: 25,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(state.isCloudLoading, isTrue);
+
+      await state.enterDemoMode();
+      service.expenseWrite.completeError(
+        Exception('Late permission-denied response'),
+      );
+
+      expect(await pendingWrite, isFalse);
+      expect(state.isDemoMode, isTrue);
+      expect(state.cloudError, isNull);
+      expect(state.isCloudLoading, isFalse);
+      state.dispose();
+    });
     test('stale profile failure cannot set cloud error after entering demo',
         () async {
       final auth = ControlledFirebaseAuth();
@@ -343,6 +417,85 @@ void main() {
       expect(service.billReads, 0);
       expect(service.claimedReceiptReads, 0);
       await auth.events.close();
+      state.dispose();
+    });
+
+    test('cloud collections are applied atomically if a later read fails',
+        () async {
+      final auth = ControlledFirebaseAuth();
+      final service = ProfileFirestoreService(
+        profile: <String, dynamic>{
+          'role': 'customer',
+          'name': 'Cloud Customer',
+        },
+        loadedBills: <DemoBill>[
+          DemoBill(
+            id: 'cloud-bill',
+            store: 'Cloud Store',
+            items: <BillLine>[
+              BillLine(name: 'Bread', quantity: 1, unitPrice: 20),
+            ],
+            createdAt: DateTime(2026, 10, 26),
+            paymentMode: 'Cash',
+          ),
+        ],
+        loadedExpenses: <DemoExpense>[
+          DemoExpense(
+            id: 'cloud-expense',
+            title: 'Transport',
+            category: 'Travel',
+            amount: 10,
+            createdAt: DateTime(2026, 10, 26),
+          ),
+        ],
+        loadedSavedShops: <String>{'Cloud Store'},
+        claimedReceiptError: Exception('permission-denied'),
+      );
+      final state = AppState(auth: auth)..firestoreService = service;
+
+      auth.emit(MockUser());
+      await pumpEventQueue();
+
+      expect(state.customerName, 'Cloud Customer');
+      expect(state.profileStatus, CloudProfileStatus.loaded);
+      expect(state.cloudError, contains('permission-denied'));
+      expect(state.bills, isEmpty);
+      expect(state.claimedReceipts, isEmpty);
+      expect(state.expenses, isEmpty);
+      expect(state.savedShops, isEmpty);
+
+      await auth.events.close();
+      state.dispose();
+    });
+
+    test('expense retry after a lost acknowledgement reuses the same ID',
+        () async {
+      final auth = MockFirebaseAuth();
+      final service = RetryExpenseFirestoreService();
+      final state = AppState()
+        ..auth = auth
+        ..isDemoMode = false
+        ..firestoreService = service;
+      state.expenses.clear();
+
+      final first = await state.addExpense(
+        title: 'Transport',
+        category: 'Travel',
+        amount: 42,
+      );
+      expect(first, isFalse);
+      expect(service.attemptedIds, hasLength(1));
+
+      final retry = await state.addExpense(
+        title: 'Transport',
+        category: 'Travel',
+        amount: 42,
+      );
+      expect(retry, isTrue);
+      expect(service.attemptedIds, hasLength(2));
+      expect(service.attemptedIds[1], service.attemptedIds[0]);
+      expect(state.expenses, hasLength(1));
+      expect(state.expenses.single.id, service.attemptedIds.first);
       state.dispose();
     });
 

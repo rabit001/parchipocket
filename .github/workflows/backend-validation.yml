@@ -1,0 +1,137 @@
+name: ParchiPocket backend validation
+
+on:
+  push:
+    branches:
+      - main
+      - "backend/**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      run_android_integration:
+        description: "Run the Android emulator integration suite (slow; use when the emulator runner is available)"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  FIRESTORE_EMULATOR_PROJECT_ID: demo-parchipocket-phase4
+
+jobs:
+  flutter:
+    name: Flutter tests and static analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Fetch dependencies
+        working-directory: mobile/parchipocket_flutter
+        run: flutter pub get
+      - name: Unit and widget tests
+        working-directory: mobile/parchipocket_flutter
+        run: flutter test --reporter compact
+      - name: Static analysis
+        working-directory: mobile/parchipocket_flutter
+        run: flutter analyze
+      - name: Rules harness syntax
+        run: node --check test_rules.js
+      - name: Whitespace validation
+        run: git diff --check origin/main...HEAD
+
+  firestore-rules:
+    name: Firestore rules emulator harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Run rules harness in isolated demo emulators
+        env:
+          FIRESTORE_EMULATOR_PROJECT_ID: demo-parchipocket-phase4
+        run: npx --yes firebase-tools@latest emulators:exec --only auth,firestore --project demo-parchipocket-phase4 "node test_rules.js"
+
+  firestore-integration:
+    name: Dart Firestore/Auth integration on Android emulator
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_android_integration }}
+    needs:
+      - flutter
+      - firestore-rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install Firebase CLI
+        run: npm install --global firebase-tools
+      - name: Free disk space for Android emulator
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          sudo apt-get clean
+          df -h /
+      - name: Enable KVM permissions for Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run Dart integration tests on Android emulator with local Firebase emulators
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            set -eu
+            npx --yes firebase-tools@latest emulators:exec --only auth,firestore --project demo-parchipocket-phase4 "cd mobile/parchipocket_flutter && flutter pub get && flutter test integration_test/firestore_service_emulator_test.dart -d emulator-5554 --reporter compact"
