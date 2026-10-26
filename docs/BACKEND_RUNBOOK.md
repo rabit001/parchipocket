@@ -51,19 +51,25 @@ flutter test integration_test/firestore_service_emulator_test.dart -d emulator-5
 
 The Dart integration test expects Firestore on port 8088 and Auth on port 9099. The Android emulator connects through `10.0.2.2`. If an emulator failed to start, that run is not a test pass.
 
+## GitHub Actions validation
+
+The `ParchiPocket backend validation` workflow runs Flutter unit/widget tests, static analysis, harness syntax validation, and the Firestore rules harness on pushes and pull requests.
+
+The Android emulator integration job is an explicit manual step because hosted emulator attempts have stalled or failed during ADB startup/teardown. To request it, open GitHub Actions, select `ParchiPocket backend validation`, choose `Run workflow`, and set `run_android_integration` to true. A skipped manual job is **not** an integration-test pass. Do not merge/release based on the unit/rules jobs alone when the release checklist requires Android integration verification.
+
 ## Repeatable Windows scripts
 
 From the repository root, run:
 
-    .\scripts\verify-backend.ps1
+    .\\scripts\\verify-backend.ps1
 
 This runs Flutter unit/widget tests, analysis, JavaScript syntax validation, and the rules harness against local demo emulators. To also run the Dart Firestore/Auth integration suite, an Android emulator must be online:
 
-    .\scripts\verify-backend.ps1 -RunAndroidIntegration -DeviceId emulator-5554
+    .\\scripts\\verify-backend.ps1 -RunAndroidIntegration -DeviceId emulator-5554
 
 The production deployment script is separate and interactive:
 
-    .\scripts\deploy-firestore-rules.ps1
+    .\\scripts\\deploy-firestore-rules.ps1
 
 It reruns all preflight checks and requires the Android integration suite to pass before asking for the exact target-project confirmation string. It has not been run as part of this change.
 
