@@ -235,7 +235,7 @@ async function runTests() {
     updateWrite(`receiptClaims/${digest}`, {
       status: stringField('claimed'),
       claimedBy: stringField('customer'),
-    }, ['claimedAt']),
+    }),
     createWrite(`users/customer/claimedReceipts/seller/bills/${sourceBillId}`, copy, ['claimedAt']),
     createWrite(`users/customer/claimedReceiptsIndex/${indexId}`, copy, ['claimedAt']),
   ], 'customer');
@@ -271,7 +271,7 @@ async function runTests() {
   else { console.error('[FAIL] 14.19 Could not create claim for claimant-binding test:', secondClaimCreate.body); failed++; }
   const wrongRecipientCopy = { recipientUid: 'customer', ownerUid: 'seller', sourceBillId: sourceBillId2, receipt: receipt2, claimedAt: null, claimDigest: digest2 };
   const wrongClaimantCommit = await commit([
-    updateWrite(`receiptClaims/${digest2}`, { status: stringField('claimed'), claimedBy: stringField('otherCustomer') }, ['claimedAt']),
+    updateWrite(`receiptClaims/${digest2}`, { status: stringField('claimed'), claimedBy: stringField('otherCustomer') }),
     createWrite(`users/customer/claimedReceipts/seller/bills/${sourceBillId2}`, wrongRecipientCopy, ['claimedAt']),
     createWrite(`users/customer/claimedReceiptsIndex/seller~${sourceBillId2}`, wrongRecipientCopy, ['claimedAt']),
   ], 'customer');
@@ -281,8 +281,8 @@ async function runTests() {
   const alteredReceiptClaim = { ...claim, receipt: { ...receipt, items: [{ name: 'Forged', quantity: 1, unitPrice: 1 }] } };
   const alteredDigest = 'b'.repeat(64);
   const altered = await commit([createWrite(`receiptClaims/${alteredDigest}`, alteredReceiptClaim)], 'seller');
-  if (altered.status === 403) { console.log('[PASS] 14.16 Seller cannot issue a snapshot that differs from source bill'); passed++; }
-  else { console.error('[FAIL] 14.16 Forged receipt snapshot unexpectedly issued'); failed++; }
+  if (altered.status === 403) { console.log('[PASS] 14.21 Seller cannot issue a snapshot that differs from source bill'); passed++; }
+  else { console.error('[FAIL] 14.21 Forged receipt snapshot unexpectedly issued'); failed++; }
 
   await assertRule({
     description: '1.2 Unauthenticated write denied on user profile',

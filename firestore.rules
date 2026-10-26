@@ -34,16 +34,15 @@ service cloud.firestore {
 
     function validClaimDocument(data) {
       return data.keys().hasAll(['ownerUid', 'sourceBillId', 'receipt', 'expiresAt', 'status']) &&
-        data.keys().hasOnly(['ownerUid', 'sourceBillId', 'receipt', 'expiresAt', 'status', 'claimedBy', 'claimedAt']) &&
+        data.keys().hasOnly(['ownerUid', 'sourceBillId', 'receipt', 'expiresAt', 'status', 'claimedBy']) &&
         data.ownerUid is string && data.sourceBillId is string &&
         data.receipt is map && data.expiresAt is timestamp &&
         data.status in ['open', 'claimed'] &&
         (
-          (data.status == 'open' && !data.keys().hasAny(['claimedBy', 'claimedAt'])) ||
+          (data.status == 'open' && !data.keys().hasAny(['claimedBy'])) ||
           (data.status == 'claimed' &&
-            data.keys().hasAll(['claimedBy', 'claimedAt']) &&
-            data.claimedBy is string && data.claimedBy.size() > 0 &&
-            data.claimedAt is timestamp)
+            data.keys().hasAll(['claimedBy']) &&
+            data.claimedBy is string && data.claimedBy.size() > 0)
         );
     }
 
@@ -273,10 +272,9 @@ service cloud.firestore {
       allow update: if (
         isAuthenticated() && isCustomer(request.auth.uid) &&
         resource.data.status == 'open' && request.time < resource.data.expiresAt &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'claimedBy', 'claimedAt']) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'claimedBy']) &&
         request.resource.data.status == 'claimed' &&
         request.resource.data.claimedBy == request.auth.uid &&
-        request.resource.data.claimedAt == request.time &&
         validClaimDocument(request.resource.data) &&
         matchingCopyAfter(request.auth.uid, resource.data.ownerUid, resource.data.sourceBillId, resource.data.receipt) &&
         matchingClaimIndexAfter(request.auth.uid, resource.data.ownerUid, resource.data.sourceBillId, resource.data.receipt)
