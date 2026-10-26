@@ -232,7 +232,10 @@ async function runTests() {
   const copy = { recipientUid: 'customer', ownerUid: 'seller', sourceBillId, receipt, claimedAt: null, claimDigest: digest };
   const indexId = `seller~${sourceBillId}`;
   const claimCommit = await commit([
-    updateWrite(`receiptClaims/${digest}`, { status: 'claimed' }),
+    updateWrite(`receiptClaims/${digest}`, {
+      status: stringField('claimed'),
+      claimedBy: stringField('customer'),
+    }, ['claimedAt']),
     createWrite(`users/customer/claimedReceipts/seller/bills/${sourceBillId}`, copy, ['claimedAt']),
     createWrite(`users/customer/claimedReceiptsIndex/${indexId}`, copy, ['claimedAt']),
   ], 'customer');
@@ -243,15 +246,37 @@ async function runTests() {
   await assertRule({ description: '14.10 Customer can list own claim index', method: 'GET', path: '/users/customer/claimedReceiptsIndex', userId: 'customer', expectedStatus: 200 });
   await assertRule({ description: '14.11 Seller cannot read customer copy', method: 'GET', path: `/users/customer/claimedReceipts/seller/bills/${sourceBillId}`, userId: 'seller', expectedStatus: 403 });
   await assertRule({ description: '14.12 Other customer cannot read customer copy', method: 'GET', path: `/users/customer/claimedReceipts/seller/bills/${sourceBillId}`, userId: 'otherCustomer', expectedStatus: 403 });
-  await assertRule({ description: '14.13 Bearer can still read only the minimized consumed claim snapshot', method: 'GET', path: `/receiptClaims/${digest}`, userId: 'otherCustomer', expectedStatus: 200 });
-  await assertRule({ description: '14.14 Customer cannot alter claimed copy', method: 'PATCH', path: `/users/customer/claimedReceipts/seller/bills/${sourceBillId}`, data: wrapDocument({ ...copy, receipt: { ...receipt, items: [{ name: 'Forged', quantity: 1, unitPrice: 1 }] } }), userId: 'customer', expectedStatus: 403 });
+  await assertRule({ description: '14.13 Claimant can read consumed claim for idempotent retry', method: 'GET', path: `/receiptClaims/${digest}`, userId: 'customer', expectedStatus: 200 });
+  await assertRule({ description: '14.14 Seller can read own consumed claim', method: 'GET', path: `/receiptClaims/${digest}`, userId: 'seller', expectedStatus: 200 });
+  await assertRule({ description: '14.15 Unrelated customer cannot read consumed claim even with known digest', method: 'GET', path: `/receiptClaims/${digest}`, userId: 'otherCustomer', expectedStatus: 403 });
+  await assertRule({ description: '14.16 Customer cannot alter claimed copy', method: 'PATCH', path: `/users/customer/claimedReceipts/seller/bills/${sourceBillId}`, data: wrapDocument({ ...copy, receipt: { ...receipt, items: [{ name: 'Forged', quantity: 1, unitPrice: 1 }] } }), userId: 'customer', expectedStatus: 403 });
 
   const replay = await commit([
     createWrite(`users/otherCustomer/claimedReceipts/seller/bills/${sourceBillId}`, { ...copy, recipientUid: 'otherCustomer' }, ['claimedAt']),
     createWrite(`users/otherCustomer/claimedReceiptsIndex/${indexId}`, { ...copy, recipientUid: 'otherCustomer' }, ['claimedAt']),
   ], 'otherCustomer');
-  if (replay.status === 403) { console.log('[PASS] 14.15 Second account cannot create a copy from an already consumed code'); passed++; }
-  else { console.error('[FAIL] 14.15 Second account unexpectedly created a duplicate claim copy'); failed++; }
+  if (replay.status === 403) { console.log('[PASS] 14.17 Second account cannot create a copy from an already consumed code'); passed++; }
+  else { console.error('[FAIL] 14.17 Second account unexpectedly created a duplicate claim copy'); failed++; }
+
+  // A claimant cannot assign the consumed claim to another UID in the same write.
+  const sourceBillId2 = 'claim-source-wrong-claimant';
+  const sourceDate2 = timestampField(new Date().toISOString());
+  const sourceBill2 = { ...validBill, id: sourceBillId2, createdAt: sourceDate2 };
+  await assertRule({ description: '14.18 Seller can create second source bill for claimant-binding test', method: 'PATCH', path: `/users/seller/bills/${sourceBillId2}`, data: wrapDocument(sourceBill2), userId: 'seller', expectedStatus: 200 });
+  const receipt2 = { id: sourceBillId2, store: sourceBill2.store, items: sourceBill2.items, createdAt: sourceDate2, paymentMode: sourceBill2.paymentMode };
+  const digest2 = 'c'.repeat(64);
+  const claim2 = { ownerUid: 'seller', sourceBillId: sourceBillId2, receipt: receipt2, expiresAt: timestampField(new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()), status: 'open' };
+  const secondClaimCreate = await commit([createWrite(`receiptClaims/${digest2}`, claim2)], 'seller');
+  if (secondClaimCreate.ok) { console.log('[PASS] 14.19 Seller creates second source-bound claim for claimant-binding test'); passed++; }
+  else { console.error('[FAIL] 14.19 Could not create claim for claimant-binding test:', secondClaimCreate.body); failed++; }
+  const wrongRecipientCopy = { recipientUid: 'customer', ownerUid: 'seller', sourceBillId: sourceBillId2, receipt: receipt2, claimedAt: null, claimDigest: digest2 };
+  const wrongClaimantCommit = await commit([
+    updateWrite(`receiptClaims/${digest2}`, { status: stringField('claimed'), claimedBy: stringField('otherCustomer') }, ['claimedAt']),
+    createWrite(`users/customer/claimedReceipts/seller/bills/${sourceBillId2}`, wrongRecipientCopy, ['claimedAt']),
+    createWrite(`users/customer/claimedReceiptsIndex/seller~${sourceBillId2}`, wrongRecipientCopy, ['claimedAt']),
+  ], 'customer');
+  if (wrongClaimantCommit.status === 403) { console.log('[PASS] 14.20 Claim claimant UID must match the customer copy recipient'); passed++; }
+  else { console.error('[FAIL] 14.20 Claimant mismatch unexpectedly committed:', wrongClaimantCommit.body); failed++; }
 
   const alteredReceiptClaim = { ...claim, receipt: { ...receipt, items: [{ name: 'Forged', quantity: 1, unitPrice: 1 }] } };
   const alteredDigest = 'b'.repeat(64);
