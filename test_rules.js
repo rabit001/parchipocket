@@ -214,11 +214,11 @@ async function runTests() {
 
   const immutableClaimChanges = [
     ['expiry extension', { expiresAt: timestampField(new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString()) }],
-    ['owner UID', { ownerUid: stringField('otherSeller') }],
-    ['source bill', { sourceBillId: stringField('different-bill') }],
+    ['owner UID', { ownerUid: 'otherSeller' }],
+    ['source bill', { sourceBillId: 'different-bill' }],
     ['receipt snapshot', { receipt: { ...receipt, items: [{ name: 'Forged', quantity: 1, unitPrice: 1 }] } }],
-    ['status', { status: stringField('claimed') }],
-    ['claimedBy', { claimedBy: stringField('customer') }],
+    ['status', { status: 'claimed' }],
+    ['claimedBy', { claimedBy: 'customer' }],
     ['claimedAt', { claimedAt: timestampField(new Date().toISOString()) }],
   ];
   for (const [label, patch] of immutableClaimChanges) {
@@ -233,8 +233,8 @@ async function runTests() {
   const indexId = `seller~${sourceBillId}`;
   const claimCommit = await commit([
     updateWrite(`receiptClaims/${digest}`, {
-      status: stringField('claimed'),
-      claimedBy: stringField('customer'),
+      status: 'claimed',
+      claimedBy: 'customer',
     }),
     createWrite(`users/customer/claimedReceipts/seller/bills/${sourceBillId}`, copy, ['claimedAt']),
     createWrite(`users/customer/claimedReceiptsIndex/${indexId}`, copy, ['claimedAt']),
@@ -271,7 +271,7 @@ async function runTests() {
   else { console.error('[FAIL] 14.19 Could not create claim for claimant-binding test:', secondClaimCreate.body); failed++; }
   const wrongRecipientCopy = { recipientUid: 'customer', ownerUid: 'seller', sourceBillId: sourceBillId2, receipt: receipt2, claimedAt: null, claimDigest: digest2 };
   const wrongClaimantCommit = await commit([
-    updateWrite(`receiptClaims/${digest2}`, { status: stringField('claimed'), claimedBy: stringField('otherCustomer') }),
+    updateWrite(`receiptClaims/${digest2}`, { status: 'claimed', claimedBy: 'otherCustomer' }),
     createWrite(`users/customer/claimedReceipts/seller/bills/${sourceBillId2}`, wrongRecipientCopy, ['claimedAt']),
     createWrite(`users/customer/claimedReceiptsIndex/seller~${sourceBillId2}`, wrongRecipientCopy, ['claimedAt']),
   ], 'customer');
