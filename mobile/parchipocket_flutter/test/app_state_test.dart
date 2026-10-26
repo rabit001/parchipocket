@@ -49,6 +49,10 @@ class ProfileFirestoreService extends FirestoreService {
 
   @override
   Future<Set<String>> loadSavedShops() async => <String>{};
+
+  @override
+  Future<List<ClaimedReceipt>> loadClaimedReceipts() async =>
+      <ClaimedReceipt>[];
 }
 
 class BlockingBillFirestoreService extends FirestoreService {
@@ -196,7 +200,8 @@ void main() {
     test('expense is recorded separately from sales', () async {
       final state = AppState();
       final previousExpenseTotal = state.expensesTotal;
-      await state.addExpense(title: 'Market transport', category: 'Transport', amount: 80);
+      await state.addExpense(
+          title: 'Market transport', category: 'Transport', amount: 80);
 
       expect(state.expensesTotal, previousExpenseTotal + 80);
       expect(state.page, 'expenseSaved');
@@ -271,7 +276,8 @@ void main() {
   });
 
   group('AppState cloud failure handling & role consistency', () {
-    test('saveSelectedBill handles write failure and preserves state', () async {
+    test('saveSelectedBill handles write failure and preserves state',
+        () async {
       final state = AppState();
       state.isDemoMode = false;
       state.auth = MockFirebaseAuth();
@@ -323,7 +329,8 @@ void main() {
       state.firestoreService = FailingFirestoreService();
       final initialExpenseCount = state.expenses.length;
 
-      final result = await state.addExpense(title: 'Fail Expense', category: 'Stock', amount: 100);
+      final result = await state.addExpense(
+          title: 'Fail Expense', category: 'Stock', amount: 100);
       expect(result, isFalse);
       expect(state.expenses.length, initialExpenseCount);
       expect(state.cloudError, contains('Simulated Firestore write failure'));
@@ -331,7 +338,8 @@ void main() {
       state.dispose();
     });
 
-    test('toggleSavedShop handles write failure and preserves local set', () async {
+    test('toggleSavedShop handles write failure and preserves local set',
+        () async {
       final state = AppState();
       state.isDemoMode = false;
       state.auth = MockFirebaseAuth();
@@ -346,14 +354,16 @@ void main() {
       state.dispose();
     });
 
-    test('updateProfile handles write failure and preserves local fields', () async {
+    test('updateProfile handles write failure and preserves local fields',
+        () async {
       final state = AppState();
       state.isDemoMode = false;
       state.auth = MockFirebaseAuth();
       state.firestoreService = FailingFirestoreService();
       final initialName = state.customerName;
 
-      final result = await state.updateProfile(name: 'New Name', email: 'test@example.com', location: 'City');
+      final result = await state.updateProfile(
+          name: 'New Name', email: 'test@example.com', location: 'City');
       expect(result, isFalse);
       expect(state.customerName, initialName);
       expect(state.cloudError, contains('Simulated Firestore write failure'));
@@ -361,7 +371,9 @@ void main() {
       state.dispose();
     });
 
-    test('signOut calls Firebase and clears account-specific state only on success', () async {
+    test(
+        'signOut calls Firebase and clears account-specific state only on success',
+        () async {
       final state = AppState();
       final auth = MockFirebaseAuth();
       state.auth = auth;
@@ -391,7 +403,8 @@ void main() {
       state.dispose();
     });
 
-    test('signOut failure keeps the current screen and private state', () async {
+    test('signOut failure keeps the current screen and private state',
+        () async {
       final state = AppState();
       final auth = MockFirebaseAuth()..failSignOut = true;
       state.auth = auth;
@@ -410,7 +423,8 @@ void main() {
       state.dispose();
     });
 
-    test('profile read failure is distinct from a confirmed missing profile', () async {
+    test('profile read failure is distinct from a confirmed missing profile',
+        () async {
       final failureState = AppState();
       failureState.auth = MockFirebaseAuth();
       failureState.isDemoMode = false;
@@ -448,7 +462,9 @@ void main() {
       missingState.dispose();
     });
 
-    test('createBill rejects duplicate cloud submissions while the first is pending', () async {
+    test(
+        'createBill rejects duplicate cloud submissions while the first is pending',
+        () async {
       final state = AppState();
       final service = BlockingBillFirestoreService();
       state.isDemoMode = false;
@@ -476,7 +492,8 @@ void main() {
       state.dispose();
     });
 
-    test('Firestore generated bill IDs are unique across AppState instances', () async {
+    test('Firestore generated bill IDs are unique across AppState instances',
+        () async {
       final service = InMemoryBillFirestoreService();
       final firstState = AppState()
         ..isDemoMode = false
@@ -486,7 +503,9 @@ void main() {
         ..isDemoMode = false
         ..auth = MockFirebaseAuth()
         ..firestoreService = service;
-      final items = <BillLine>[BillLine(name: 'Tea', quantity: 1, unitPrice: 10)];
+      final items = <BillLine>[
+        BillLine(name: 'Tea', quantity: 1, unitPrice: 10)
+      ];
 
       final first = await firstState.createBill(
         items: items,
@@ -501,19 +520,24 @@ void main() {
 
       expect(first.id, isNot(second.id));
       expect(first.displayNumber, startsWith('PP-'));
-      expect(service.existingBills.keys, containsAll(<String>[first.id, second.id]));
+      expect(service.existingBills.keys,
+          containsAll(<String>[first.id, second.id]));
       firstState.dispose();
       secondState.dispose();
     });
 
-    test('bill identity stays stable across a lost write acknowledgement retry', () async {
+    test('bill identity stays stable across a lost write acknowledgement retry',
+        () async {
       final state = AppState();
-      final service = InMemoryBillFirestoreService()..commitThenFailNextCreate = true;
+      final service = InMemoryBillFirestoreService()
+        ..commitThenFailNextCreate = true;
       state
         ..isDemoMode = false
         ..auth = MockFirebaseAuth()
         ..firestoreService = service;
-      final items = <BillLine>[BillLine(name: 'Milk', quantity: 1, unitPrice: 50)];
+      final items = <BillLine>[
+        BillLine(name: 'Milk', quantity: 1, unitPrice: 50)
+      ];
 
       await expectLater(
         state.createBill(items: items, paymentMode: 'UPI', vendorMode: false),
@@ -533,12 +557,16 @@ void main() {
       state.dispose();
     });
 
-    test('existing bill ID collision is rejected without overwriting the record', () async {
+    test(
+        'existing bill ID collision is rejected without overwriting the record',
+        () async {
       final state = AppState();
       final existing = DemoBill(
         id: 'collision-bill',
         store: 'Original Store',
-        items: <BillLine>[BillLine(name: 'Original', quantity: 1, unitPrice: 25)],
+        items: <BillLine>[
+          BillLine(name: 'Original', quantity: 1, unitPrice: 25)
+        ],
         createdAt: DateTime(2026, 1, 1),
         paymentMode: 'Cash',
       );
@@ -552,7 +580,9 @@ void main() {
 
       await expectLater(
         state.createBill(
-          items: <BillLine>[BillLine(name: 'Different', quantity: 1, unitPrice: 99)],
+          items: <BillLine>[
+            BillLine(name: 'Different', quantity: 1, unitPrice: 99)
+          ],
           paymentMode: 'Cash',
           vendorMode: false,
         ),
@@ -566,7 +596,9 @@ void main() {
       state.dispose();
     });
 
-    testWidgets('customer setup stays on setup and reports a failed profile write', (tester) async {
+    testWidgets(
+        'customer setup stays on setup and reports a failed profile write',
+        (tester) async {
       final state = AppState();
       state.isDemoMode = false;
       state.profileStatus = CloudProfileStatus.missing;
@@ -574,24 +606,29 @@ void main() {
       state.firestoreService = FailingFirestoreService();
       state.page = 'customerSetup';
 
-      await tester.pumpWidget(MaterialApp(home: CustomerSetupScreen(state: state)));
+      await tester
+          .pumpWidget(MaterialApp(home: CustomerSetupScreen(state: state)));
       await tester.tap(find.text('Save & Continue'));
       await tester.pumpAndSettle();
 
       expect(state.page, 'customerSetup');
-      expect(find.textContaining('Simulated Firestore write failure'), findsNWidgets(2));
+      expect(find.textContaining('Simulated Firestore write failure'),
+          findsNWidgets(2));
       expect(find.text('Save & Continue'), findsOneWidget);
       state.dispose();
     });
 
-    testWidgets('bill creation failure stays on the form and is shown to the user', (tester) async {
+    testWidgets(
+        'bill creation failure stays on the form and is shown to the user',
+        (tester) async {
       final state = AppState();
       state.isDemoMode = false;
       state.auth = MockFirebaseAuth();
       state.firestoreService = FailingFirestoreService();
       state.page = 'createBill';
 
-      await tester.pumpWidget(MaterialApp(home: CreateBillScreen(state: state)));
+      await tester
+          .pumpWidget(MaterialApp(home: CreateBillScreen(state: state)));
       await tester.enterText(find.byType(TextField).at(0), 'Tea');
       await tester.enterText(find.byType(TextField).at(2), '10');
       await tester.tap(find.text('Add item to bill'));
@@ -605,13 +642,16 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(state.page, 'createBill');
-      expect(find.textContaining('Simulated Firestore write failure'), findsNWidgets(2));
+      expect(find.textContaining('Simulated Firestore write failure'),
+          findsNWidgets(2));
       expect(find.text('Generate Bill'), findsOneWidget);
       expect(state.isCloudLoading, isFalse);
       state.dispose();
     });
 
-    test('role consistency: new user sets initial role, existing cloud user preserves role', () {
+    test(
+        'role consistency: new user sets initial role, existing cloud user preserves role',
+        () {
       final state = AppState();
       state.isDemoMode = false;
       state.hasExistingCloudProfile = false;
@@ -624,12 +664,15 @@ void main() {
       state.hasExistingCloudProfile = true;
       state.profileStatus = CloudProfileStatus.loaded;
       state.setRole(UserRole.customer);
-      expect(state.role, UserRole.shopOwner); // Role is preserved for existing cloud user
+      expect(state.role,
+          UserRole.shopOwner); // Role is preserved for existing cloud user
       expect(state.lastNotice, contains('locked'));
       state.dispose();
     });
 
-    test('navigateAfterAuth routes existing user to home and new user to roleSelection', () {
+    test(
+        'navigateAfterAuth routes existing user to home and new user to roleSelection',
+        () {
       final state = AppState();
 
       // Existing customer

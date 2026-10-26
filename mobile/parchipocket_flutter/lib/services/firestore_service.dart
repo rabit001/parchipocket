@@ -1,6 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'dart:math';
+
+import 'package:crypto/crypto.dart';
 import '../app_state.dart';
 
 class BillIdCollisionException implements Exception {
@@ -11,6 +14,13 @@ class BillIdCollisionException implements Exception {
   @override
   String toString() =>
       'A different bill already uses document ID $billId. Retry to create this bill with a fresh ID.';
+}
+
+class ReceiptClaimException implements Exception {
+  const ReceiptClaimException(this.message);
+  final String message;
+  @override
+  String toString() => message;
 }
 
 class FirestoreService {
@@ -57,6 +67,315 @@ class FirestoreService {
     return doc.collection('bills').doc().id;
   }
 
+  /// Generates 128 bits of entropy from the platform CSPRNG. Only the SHA-256
+  /// digest is persisted; rules cannot verify entropy, so callers must use this.
+  String newReceiptClaimCode() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+  }
+
+  String _claimDigest(String rawCode) =>
+      sha256.convert(rawCode.codeUnits).toString();
+
+  Map<String, dynamic> _receiptSnapshot(DemoBill bill) => {
+        'id': bill.id,
+        'store': bill.store,
+        'items': bill.items
+            .map((item) => {
+                  'name': item.name,
+                  'quantity': item.quantity,
+                  'unitPrice': item.unitPrice,
+                })
+            .toList(),
+        'createdAt': Timestamp.fromDate(bill.createdAt),
+        'paymentMode': bill.paymentMode,
+      };
+
+  Future<void> createReceiptClaim(
+    DemoBill bill, {
+    required String rawCode,
+    DateTime? expiresAt,
+  }) async {
+    final uid = this.uid;
+    if (uid == null) {
+      throw const ReceiptClaimException('Sign in before sharing a receipt.');
+    }
+    if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(rawCode)) {
+      throw const ReceiptClaimException(
+          'The claim code is invalid. Generate a new code and retry.');
+    }
+    final user = _userDoc!;
+    final billRef = user.collection('bills').doc(bill.id);
+    final digest = _claimDigest(rawCode);
+    final claimRef = firestore.collection('receiptClaims').doc(digest);
+    // Leave a clock-skew margin because rules compare this client timestamp
+    // against server request.time and enforce a maximum 24-hour lifetime.
+    final expiry =
+        expiresAt ?? DateTime.now().toUtc().add(const Duration(hours: 23));
+    final receipt = _receiptSnapshot(bill);
+    late final bool conflict;
+    try {
+      conflict = await firestore.runTransaction<bool>((transaction) async {
+        final existingClaim = await transaction.get(claimRef);
+        final source = await transaction.get(billRef);
+        if (!source.exists || !_sameReceiptSnapshot(source.data()!, receipt)) {
+          return true;
+        }
+        if (existingClaim.exists) {
+          final existing = existingClaim.data()!;
+          final existingExpiry = existing['expiresAt'];
+          final sameClaim = existing['ownerUid'] == uid &&
+              existing['sourceBillId'] == bill.id &&
+              existing['status'] == 'open' &&
+              existingExpiry is Timestamp &&
+              existingExpiry.toDate().isAfter(DateTime.now()) &&
+              _sameReceiptSnapshot(
+                  existing['receipt'] as Map<String, dynamic>, receipt);
+          // An ambiguous successful create is safely retried by recognizing
+          // the persisted identity. Never write the document again here: its
+          // original expiry is part of the bearer code's lifetime.
+          return !sameClaim;
+        }
+        transaction.set(claimRef, {
+          'ownerUid': uid,
+          'sourceBillId': bill.id,
+          'receipt': receipt,
+          'expiresAt': Timestamp.fromDate(expiry),
+          'status': 'open',
+        });
+        return false;
+      });
+    } on FirebaseException catch (error) {
+      if (error.code == 'permission-denied') {
+        throw const ReceiptClaimException(
+            'Could not issue this code. Confirm this bill belongs to the signed-in seller account, then generate a new code or retry.');
+      }
+      rethrow;
+    }
+    if (conflict) {
+      throw const ReceiptClaimException(
+          'This code could not be issued. Refresh the bill and generate a new code.');
+    }
+  }
+
+  Future<ClaimedReceipt> claimReceipt(String rawCode) async {
+    final uid = this.uid;
+    if (uid == null) {
+      throw const ReceiptClaimException('Sign in before claiming a receipt.');
+    }
+    if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(rawCode)) {
+      throw const ReceiptClaimException(
+          'Enter a valid 32-character receipt claim code.');
+    }
+    final digest = _claimDigest(rawCode);
+    final claimRef = firestore.collection('receiptClaims').doc(digest);
+    // Read once outside the transaction to turn ordinary invalid/expired-code
+    // denials into a useful UI message without throwing from a transaction callback.
+    try {
+      await claimRef.get();
+    } on FirebaseException catch (error) {
+      if (error.code == 'permission-denied') {
+        throw const ReceiptClaimException(
+            'This code is invalid, expired, or already claimed by another account. Ask the seller for a new code.');
+      }
+      rethrow;
+    }
+    String? ownerUid;
+    String? sourceBillId;
+    Map<String, dynamic>? receipt;
+    Timestamp? claimedAt;
+    late final bool conflict;
+    try {
+      conflict = await firestore.runTransaction<bool>((transaction) async {
+        final claimSnapshot = await transaction.get(claimRef);
+        if (!claimSnapshot.exists) return true;
+        final claim = claimSnapshot.data()!;
+        final candidateOwner = claim['ownerUid'];
+        final candidateBillId = claim['sourceBillId'];
+        final candidateReceipt = claim['receipt'];
+        if (candidateOwner is! String ||
+            candidateBillId is! String ||
+            candidateReceipt is! Map) {
+          return true;
+        }
+        final ownerCopyRef = firestore
+            .collection('users')
+            .doc(uid)
+            .collection('claimedReceipts')
+            .doc(candidateOwner)
+            .collection('bills')
+            .doc(candidateBillId);
+        final indexRef = firestore
+            .collection('users')
+            .doc(uid)
+            .collection('claimedReceiptsIndex')
+            .doc(_receiptIndexId(candidateOwner, candidateBillId));
+        final copySnapshot = await transaction.get(ownerCopyRef);
+        final indexSnapshot = await transaction.get(indexRef);
+        final status = claim['status'];
+        final sameReceipt = copySnapshot.exists &&
+            indexSnapshot.exists &&
+            copySnapshot.data()!['recipientUid'] == uid &&
+            copySnapshot.data()!['ownerUid'] == candidateOwner &&
+            copySnapshot.data()!['sourceBillId'] == candidateBillId &&
+            indexSnapshot.data()!['recipientUid'] == uid &&
+            indexSnapshot.data()!['ownerUid'] == candidateOwner &&
+            indexSnapshot.data()!['sourceBillId'] == candidateBillId &&
+            _sameReceiptSnapshot(
+                copySnapshot.data()!['receipt'] as Map<String, dynamic>,
+                candidateReceipt.cast<String, dynamic>()) &&
+            _sameReceiptSnapshot(
+                indexSnapshot.data()!['receipt'] as Map<String, dynamic>,
+                candidateReceipt.cast<String, dynamic>());
+        if (status == 'claimed') {
+          if (!sameReceipt) return true;
+          ownerUid = candidateOwner;
+          sourceBillId = candidateBillId;
+          receipt = candidateReceipt.cast<String, dynamic>();
+          claimedAt = copySnapshot.data()!['claimedAt'] is Timestamp
+              ? copySnapshot.data()!['claimedAt'] as Timestamp
+              : Timestamp.now();
+          return false;
+        }
+        if (status != 'open' ||
+            claim['expiresAt'] is! Timestamp ||
+            !(claim['expiresAt'] as Timestamp)
+                .toDate()
+                .isAfter(DateTime.now())) {
+          return true;
+        }
+        ownerUid = candidateOwner;
+        sourceBillId = candidateBillId;
+        receipt = candidateReceipt.cast<String, dynamic>();
+        claimedAt = Timestamp.now();
+        if (!sameReceipt) {
+          final copy = {
+            'recipientUid': uid,
+            'ownerUid': candidateOwner,
+            'sourceBillId': candidateBillId,
+            'receipt': receipt,
+            'claimedAt': FieldValue.serverTimestamp(),
+            'claimDigest': digest,
+          };
+          transaction.set(ownerCopyRef, copy);
+          transaction.set(indexRef, copy);
+        }
+        transaction.update(claimRef, {
+          'status': 'claimed',
+        });
+        return false;
+      });
+    } on FirebaseException catch (error) {
+      if (error.code == 'permission-denied') {
+        throw const ReceiptClaimException(
+            'This code is invalid, expired, already claimed, or this account is not set up as a customer. Ask the seller for a new code.');
+      }
+      rethrow;
+    }
+    if (conflict ||
+        ownerUid == null ||
+        sourceBillId == null ||
+        receipt == null) {
+      throw const ReceiptClaimException(
+          'This code is invalid, expired, or has already been claimed by another account. Ask the seller for a new code.');
+    }
+    return _claimedReceipt(
+        ownerUid!, sourceBillId!, receipt!, claimedAt ?? Timestamp.now());
+  }
+
+  String _receiptIndexId(String ownerUid, String billId) => '$ownerUid~$billId';
+
+  ClaimedReceipt _claimedReceipt(
+    String ownerUid,
+    String billId,
+    Map<String, dynamic> receipt,
+    Timestamp claimedAt,
+  ) {
+    final items = (receipt['items'] as List<dynamic>).map((raw) {
+      final item = raw as Map<String, dynamic>;
+      return BillLine(
+        name: item['name'] as String,
+        quantity: (item['quantity'] as num).toInt(),
+        unitPrice: (item['unitPrice'] as num).toDouble(),
+      );
+    }).toList();
+    return ClaimedReceipt(
+      ownerUid: ownerUid,
+      sourceBillId: billId,
+      claimedAt: claimedAt.toDate(),
+      bill: DemoBill(
+        id: receipt['id'] as String,
+        store: receipt['store'] as String,
+        items: items,
+        createdAt: (receipt['createdAt'] as Timestamp).toDate(),
+        paymentMode: receipt['paymentMode'] as String,
+        isSaved: true,
+      ),
+    );
+  }
+
+  bool _sameReceiptSnapshot(
+      Map<String, dynamic> left, Map<String, dynamic> right) {
+    for (final key in const ['id', 'store', 'paymentMode']) {
+      if (left[key] != right[key]) return false;
+    }
+    final leftDate = left['createdAt'];
+    final rightDate = right['createdAt'];
+    if (leftDate is! Timestamp ||
+        rightDate is! Timestamp ||
+        leftDate != rightDate) {
+      return false;
+    }
+    final leftItems = left['items'];
+    final rightItems = right['items'];
+    if (leftItems is! List ||
+        rightItems is! List ||
+        leftItems.length != rightItems.length) {
+      return false;
+    }
+    for (var i = 0; i < leftItems.length; i++) {
+      final a = leftItems[i] as Map;
+      final b = rightItems[i] as Map;
+      if (a['name'] != b['name'] ||
+          a['quantity'] != b['quantity'] ||
+          a['unitPrice'] != b['unitPrice']) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<List<ClaimedReceipt>> loadClaimedReceipts() async {
+    final user = _userDoc;
+    if (user == null) return <ClaimedReceipt>[];
+    final index = await user.collection('claimedReceiptsIndex').get();
+    final results = <ClaimedReceipt>[];
+    for (final entry in index.docs) {
+      final data = entry.data();
+      final ownerUid = data['ownerUid'];
+      final billId = data['sourceBillId'];
+      if (ownerUid is! String || billId is! String) continue;
+      final copy = await user
+          .collection('claimedReceipts')
+          .doc(ownerUid)
+          .collection('bills')
+          .doc(billId)
+          .get();
+      if (!copy.exists) {
+        throw const ReceiptClaimException(
+            'A saved receipt copy is missing. Contact support before retrying this claim.');
+      }
+      results.add(_claimedReceipt(
+          ownerUid,
+          billId,
+          copy.data()!['receipt'] as Map<String, dynamic>,
+          copy.data()!['claimedAt'] as Timestamp));
+    }
+    results.sort((a, b) => b.claimedAt.compareTo(a.claimedAt));
+    return results;
+  }
+
   // Profile serialization & persistence
   Future<void> saveUserProfile({
     required UserRole role,
@@ -98,7 +417,8 @@ class FirestoreService {
     if (doc == null) throw Exception('User not authenticated.');
     final billRef = doc.collection('bills').doc(bill.id);
     final data = _serializeBill(bill);
-    final hasConflictingBill = await firestore.runTransaction<bool>((transaction) async {
+    final hasConflictingBill =
+        await firestore.runTransaction<bool>((transaction) async {
       final existing = await transaction.get(billRef);
       if (existing.exists) {
         if (_isSameBillIdentity(existing.data()!, data)) {
@@ -126,22 +446,22 @@ class FirestoreService {
   }
 
   Map<String, dynamic> _serializeBill(DemoBill bill) => {
-      'id': bill.id,
-      'store': bill.store,
-      'items': bill.items
-          .map((item) => {
-                'name': item.name,
-                'quantity': item.quantity,
-                'unitPrice': item.unitPrice,
-              })
-          .toList(),
-      'createdAt': Timestamp.fromDate(bill.createdAt),
-      'paymentMode': bill.paymentMode,
-      'customerPhone': bill.customerPhone,
-      'isUdhaar': bill.isUdhaar,
-      'isSettled': bill.isSettled,
-      'isSaved': bill.isSaved,
-    };
+        'id': bill.id,
+        'store': bill.store,
+        'items': bill.items
+            .map((item) => {
+                  'name': item.name,
+                  'quantity': item.quantity,
+                  'unitPrice': item.unitPrice,
+                })
+            .toList(),
+        'createdAt': Timestamp.fromDate(bill.createdAt),
+        'paymentMode': bill.paymentMode,
+        'customerPhone': bill.customerPhone,
+        'isUdhaar': bill.isUdhaar,
+        'isSettled': bill.isSettled,
+        'isSaved': bill.isSaved,
+      };
 
   bool _isSameBillIdentity(
     Map<String, dynamic> existing,
@@ -186,8 +506,10 @@ class FirestoreService {
   Future<List<DemoBill>> loadBills() async {
     final doc = _userDoc;
     if (doc == null) return [];
-    final snapshot =
-        await doc.collection('bills').orderBy('createdAt', descending: true).get();
+    final snapshot = await doc
+        .collection('bills')
+        .orderBy('createdAt', descending: true)
+        .get();
     return snapshot.docs.map((docSnap) {
       final data = docSnap.data();
       final itemsData = (data['items'] as List<dynamic>? ?? [])
@@ -236,8 +558,10 @@ class FirestoreService {
   Future<List<DemoExpense>> loadExpenses() async {
     final doc = _userDoc;
     if (doc == null) return [];
-    final snapshot =
-        await doc.collection('expenses').orderBy('createdAt', descending: true).get();
+    final snapshot = await doc
+        .collection('expenses')
+        .orderBy('createdAt', descending: true)
+        .get();
     return snapshot.docs.map((docSnap) {
       final data = docSnap.data();
       final createdAtTs = data['createdAt'];
