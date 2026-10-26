@@ -42,6 +42,46 @@ function request({ method, path, data, userId }) {
   });
 }
 
+function firestoreName(path) {
+  return `projects/${PROJECT_ID}/databases/(default)/documents/${path}`;
+}
+
+function createWrite(path, data, serverTimestampFields = []) {
+  const fields = { ...data };
+  for (const field of serverTimestampFields) delete fields[field];
+  const write = {
+    update: { name: firestoreName(path), ...wrapDocument(fields) },
+    updateMask: { fieldPaths: Object.keys(fields) },
+    currentDocument: { exists: false },
+  };
+  if (serverTimestampFields.length) {
+    write.updateTransforms = serverTimestampFields.map((fieldPath) => ({
+      fieldPath,
+      setToServerValue: 'REQUEST_TIME',
+    }));
+  }
+  return write;
+}
+
+function updateWrite(path, data, serverTimestampFields = []) {
+  const write = {
+    update: { name: firestoreName(path), ...wrapDocument(data) },
+    updateMask: { fieldPaths: Object.keys(data) },
+    currentDocument: { exists: true },
+  };
+  if (serverTimestampFields.length) {
+    write.updateTransforms = serverTimestampFields.map((fieldPath) => ({
+      fieldPath,
+      setToServerValue: 'REQUEST_TIME',
+    }));
+  }
+  return write;
+}
+
+async function commit(writes, userId) {
+  return request({ method: 'POST', path: ':commit', data: { writes }, userId });
+}
+
 function timestampField(dateStr) {
   return { timestampValue: dateStr || new Date().toISOString() };
 }
@@ -141,6 +181,83 @@ async function runTests() {
     userId: null,
     expectedStatus: 403,
   });
+
+  // Receipt claim security is tested with server-time transforms and atomic REST commits.
+  const sellerProfile = { ...validProfile, name: 'Seller', role: 'shopOwner' };
+  const customerProfile = { ...validProfile, name: 'Customer', role: 'customer' };
+  const otherCustomerProfile = { ...validProfile, name: 'Other Customer', role: 'customer' };
+  await assertRule({ description: '14.1 Seller profile for claim tests created', method: 'PATCH', path: '/users/seller', data: wrapDocument(sellerProfile), userId: 'seller', expectedStatus: 200 });
+  await assertRule({ description: '14.2 Customer profile for claim tests created', method: 'PATCH', path: '/users/customer', data: wrapDocument(customerProfile), userId: 'customer', expectedStatus: 200 });
+  await assertRule({ description: '14.3 Second customer profile for claim tests created', method: 'PATCH', path: '/users/otherCustomer', data: wrapDocument(otherCustomerProfile), userId: 'otherCustomer', expectedStatus: 200 });
+
+  const sourceBillId = 'claim-source-1';
+  const sourceDate = timestampField('2026-10-23T12:00:00.000Z');
+  const sourceBill = { ...validBill, id: sourceBillId, createdAt: sourceDate, customerPhone: '+919999999999', isUdhaar: true, isSettled: false, isSaved: false };
+  await assertRule({ description: '14.4 Seller can create source bill', method: 'PATCH', path: `/users/seller/bills/${sourceBillId}`, data: wrapDocument(sourceBill), userId: 'seller', expectedStatus: 200 });
+  const receipt = { id: sourceBillId, store: sourceBill.store, items: sourceBill.items, createdAt: sourceDate, paymentMode: sourceBill.paymentMode };
+  const digest = 'a'.repeat(64);
+  const claim = {
+    ownerUid: 'seller', sourceBillId, receipt,
+    expiresAt: timestampField(new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()),
+    status: 'open',
+  };
+  const claimCreate = await commit([
+    createWrite(`receiptClaims/${digest}`, claim),
+  ], 'seller');
+  if (claimCreate.ok) { console.log('[PASS] 14.5 Seller creates a source-bound, expiring claim'); passed++; }
+  else { console.error('[FAIL] 14.5 Seller claim creation denied:', claimCreate.body); failed++; }
+
+  const openRead = await request({ method: 'GET', path: `/receiptClaims/${digest}`, userId: 'customer' });
+  if (openRead.status === 200) { console.log('[PASS] 14.6 Authenticated bearer can read only a known open claim'); passed++; }
+  else { console.error('[FAIL] 14.6 Expected open claim get, got', openRead.status, openRead.body); failed++; }
+  await assertRule({ description: '14.7 Claim collection enumeration denied', method: 'GET', path: '/receiptClaims', userId: 'customer', expectedStatus: 403 });
+
+  const immutableClaimChanges = [
+    ['expiry extension', { expiresAt: timestampField(new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString()) }],
+    ['owner UID', { ownerUid: stringField('otherSeller') }],
+    ['source bill', { sourceBillId: stringField('different-bill') }],
+    ['receipt snapshot', { receipt: { ...receipt, items: [{ name: 'Forged', quantity: 1, unitPrice: 1 }] } }],
+    ['status', { status: stringField('claimed') }],
+    ['claimedBy', { claimedBy: stringField('customer') }],
+    ['claimedAt', { claimedAt: timestampField(new Date().toISOString()) }],
+  ];
+  for (const [label, patch] of immutableClaimChanges) {
+    const result = await commit([
+      updateWrite(`receiptClaims/${digest}`, patch),
+    ], 'seller');
+    if (result.status === 403) { console.log(`[PASS] 14.7a Seller cannot alter ${label} on an open claim`); passed++; }
+    else { console.error(`[FAIL] 14.7a Seller unexpectedly altered ${label}:`, result.body); failed++; }
+  }
+
+  const copy = { recipientUid: 'customer', ownerUid: 'seller', sourceBillId, receipt, claimedAt: null, claimDigest: digest };
+  const indexId = `seller~${sourceBillId}`;
+  const claimCommit = await commit([
+    updateWrite(`receiptClaims/${digest}`, { status: 'claimed' }),
+    createWrite(`users/customer/claimedReceipts/seller/bills/${sourceBillId}`, copy, ['claimedAt']),
+    createWrite(`users/customer/claimedReceiptsIndex/${indexId}`, copy, ['claimedAt']),
+  ], 'customer');
+  if (claimCommit.ok) { console.log('[PASS] 14.8 Atomic claim consumes code and creates immutable copy plus customer index'); passed++; }
+  else { console.error('[FAIL] 14.8 Atomic claim denied:', claimCommit.body); failed++; }
+
+  await assertRule({ description: '14.9 Customer can read claimed receipt copy', method: 'GET', path: `/users/customer/claimedReceipts/seller/bills/${sourceBillId}`, userId: 'customer', expectedStatus: 200 });
+  await assertRule({ description: '14.10 Customer can list own claim index', method: 'GET', path: '/users/customer/claimedReceiptsIndex', userId: 'customer', expectedStatus: 200 });
+  await assertRule({ description: '14.11 Seller cannot read customer copy', method: 'GET', path: `/users/customer/claimedReceipts/seller/bills/${sourceBillId}`, userId: 'seller', expectedStatus: 403 });
+  await assertRule({ description: '14.12 Other customer cannot read customer copy', method: 'GET', path: `/users/customer/claimedReceipts/seller/bills/${sourceBillId}`, userId: 'otherCustomer', expectedStatus: 403 });
+  await assertRule({ description: '14.13 Bearer can still read only the minimized consumed claim snapshot', method: 'GET', path: `/receiptClaims/${digest}`, userId: 'otherCustomer', expectedStatus: 200 });
+  await assertRule({ description: '14.14 Customer cannot alter claimed copy', method: 'PATCH', path: `/users/customer/claimedReceipts/seller/bills/${sourceBillId}`, data: wrapDocument({ ...copy, receipt: { ...receipt, items: [{ name: 'Forged', quantity: 1, unitPrice: 1 }] } }), userId: 'customer', expectedStatus: 403 });
+
+  const replay = await commit([
+    createWrite(`users/otherCustomer/claimedReceipts/seller/bills/${sourceBillId}`, { ...copy, recipientUid: 'otherCustomer' }, ['claimedAt']),
+    createWrite(`users/otherCustomer/claimedReceiptsIndex/${indexId}`, { ...copy, recipientUid: 'otherCustomer' }, ['claimedAt']),
+  ], 'otherCustomer');
+  if (replay.status === 403) { console.log('[PASS] 14.15 Second account cannot create a copy from an already consumed code'); passed++; }
+  else { console.error('[FAIL] 14.15 Second account unexpectedly created a duplicate claim copy'); failed++; }
+
+  const alteredReceiptClaim = { ...claim, receipt: { ...receipt, items: [{ name: 'Forged', quantity: 1, unitPrice: 1 }] } };
+  const alteredDigest = 'b'.repeat(64);
+  const altered = await commit([createWrite(`receiptClaims/${alteredDigest}`, alteredReceiptClaim)], 'seller');
+  if (altered.status === 403) { console.log('[PASS] 14.16 Seller cannot issue a snapshot that differs from source bill'); passed++; }
+  else { console.error('[FAIL] 14.16 Forged receipt snapshot unexpectedly issued'); failed++; }
 
   await assertRule({
     description: '1.2 Unauthenticated write denied on user profile',

@@ -18,7 +18,8 @@ extension UserRoleLabel on UserRole {
 }
 
 class BillLine {
-  BillLine({required this.name, required this.quantity, required this.unitPrice});
+  BillLine(
+      {required this.name, required this.quantity, required this.unitPrice});
 
   final String name;
   final int quantity;
@@ -52,11 +53,31 @@ class DemoBill {
     if (id.startsWith('PP-')) return id;
     return 'PP-$id';
   }
+
   double get total => items.fold<double>(0, (sum, item) => sum + item.total);
 }
 
+/// A deliberately minimized, read-only copy of a bill claimed by this user.
+class ClaimedReceipt {
+  const ClaimedReceipt({
+    required this.ownerUid,
+    required this.sourceBillId,
+    required this.bill,
+    required this.claimedAt,
+  });
+
+  final String ownerUid;
+  final String sourceBillId;
+  final DemoBill bill;
+  final DateTime claimedAt;
+}
+
 class DemoExpense {
-  DemoExpense({required this.title, required this.category, required this.amount, required this.createdAt});
+  DemoExpense(
+      {required this.title,
+      required this.category,
+      required this.amount,
+      required this.createdAt});
   final String title;
   final String category;
   final double amount;
@@ -80,12 +101,14 @@ class AppState extends ChangeNotifier {
     } catch (_) {}
     return _auth;
   }
+
   set auth(FirebaseAuth? instance) => _auth = instance;
 
   bool get isAuthenticated => auth?.currentUser != null;
 
   FirestoreService? _firestoreService;
-  FirestoreService get firestoreService => _firestoreService ??= FirestoreService(auth: auth);
+  FirestoreService get firestoreService =>
+      _firestoreService ??= FirestoreService(auth: auth);
   set firestoreService(FirestoreService service) => _firestoreService = service;
 
   String verificationId = '';
@@ -126,6 +149,7 @@ class AppState extends ChangeNotifier {
   String vendorName = 'Raju Tea Stall';
   String vendorCategory = 'Tea / Snacks';
   DemoBill? selectedBill;
+  ClaimedReceipt? selectedClaimedReceipt;
   String supportReference = 'PP-SUP-1042';
   String lastNotice = '';
   String language = 'English';
@@ -134,6 +158,7 @@ class AppState extends ChangeNotifier {
   bool productUpdatesEnabled = false;
 
   final List<DemoBill> bills = <DemoBill>[];
+  final List<ClaimedReceipt> claimedReceipts = <ClaimedReceipt>[];
   final List<DemoExpense> expenses = <DemoExpense>[];
   final Set<String> savedShops = <String>{};
   int _billSequence = 10500;
@@ -151,7 +176,8 @@ class AppState extends ChangeNotifier {
         if (_disposed || isSigningOut) return;
         isCloudLoading = false;
         profileStatus = CloudProfileStatus.failed;
-        cloudError = 'Unable to check your sign-in session. Check your connection and retry.';
+        cloudError =
+            'Unable to check your sign-in session. Check your connection and retry.';
         page = 'profileLoadError';
         notifyListeners();
       },
@@ -227,16 +253,19 @@ class AppState extends ChangeNotifier {
         final roleValue = profile['role'];
         if (roleValue is! String ||
             !UserRole.values.any((candidate) => candidate.name == roleValue)) {
-          throw const FormatException('The saved account role is missing or invalid.');
+          throw const FormatException(
+              'The saved account role is missing or invalid.');
         }
 
         final loadedName = profile['name'];
         if (loadedName is! String || loadedName.trim().isEmpty) {
-          throw const FormatException('The saved account profile is missing a valid name.');
+          throw const FormatException(
+              'The saved account profile is missing a valid name.');
         }
 
         hasExistingCloudProfile = true;
-        role = UserRole.values.firstWhere((candidate) => candidate.name == roleValue);
+        role = UserRole.values
+            .firstWhere((candidate) => candidate.name == roleValue);
         customerName = loadedName;
         customerEmail = profile['email'] as String? ?? customerEmail;
         city = profile['city'] as String? ?? city;
@@ -252,7 +281,6 @@ class AppState extends ChangeNotifier {
         profileStatus = CloudProfileStatus.missing;
         result = profileStatus;
       }
-
     } catch (e) {
       if (!isCurrentLoad()) return CloudProfileStatus.unknown;
       hasExistingCloudProfile = false;
@@ -274,6 +302,11 @@ class AppState extends ChangeNotifier {
       bills
         ..clear()
         ..addAll(cloudBills);
+      final cloudClaims = await firestoreService.loadClaimedReceipts();
+      if (!isCurrentLoad()) return CloudProfileStatus.unknown;
+      claimedReceipts
+        ..clear()
+        ..addAll(cloudClaims);
       expenses
         ..clear()
         ..addAll(cloudExpenses);
@@ -282,7 +315,8 @@ class AppState extends ChangeNotifier {
         ..addAll(cloudSavedShops);
     } catch (e) {
       if (!isCurrentLoad()) return CloudProfileStatus.unknown;
-      cloudError = 'Your profile loaded, but some saved data could not be loaded. ($e)';
+      cloudError =
+          'Your profile loaded, but some saved data could not be loaded. ($e)';
     } finally {
       if (isCurrentLoad()) {
         isCloudLoading = false;
@@ -298,7 +332,8 @@ class AppState extends ChangeNotifier {
       case CloudProfileStatus.loaded:
         if (!hasExistingCloudProfile) {
           page = 'profileLoadError';
-          cloudError = 'Your saved profile could not be verified. Retry before continuing.';
+          cloudError =
+              'Your saved profile could not be verified. Retry before continuing.';
           break;
         }
         page = switch (role) {
@@ -332,7 +367,8 @@ class AppState extends ChangeNotifier {
   Future<bool> signOut() async {
     if (isSigningOut) return false;
     if (isCloudLoading) {
-      signOutError = 'Please wait for the current account update to finish, then try logging out again.';
+      signOutError =
+          'Please wait for the current account update to finish, then try logging out again.';
       notifyListeners();
       return false;
     }
@@ -352,7 +388,8 @@ class AppState extends ChangeNotifier {
       page = 'splash';
       return true;
     } catch (e) {
-      signOutError = 'Could not sign out. Check your connection and try again. ($e)';
+      signOutError =
+          'Could not sign out. Check your connection and try again. ($e)';
       return false;
     } finally {
       isSigningOut = false;
@@ -373,9 +410,11 @@ class AppState extends ChangeNotifier {
     vendorName = '';
     vendorCategory = '';
     bills.clear();
+    claimedReceipts.clear();
     expenses.clear();
     savedShops.clear();
     selectedBill = null;
+    selectedClaimedReceipt = null;
   }
 
   bool _isCurrentAuthenticatedSession(String uid, int generation) =>
@@ -408,6 +447,8 @@ class AppState extends ChangeNotifier {
     phoneAuthError = null;
     lastOtpSentAt = null;
     selectedBill = null;
+    selectedClaimedReceipt = null;
+    claimedReceipts.clear();
     lastNotice = '';
     supportReference = 'PP-SUP-1042';
     language = 'English';
@@ -422,36 +463,89 @@ class AppState extends ChangeNotifier {
     expenses
       ..clear()
       ..addAll(<DemoExpense>[
-        DemoExpense(title: 'Stock purchase', category: 'Stock', amount: 300, createdAt: DateTime(2026, 10, 19, 10, 30)),
-        DemoExpense(title: 'Transport', category: 'Transport', amount: 150, createdAt: DateTime(2026, 10, 19, 9, 20)),
+        DemoExpense(
+            title: 'Stock purchase',
+            category: 'Stock',
+            amount: 300,
+            createdAt: DateTime(2026, 10, 19, 10, 30)),
+        DemoExpense(
+            title: 'Transport',
+            category: 'Transport',
+            amount: 150,
+            createdAt: DateTime(2026, 10, 19, 9, 20)),
       ]);
     savedShops
       ..clear()
-      ..addAll(<String>{'Sharma Kirana Store', 'Gupta General Store', 'Fresh Mart'});
+      ..addAll(
+          <String>{'Sharma Kirana Store', 'Gupta General Store', 'Fresh Mart'});
   }
 
   List<DemoBill> _demoBills() => <DemoBill>[
-        DemoBill(id: 'PP-10482', store: 'Sharma Kirana Store', items: <BillLine>[
-          BillLine(name: 'Maggi', quantity: 1, unitPrice: 40),
-          BillLine(name: 'Bread', quantity: 1, unitPrice: 30),
-          BillLine(name: 'Milk', quantity: 1, unitPrice: 50),
-          BillLine(name: 'Chips', quantity: 1, unitPrice: 60),
-        ], createdAt: DateTime(2026, 10, 12, 17, 24), paymentMode: 'Cash', isSaved: true),
-        DemoBill(id: 'PP-10481', store: 'Gupta General Store', items: <BillLine>[
-          BillLine(name: 'Household items', quantity: 1, unitPrice: 240),
-        ], createdAt: DateTime(2026, 10, 10, 11, 8), paymentMode: 'UPI', isSaved: true),
-        DemoBill(id: 'PP-10480', store: 'Fresh Mart', items: <BillLine>[
-          BillLine(name: 'Groceries', quantity: 1, unitPrice: 320),
-        ], createdAt: DateTime(2026, 10, 8, 18, 42), paymentMode: 'UPI', isSaved: true),
-        DemoBill(id: 'PP-10470', store: 'Mansuri General Store', items: <BillLine>[
-          BillLine(name: 'Grocery order', quantity: 1, unitPrice: 450),
-        ], createdAt: DateTime(2026, 10, 12, 12), paymentMode: 'Udhaar', customerPhone: '•••• 4421', isUdhaar: true, isSettled: false, isSaved: false),
-        DemoBill(id: 'PP-10462', store: 'Mansuri General Store', items: <BillLine>[
-          BillLine(name: 'Walk-in purchase', quantity: 1, unitPrice: 300),
-        ], createdAt: DateTime(2026, 10, 11, 16), paymentMode: 'Udhaar', isUdhaar: true, isSettled: false, isSaved: false),
-        DemoBill(id: 'PP-10455', store: 'Mansuri General Store', items: <BillLine>[
-          BillLine(name: 'Household order', quantity: 1, unitPrice: 650),
-        ], createdAt: DateTime(2026, 10, 10, 10), paymentMode: 'Udhaar', customerPhone: '•••• 1184', isUdhaar: true, isSettled: false, isSaved: false),
+        DemoBill(
+            id: 'PP-10482',
+            store: 'Sharma Kirana Store',
+            items: <BillLine>[
+              BillLine(name: 'Maggi', quantity: 1, unitPrice: 40),
+              BillLine(name: 'Bread', quantity: 1, unitPrice: 30),
+              BillLine(name: 'Milk', quantity: 1, unitPrice: 50),
+              BillLine(name: 'Chips', quantity: 1, unitPrice: 60),
+            ],
+            createdAt: DateTime(2026, 10, 12, 17, 24),
+            paymentMode: 'Cash',
+            isSaved: true),
+        DemoBill(
+            id: 'PP-10481',
+            store: 'Gupta General Store',
+            items: <BillLine>[
+              BillLine(name: 'Household items', quantity: 1, unitPrice: 240),
+            ],
+            createdAt: DateTime(2026, 10, 10, 11, 8),
+            paymentMode: 'UPI',
+            isSaved: true),
+        DemoBill(
+            id: 'PP-10480',
+            store: 'Fresh Mart',
+            items: <BillLine>[
+              BillLine(name: 'Groceries', quantity: 1, unitPrice: 320),
+            ],
+            createdAt: DateTime(2026, 10, 8, 18, 42),
+            paymentMode: 'UPI',
+            isSaved: true),
+        DemoBill(
+            id: 'PP-10470',
+            store: 'Mansuri General Store',
+            items: <BillLine>[
+              BillLine(name: 'Grocery order', quantity: 1, unitPrice: 450),
+            ],
+            createdAt: DateTime(2026, 10, 12, 12),
+            paymentMode: 'Udhaar',
+            customerPhone: '•••• 4421',
+            isUdhaar: true,
+            isSettled: false,
+            isSaved: false),
+        DemoBill(
+            id: 'PP-10462',
+            store: 'Mansuri General Store',
+            items: <BillLine>[
+              BillLine(name: 'Walk-in purchase', quantity: 1, unitPrice: 300),
+            ],
+            createdAt: DateTime(2026, 10, 11, 16),
+            paymentMode: 'Udhaar',
+            isUdhaar: true,
+            isSettled: false,
+            isSaved: false),
+        DemoBill(
+            id: 'PP-10455',
+            store: 'Mansuri General Store',
+            items: <BillLine>[
+              BillLine(name: 'Household order', quantity: 1, unitPrice: 650),
+            ],
+            createdAt: DateTime(2026, 10, 10, 10),
+            paymentMode: 'Udhaar',
+            customerPhone: '•••• 1184',
+            isUdhaar: true,
+            isSettled: false,
+            isSaved: false),
       ];
 
   @override
@@ -471,13 +565,15 @@ class AppState extends ChangeNotifier {
   void setRole(UserRole value) {
     if (!isDemoMode && profileStatus != CloudProfileStatus.missing) {
       // Existing cloud profiles retain their stored role to satisfy Firestore security rules
-      if (profileStatus == CloudProfileStatus.loaded && hasExistingCloudProfile) {
+      if (profileStatus == CloudProfileStatus.loaded &&
+          hasExistingCloudProfile) {
         page = switch (role) {
           UserRole.customer => 'customerSetup',
           UserRole.shopOwner => 'shopSetup',
           UserRole.streetVendor => 'vendorSetup',
         };
-        lastNotice = 'Role is locked for existing cloud profile (${role.label}).';
+        lastNotice =
+            'Role is locked for existing cloud profile (${role.label}).';
       } else if (profileStatus == CloudProfileStatus.failed) {
         page = 'profileLoadError';
       } else {
@@ -496,25 +592,95 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  String get activeStoreName => role == UserRole.streetVendor ? vendorName : shopName;
+  String get activeStoreName =>
+      role == UserRole.streetVendor ? vendorName : shopName;
 
-  List<DemoBill> get customerBills => bills.where((bill) => bill.isSaved).toList()
+  List<DemoBill> get customerBills =>
+      bills.where((bill) => bill.isSaved).toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  List<DemoBill> get shopBills => bills
+      .where((bill) => bill.store == shopName || bill.store == vendorName)
+      .toList()
     ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-  List<DemoBill> get shopBills => bills.where((bill) => bill.store == shopName || bill.store == vendorName)
-    .toList()
-    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  List<DemoBill> get udhaarBills =>
+      bills.where((bill) => bill.isUdhaar && !bill.isSettled).toList();
 
-  List<DemoBill> get udhaarBills => bills.where((bill) => bill.isUdhaar && !bill.isSettled).toList();
-
-  double get recordedSales => shopBills.where((b) => !b.isUdhaar).fold<double>(0, (sum, bill) => sum + bill.total);
-  double get expensesTotal => expenses.fold<double>(0, (sum, item) => sum + item.amount);
-  double get outstandingTotal => udhaarBills.fold<double>(0, (sum, bill) => sum + bill.total);
+  double get recordedSales => shopBills
+      .where((b) => !b.isUdhaar)
+      .fold<double>(0, (sum, bill) => sum + bill.total);
+  double get expensesTotal =>
+      expenses.fold<double>(0, (sum, item) => sum + item.amount);
+  double get outstandingTotal =>
+      udhaarBills.fold<double>(0, (sum, bill) => sum + bill.total);
 
   void openBill(DemoBill bill) {
+    selectedClaimedReceipt = null;
     selectedBill = bill;
     page = 'billDetail';
     notifyListeners();
+  }
+
+  void openClaimedReceipt(ClaimedReceipt receipt) {
+    selectedBill = null;
+    selectedClaimedReceipt = receipt;
+    page = 'billDetail';
+    notifyListeners();
+  }
+
+  String newReceiptClaimCode() => firestoreService.newReceiptClaimCode();
+
+  Future<void> issueReceiptClaim(DemoBill bill, String rawCode) async {
+    if (isDemoMode || !isAuthenticated) {
+      throw StateError(
+          'Sign in with a shop-owner or vendor account to issue a receipt code.');
+    }
+    if (isCloudLoading || isSigningOut) {
+      throw StateError(
+          'Another account operation is still in progress. Please wait.');
+    }
+    isCloudLoading = true;
+    cloudError = null;
+    notifyListeners();
+    try {
+      await firestoreService.createReceiptClaim(bill, rawCode: rawCode);
+      lastNotice = 'Receipt claim code is ready. It expires within 24 hours.';
+    } catch (error) {
+      cloudError = error.toString();
+      rethrow;
+    } finally {
+      isCloudLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<ClaimedReceipt> claimReceipt(String rawCode) async {
+    if (isDemoMode || !isAuthenticated) {
+      throw StateError('Sign in with a customer account to claim a receipt.');
+    }
+    if (isCloudLoading || isSigningOut) {
+      throw StateError(
+          'Another account operation is still in progress. Please wait.');
+    }
+    isCloudLoading = true;
+    cloudError = null;
+    notifyListeners();
+    try {
+      final receipt = await firestoreService.claimReceipt(rawCode);
+      claimedReceipts.removeWhere((entry) =>
+          entry.ownerUid == receipt.ownerUid &&
+          entry.sourceBillId == receipt.sourceBillId);
+      claimedReceipts.insert(0, receipt);
+      lastNotice = 'Receipt added to your account.';
+      return receipt;
+    } catch (error) {
+      cloudError = error.toString();
+      rethrow;
+    } finally {
+      isCloudLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<DemoBill> createBill({
@@ -524,7 +690,8 @@ class AppState extends ChangeNotifier {
     required bool vendorMode,
   }) async {
     if (isCloudLoading || isSigningOut) {
-      throw StateError('Another account operation is still in progress. Please wait.');
+      throw StateError(
+          'Another account operation is still in progress. Please wait.');
     }
     if (items.isEmpty) {
       throw Exception('A bill must contain at least 1 item.');
@@ -540,12 +707,13 @@ class AppState extends ChangeNotifier {
     final store = vendorMode ? vendorName : shopName;
     final normalizedPhone = customerPhone.trim();
     DemoBill bill;
-    if (cloudBill && _matchesRetryableBill(
-      store: store,
-      items: items,
-      paymentMode: paymentMode,
-      customerPhone: normalizedPhone,
-    )) {
+    if (cloudBill &&
+        _matchesRetryableBill(
+          store: store,
+          items: items,
+          paymentMode: paymentMode,
+          customerPhone: normalizedPhone,
+        )) {
       bill = _retryableCloudBill!;
     } else {
       bill = DemoBill(
@@ -584,7 +752,8 @@ class AppState extends ChangeNotifier {
     try {
       await firestoreService.createBill(bill);
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
-        throw StateError('Your sign-in session changed before the bill was saved.');
+        throw StateError(
+            'Your sign-in session changed before the bill was saved.');
       }
       bills.insert(0, bill);
       if (identical(_retryableCloudBill, bill)) _retryableCloudBill = null;
@@ -594,7 +763,8 @@ class AppState extends ChangeNotifier {
       cloudError = null;
       return bill;
     } catch (e) {
-      if (e is BillIdCollisionException && identical(_retryableCloudBill, bill)) {
+      if (e is BillIdCollisionException &&
+          identical(_retryableCloudBill, bill)) {
         _retryableCloudBill = null;
       }
       cloudError = e.toString();
@@ -665,7 +835,9 @@ class AppState extends ChangeNotifier {
 
     try {
       await firestoreService.saveBill(updatedBill);
-      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) return false;
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
       selectedBill!.isSaved = true;
       lastNotice = 'Receipt saved to cloud.';
       cloudError = null;
@@ -710,7 +882,9 @@ class AppState extends ChangeNotifier {
 
     try {
       await firestoreService.saveBill(updatedBill);
-      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) return false;
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
       bill.isSettled = true;
       lastNotice = '${bill.id} marked as settled.';
       cloudError = null;
@@ -725,7 +899,10 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> addExpense({required String title, required String category, required double amount}) async {
+  Future<bool> addExpense(
+      {required String title,
+      required String category,
+      required double amount}) async {
     if (isCloudLoading || isSigningOut) return false;
     final expense = DemoExpense(
       title: title.trim().isEmpty ? 'Other expense' : title.trim(),
@@ -751,7 +928,9 @@ class AppState extends ChangeNotifier {
 
     try {
       await firestoreService.addExpense(expense);
-      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) return false;
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
       expenses.insert(0, expense);
       lastNotice = 'Expense saved to cloud.';
       page = 'expenseSaved';
@@ -793,12 +972,16 @@ class AppState extends ChangeNotifier {
     try {
       if (isCurrentlySaved) {
         await firestoreService.removeSavedShop(name);
-        if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) return false;
+        if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+          return false;
+        }
         savedShops.remove(name);
         lastNotice = 'Removed from saved shops.';
       } else {
         await firestoreService.saveShop(name);
-        if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) return false;
+        if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+          return false;
+        }
         savedShops.add(name);
         lastNotice = 'Shop saved.';
       }
@@ -815,7 +998,8 @@ class AppState extends ChangeNotifier {
   }
 
   void submitSupport() {
-    supportReference = 'PP-SUP-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
+    supportReference =
+        'PP-SUP-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
     page = 'supportSubmitted';
     notifyListeners();
   }
@@ -860,7 +1044,9 @@ class AppState extends ChangeNotifier {
         vendorName: vendorName,
         vendorCategory: vendorCategory,
       );
-      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) return false;
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
       customerName = newName;
       customerEmail = newEmail;
       city = newCity;
@@ -880,7 +1066,10 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateShop({required String name, required String category, required String address}) async {
+  Future<bool> updateShop(
+      {required String name,
+      required String category,
+      required String address}) async {
     if (isCloudLoading || isSigningOut) return false;
     final newShopName = name.trim().isEmpty ? shopName : name.trim();
     final newCategory = category;
@@ -914,7 +1103,9 @@ class AppState extends ChangeNotifier {
         vendorName: vendorName,
         vendorCategory: vendorCategory,
       );
-      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) return false;
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
       shopName = newShopName;
       shopCategory = newCategory;
       shopAddress = newAddress;
@@ -933,7 +1124,8 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateVendor({required String name, required String category}) async {
+  Future<bool> updateVendor(
+      {required String name, required String category}) async {
     if (isCloudLoading || isSigningOut) return false;
     final newVendorName = name.trim().isEmpty ? vendorName : name.trim();
     final newCategory = category;
@@ -965,7 +1157,9 @@ class AppState extends ChangeNotifier {
         vendorName: newVendorName,
         vendorCategory: newCategory,
       );
-      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) return false;
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
       vendorName = newVendorName;
       vendorCategory = newCategory;
       hasExistingCloudProfile = true;

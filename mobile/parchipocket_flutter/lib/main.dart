@@ -6,6 +6,7 @@ import 'firebase_options.dart';
 import 'screens/auth_screens.dart';
 import 'screens/common_screens.dart';
 import 'screens/customer_screens.dart';
+import 'screens/receipt_claim_screens.dart';
 import 'screens/shop_screens.dart';
 import 'screens/vendor_screens.dart';
 import 'theme.dart';
@@ -55,6 +56,7 @@ class _ParchiPocketAppState extends State<ParchiPocketApp> {
         'bills' => BillsScreen(state: state),
         'billDetail' => BillDetailScreen(state: state),
         'scan' => ScanBillScreen(state: state),
+        'issueReceiptClaim' => ReceiptClaimIssueScreen(state: state),
         'insights' => InsightsScreen(state: state),
         'nearbyShops' => NearbyShopsScreen(state: state),
         'shopDetails' => ShopDetailsScreen(state: state),

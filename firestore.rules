@@ -10,6 +10,55 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function hasRole(userId, role) {
+      return isOwner(userId) &&
+        get(/databases/$(database)/documents/users/$(userId)).data.role == role;
+    }
+
+    function isSeller(userId) {
+      return hasRole(userId, 'shopOwner') || hasRole(userId, 'streetVendor');
+    }
+
+    function isCustomer(userId) {
+      return hasRole(userId, 'customer');
+    }
+
+    function validReceiptSnapshot(receipt, source) {
+      return receipt is map &&
+        receipt.keys().hasAll(['id', 'store', 'items', 'createdAt', 'paymentMode']) &&
+        receipt.keys().hasOnly(['id', 'store', 'items', 'createdAt', 'paymentMode']) &&
+        receipt.id == source.id &&
+        receipt.store == source.store && receipt.items == source.items &&
+        receipt.createdAt == source.createdAt && receipt.paymentMode == source.paymentMode;
+    }
+
+    function validClaimDocument(data) {
+      return data.keys().hasAll(['ownerUid', 'sourceBillId', 'receipt', 'expiresAt', 'status']) &&
+        data.keys().hasOnly(['ownerUid', 'sourceBillId', 'receipt', 'expiresAt', 'status']) &&
+        data.ownerUid is string && data.sourceBillId is string &&
+        data.receipt is map && data.expiresAt is timestamp &&
+        data.status in ['open', 'claimed'];
+    }
+
+    function matchingClaimAfter(ownerUid, billId, data) {
+      let claim = getAfter(/databases/$(database)/documents/receiptClaims/$(data.claimDigest)).data;
+      return claim.status == 'claimed' &&
+        claim.ownerUid == ownerUid && claim.sourceBillId == billId &&
+        claim.receipt == data.receipt;
+    }
+
+    function matchingOpenClaimBefore(ownerUid, billId, data) {
+      let claim = get(/databases/$(database)/documents/receiptClaims/$(data.claimDigest)).data;
+      return claim.status == 'open' && claim.ownerUid == ownerUid &&
+        claim.sourceBillId == billId && claim.receipt == data.receipt;
+    }
+
+    function matchingCopyAfter(customerUid, ownerUid, billId, receipt) {
+      let copy = getAfter(/databases/$(database)/documents/users/$(customerUid)/claimedReceipts/$(ownerUid)/bills/$(billId)).data;
+      return copy.recipientUid == customerUid && copy.ownerUid == ownerUid &&
+        copy.sourceBillId == billId && copy.receipt == receipt;
+    }
+
     // Role is a user-selected app mode (customer, shopOwner, streetVendor), not an admin role.
     function isValidRole(role) {
       return role is string && (role == 'customer' || role == 'shopOwner' || role == 'streetVendor');
@@ -160,6 +209,74 @@ service cloud.firestore {
         allow update: if isOwner(userId) && isValidSavedShop(request.resource.data);
         allow delete: if isOwner(userId);
       }
+
+      match /claimedReceipts/{ownerUid}/bills/{billId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isCustomer(userId) &&
+          request.resource.data.keys().hasAll(['recipientUid', 'ownerUid', 'sourceBillId', 'receipt', 'claimedAt', 'claimDigest']) &&
+          request.resource.data.keys().hasOnly(['recipientUid', 'ownerUid', 'sourceBillId', 'receipt', 'claimedAt', 'claimDigest']) &&
+          request.resource.data.recipientUid == userId && request.resource.data.ownerUid == ownerUid &&
+          request.resource.data.sourceBillId == billId && request.resource.data.claimedAt == request.time &&
+          request.resource.data.claimDigest is string && request.resource.data.claimDigest.size() == 64 &&
+          request.resource.data.receipt.id == billId &&
+          matchingOpenClaimBefore(ownerUid, billId, request.resource.data) &&
+          matchingClaimAfter(ownerUid, billId, request.resource.data);
+        allow update, delete: if false;
+      }
+
+      match /claimedReceiptsIndex/{receiptKey} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isCustomer(userId) &&
+          request.resource.data.keys().hasAll(['recipientUid', 'ownerUid', 'sourceBillId', 'receipt', 'claimedAt', 'claimDigest']) &&
+          request.resource.data.keys().hasOnly(['recipientUid', 'ownerUid', 'sourceBillId', 'receipt', 'claimedAt', 'claimDigest']) &&
+          request.resource.data.recipientUid == userId && request.resource.data.ownerUid is string &&
+          request.resource.data.sourceBillId is string &&
+          receiptKey == request.resource.data.ownerUid + '~' + request.resource.data.sourceBillId &&
+          request.resource.data.claimedAt == request.time &&
+          request.resource.data.claimDigest is string && request.resource.data.claimDigest.size() == 64 &&
+          matchingOpenClaimBefore(request.resource.data.ownerUid, request.resource.data.sourceBillId, request.resource.data) &&
+          matchingCopyAfter(userId, request.resource.data.ownerUid, request.resource.data.sourceBillId, request.resource.data.receipt) &&
+          matchingClaimAfter(request.resource.data.ownerUid, request.resource.data.sourceBillId, request.resource.data);
+        allow update, delete: if false;
+      }
+    }
+
+    match /receiptClaims/{digest} {
+      allow get: if isAuthenticated() && (
+        (!exists(/databases/$(database)/documents/receiptClaims/$(digest)) &&
+          isSeller(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/receiptClaims/$(digest)) && (
+          resource.data.ownerUid == request.auth.uid ||
+          (resource.data.status == 'open' && request.time < resource.data.expiresAt) ||
+          resource.data.status == 'claimed'
+        ))
+      );
+      allow list: if false;
+      allow create: if isAuthenticated() && isSeller(request.auth.uid) &&
+        validClaimDocument(request.resource.data) &&
+        request.resource.data.status == 'open' &&
+        request.resource.data.expiresAt > request.time &&
+        request.resource.data.expiresAt <= request.time + duration.value(24, 'h') &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)/bills/$(request.resource.data.sourceBillId)) &&
+        validReceiptSnapshot(
+          request.resource.data.receipt,
+          get(/databases/$(database)/documents/users/$(request.auth.uid)/bills/$(request.resource.data.sourceBillId)).data
+        );
+      allow update: if (
+        isAuthenticated() && isCustomer(request.auth.uid) &&
+        resource.data.status == 'open' && request.time < resource.data.expiresAt &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        request.resource.data.status == 'claimed' && validClaimDocument(request.resource.data) &&
+        matchingCopyAfter(request.auth.uid, resource.data.ownerUid, resource.data.sourceBillId, resource.data.receipt) &&
+        matchingClaimIndexAfter(request.auth.uid, resource.data.ownerUid, resource.data.sourceBillId, resource.data.receipt)
+      );
+      allow delete: if false;
+    }
+
+    function matchingClaimIndexAfter(customerUid, ownerUid, billId, receipt) {
+      let index = getAfter(/databases/$(database)/documents/users/$(customerUid)/claimedReceiptsIndex/$(ownerUid + '~' + billId)).data;
+      return index.recipientUid == customerUid && index.ownerUid == ownerUid &&
+        index.sourceBillId == billId && index.receipt == receipt;
     }
   }
 }
