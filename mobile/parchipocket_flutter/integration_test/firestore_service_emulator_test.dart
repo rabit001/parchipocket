@@ -252,7 +252,12 @@ void main() {
         .get();
     expect(index.docs, hasLength(1));
     expect((await claimRef.get()).data()!['status'], 'claimed');
-    expect(await _service.loadBills(), hasLength(1));
+    final ownerBills = await _service.loadBills();
+    expect(ownerBills, hasLength(2));
+    expect(
+      ownerBills.map((ownerBill) => ownerBill.id),
+      containsAll(<String>[bill.id, conflictingBill.id]),
+    );
   });
 
   testWidgets('concurrent customer claims allow one recipient only',
