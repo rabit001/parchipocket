@@ -318,7 +318,11 @@ void main() {
       rawCode: code,
       expiresAt: DateTime.now().toUtc().add(const Duration(seconds: 10)),
     );
-    await Future<void>.delayed(const Duration(seconds: 11));
+    // `testWidgets` runs inside fake async. Use runAsync so wall-clock time
+    // advances and the emulator's server-side expiresAt check can really expire.
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(seconds: 11)),
+    );
     await _saveRoleProfile(_claimantService, UserRole.customer);
     await expectLater(
       _claimantService.claimReceipt(code),
