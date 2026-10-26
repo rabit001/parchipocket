@@ -1,34 +1,30 @@
 # Feature Status
 
-Status describes the starter archive currently stored in this repository, not a claim of production readiness.
+Status is based on code in this repository. Implementation does not prove the Firebase rules are deployed or the app is production-ready.
 
-| Area | Current status | Notes |
+| Area | Status | Notes |
 |---|---|---|
-| Welcome and onboarding | Demo implemented | UI flow only |
-| Phone and OTP login | Mocked | Demo code is 123456; no SMS validation |
-| Google login | Preview/demo | No live OAuth connection |
-| Account roles | Demo implemented | Customer, Shop Owner, Street Vendor |
-| Customer home and bill history | Demo implemented | Sample in-memory records |
-| Bill detail | Demo implemented | Sample records |
-| QR scanning | Placeholder | Camera/scan workflow not integrated |
-| Spending insights | Demo view | Sample data and summaries |
-| Nearby / saved shops | Demo view | No production location/discovery service |
-| Shop-owner dashboard | Demo implemented | Local sample data |
-| Create bill / total calculations | Frontend demo | Validate with tests before real use |
-| Expenses | Demo implemented | In-memory records |
-| Udhaar / settlement | Demo implemented | In-memory records |
-| Sales reports / export | Preview | No production report pipeline |
-| Customer directory | Demo view | No secure cloud sync |
-| Thermal printer settings | Preview | No confirmed Bluetooth printer integration |
-| Street-vendor quick billing | Demo implemented | In-memory records |
-| Persistent database | Not implemented | State resets on restart |
-| Real account security / authorisation | Not implemented | Required before production |
-| QR generation and secure receipt links | Planned | Access policy and expiry required |
-| PDF generation/share | Preview/planned | End-to-end export not connected |
-| Push notifications | Not implemented | No push service connected |
-| Offline sync / conflict resolution | Not implemented | Needs explicit design |
-| Automated tests | Starter tests included | Must run and extend tests against requirements |
+| Welcome and onboarding | Implemented | Local navigation routes available |
+| Explicit local demo session | Implemented | In-memory sample data; must not access Firestore |
+| Phone / OTP authentication | Integrated | Firebase Auth flow; real SMS depends on project configuration and billing |
+| Google sign-in | Demo only | Not a completed Google OAuth integration |
+| Account profiles and roles | Cloud persistence implemented | UID-scoped profiles; roles are app-selected, not business verification |
+| Bill creation / persistence | Implemented | Firestore-generated IDs, create-only transaction retries |
+| Bill history and settlement flags | Implemented | Owner-only reads; financial fields protected by rules |
+| Expenses | Implemented | Owner-only immutable records, stable retry IDs |
+| Saved shops | Implemented | Digest-based IDs avoid name-sanitization collisions; legacy deletes supported |
+| Receipt claim QR/manual code | Implemented | 128-bit client CSPRNG, SHA-256 digest, bounded expiry |
+| Customer claimed receipts | Implemented | Separate minimized read-only copies and index |
+| Receipt-claim security | Implemented in rules | Atomic claim/copy/index constraints; emulator test and deployment still required for release |
+| Firestore Security Rules | Checked into repository | GitHub pushes do not deploy rules |
+| Firebase App Check | Client configured | Console enforcement/debug-token configuration must be verified separately |
+| Nearby shop discovery | Demo/placeholder | No live location-based discovery service |
+| PDF generation/share | Preview/planned | Not production-complete |
+| Thermal printer integration | Preview/planned | Not validated on target hardware |
+| Push notifications | Not implemented | No messaging backend |
+| Offline sync/conflict resolution | Not implemented | No complete offline queue/reconciliation model |
+| CI validation | Added | Workflow runs Flutter checks, rules emulator, and Android integration tests |
 
 ## Release gate
 
-Do not call the app production-ready until real authentication, persistence, access-control rules, error handling, data recovery, privacy review, QR/link access tests, and critical business-flow tests have been implemented and verified.
+Do not treat this as a production accounting service until CI passes, the reviewed rules are deployed to the correct Firebase project, App Check enforcement is verified, critical device flows are tested, and retention/recovery/privacy decisions are documented.

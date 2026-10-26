@@ -29,3 +29,7 @@ Thumbs.db
 *.p12
 *.pem
 *.key
+
+# Local Firebase emulator logs (never commit)
+firestore-debug.log
+firestore-debug.log.*

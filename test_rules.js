@@ -1,7 +1,7 @@
 const http = require('http');
 
 const PORT = 8088;
-const PROJECT_ID = process.env.FIRESTORE_EMULATOR_PROJECT_ID || 'demo-parchipocket-phase3';
+const PROJECT_ID = process.env.FIRESTORE_EMULATOR_PROJECT_ID || 'demo-parchipocket-phase4';
 if (!PROJECT_ID.startsWith('demo-')) {
   throw new Error('Rules tests must use an isolated demo- Firestore Emulator project ID.');
 }
@@ -592,6 +592,28 @@ async function runTests() {
     data: wrapDocument(validExpense),
     userId: 'userA',
     expectedStatus: 200,
+  });
+
+  await assertRule({
+    description: '13.3a Owner cannot update an existing expense',
+    method: 'PATCH',
+    path: '/users/userA/expenses/exp1',
+    data: wrapDocument({
+      title: 'Transport',
+      category: 'Transport',
+      amount: 999.0,
+      createdAt: validExpense.createdAt,
+    }),
+    userId: 'userA',
+    expectedStatus: 403,
+  });
+
+  await assertRule({
+    description: '13.3b Owner cannot delete an expense',
+    method: 'DELETE',
+    path: '/users/userA/expenses/exp1',
+    userId: 'userA',
+    expectedStatus: 403,
   });
 
   await assertRule({
