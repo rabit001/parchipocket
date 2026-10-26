@@ -29,6 +29,109 @@ class MockFirebaseAuth extends Fake implements FirebaseAuth {
   }
 }
 
+class ControlledFirebaseAuth extends MockFirebaseAuth {
+  ControlledFirebaseAuth() {
+    user = null;
+  }
+
+  final StreamController<User?> events = StreamController<User?>.broadcast();
+
+  @override
+  Stream<User?> authStateChanges() => events.stream;
+
+  void emit(User? value) {
+    user = value;
+    events.add(value);
+  }
+}
+
+class CountingFirestoreService extends FirestoreService {
+  int profileReads = 0;
+  int billReads = 0;
+  int expenseReads = 0;
+  int savedShopReads = 0;
+  int claimedReceiptReads = 0;
+  int writes = 0;
+  Completer<Map<String, dynamic>?>? profileCompleter;
+
+  @override
+  Future<Map<String, dynamic>?> loadUserProfile() {
+    profileReads++;
+    return profileCompleter?.future ??
+        Future<Map<String, dynamic>?>.value(<String, dynamic>{
+          'role': 'customer',
+          'name': 'Test Customer',
+        });
+  }
+
+  @override
+  Future<List<DemoBill>> loadBills() async {
+    billReads++;
+    return <DemoBill>[];
+  }
+
+  @override
+  Future<List<DemoExpense>> loadExpenses() async {
+    expenseReads++;
+    return <DemoExpense>[];
+  }
+
+  @override
+  Future<Set<String>> loadSavedShops() async {
+    savedShopReads++;
+    return <String>{};
+  }
+
+  @override
+  Future<List<ClaimedReceipt>> loadClaimedReceipts() async {
+    claimedReceiptReads++;
+    return <ClaimedReceipt>[];
+  }
+
+  @override
+  String newBillId() => 'test-cloud-bill';
+
+  @override
+  Future<void> createBill(DemoBill bill) async {
+    writes++;
+  }
+
+  @override
+  Future<void> addExpense(DemoExpense expense) async {
+    writes++;
+  }
+
+  @override
+  Future<void> saveBill(DemoBill bill) async {
+    writes++;
+  }
+
+  @override
+  Future<void> saveShop(String shopName) async {
+    writes++;
+  }
+
+  @override
+  Future<void> removeSavedShop(String shopName) async {
+    writes++;
+  }
+
+  @override
+  Future<void> saveUserProfile({
+    required UserRole role,
+    required String name,
+    required String email,
+    required String city,
+    required String shopName,
+    required String shopCategory,
+    required String shopAddress,
+    required String vendorName,
+    required String vendorCategory,
+  }) async {
+    writes++;
+  }
+}
+
 class ProfileFirestoreService extends FirestoreService {
   ProfileFirestoreService({this.profile, this.profileError});
 
@@ -165,6 +268,109 @@ class FailingFirestoreService extends FirestoreService {
 }
 
 void main() {
+  group('Explicit demo session isolation', () {
+    test('entering demo clears stale cloud state and ignores auth callbacks',
+        () async {
+      final auth = ControlledFirebaseAuth();
+      final service = CountingFirestoreService();
+      final state = AppState(auth: auth)..firestoreService = service;
+      state.cloudError = 'old permission error';
+      state.isCloudLoading = true;
+      state.profileStatus = CloudProfileStatus.failed;
+
+      await state.enterDemoMode();
+      auth.emit(MockUser());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(state.isDemoMode, isTrue);
+      expect(state.page, 'roleSelection');
+      expect(state.cloudError, isNull);
+      expect(state.isCloudLoading, isFalse);
+      expect(service.profileReads, 0);
+      expect(service.claimedReceiptReads, 0);
+      await auth.events.close();
+      state.dispose();
+    });
+
+    test('demo workflows stay local and do not write to Firestore', () async {
+      final service = CountingFirestoreService();
+      final state = AppState()..firestoreService = service;
+
+      await state.createBill(
+        items: <BillLine>[BillLine(name: 'Tea', quantity: 1, unitPrice: 20)],
+        paymentMode: 'Cash',
+        vendorMode: false,
+      );
+      await state.addExpense(title: 'Travel', category: 'Transport', amount: 5);
+      expect(
+        await state.updateProfile(
+          name: 'Demo Customer',
+          email: 'demo@example.test',
+          location: 'Ujjain',
+        ),
+        isTrue,
+      );
+      expect(
+        await state.updateShop(
+            name: 'Demo Shop', category: 'Kirana', address: 'Ujjain'),
+        isTrue,
+      );
+      expect(service.writes, 0);
+      expect(state.isDemoMode, isTrue);
+      state.dispose();
+    });
+
+    test('stale profile failure cannot set cloud error after entering demo',
+        () async {
+      final auth = ControlledFirebaseAuth();
+      final service = CountingFirestoreService()
+        ..profileCompleter = Completer<Map<String, dynamic>?>();
+      final state = AppState(auth: auth)..firestoreService = service;
+      final user = MockUser();
+      auth.emit(user);
+      await Future<void>.delayed(Duration.zero);
+      expect(service.profileReads, 1);
+
+      await state.enterDemoMode();
+      service.profileCompleter!
+          .completeError(Exception('late permission denied'));
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(state.isDemoMode, isTrue);
+      expect(state.page, 'roleSelection');
+      expect(state.cloudError, isNull);
+      expect(service.billReads, 0);
+      expect(service.claimedReceiptReads, 0);
+      await auth.events.close();
+      state.dispose();
+    });
+
+    test('explicit sign-in exits demo and loads profile for normal navigation',
+        () async {
+      final auth = ControlledFirebaseAuth();
+      final service = CountingFirestoreService();
+      final state = AppState(auth: auth)..firestoreService = service;
+      await state.enterDemoMode();
+      expect(await state.beginAuthentication(), isTrue);
+      expect(state.isDemoMode, isFalse);
+
+      auth.emit(MockUser());
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(service.profileReads, 1);
+      expect(service.billReads, 1);
+      expect(service.claimedReceiptReads, 1);
+      expect(state.profileStatus, CloudProfileStatus.loaded);
+      expect(state.page, 'customerHome');
+      expect(state.isDemoMode, isFalse);
+      await auth.events.close();
+      state.dispose();
+    });
+  });
+
   group('AppState local demo workflows & serialization', () {
     test('creates a bill and calculates its total', () async {
       final state = AppState();
@@ -674,6 +880,7 @@ void main() {
         'navigateAfterAuth routes existing user to home and new user to roleSelection',
         () {
       final state = AppState();
+      state.isDemoMode = false;
 
       // Existing customer
       state.hasExistingCloudProfile = true;

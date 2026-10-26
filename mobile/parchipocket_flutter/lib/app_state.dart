@@ -85,7 +85,7 @@ class DemoExpense {
 }
 
 class AppState extends ChangeNotifier {
-  AppState() {
+  AppState({FirebaseAuth? auth}) : _auth = auth {
     _restoreDemoState();
     _initAuthListener();
   }
@@ -126,6 +126,8 @@ class AppState extends ChangeNotifier {
   }
 
   bool isDemoMode = true;
+  bool _explicitDemoSession = false;
+  bool _authenticationIntentActive = false;
   bool isCloudLoading = false;
   bool isSigningOut = false;
   bool hasExistingCloudProfile = false;
@@ -136,6 +138,9 @@ class AppState extends ChangeNotifier {
   StreamSubscription<User?>? _authSubscription;
   int _authEventGeneration = 0;
   int _profileLoadGeneration = 0;
+  int _sessionGeneration = 0;
+  Future<bool>? _demoSignOutTask;
+  Future<UserCredential>? _pendingCredentialSignIn;
   bool _disposed = false;
 
   String page = 'splash';
@@ -173,7 +178,7 @@ class AppState extends ChangeNotifier {
     _authSubscription = authInstance.authStateChanges().listen(
       (user) => unawaited(_handleAuthStateChanged(user)),
       onError: (Object error) {
-        if (_disposed || isSigningOut) return;
+        if (_disposed || isSigningOut || _explicitDemoSession) return;
         isCloudLoading = false;
         profileStatus = CloudProfileStatus.failed;
         cloudError =
@@ -188,14 +193,18 @@ class AppState extends ChangeNotifier {
     final eventGeneration = ++_authEventGeneration;
     _profileLoadGeneration++;
     if (_disposed || isSigningOut) return;
+    if (_explicitDemoSession) return;
 
     if (user == null) {
+      if (_authenticationIntentActive) return;
       _restoreDemoState();
       page = 'splash';
       notifyListeners();
       return;
     }
+    if (auth?.currentUser?.uid != user.uid) return;
 
+    _authenticationIntentActive = false;
     _clearCloudAccountState();
     isDemoMode = false;
     isCloudLoading = true;
@@ -214,6 +223,8 @@ class AppState extends ChangeNotifier {
   bool _isCurrentAuthEvent(int generation, String uid) =>
       !_disposed &&
       !isSigningOut &&
+      !isDemoMode &&
+      !_explicitDemoSession &&
       _authEventGeneration == generation &&
       auth?.currentUser?.uid == uid;
 
@@ -221,6 +232,9 @@ class AppState extends ChangeNotifier {
     String? expectedUid,
     int? expectedAuthGeneration,
   }) async {
+    if (isDemoMode || _explicitDemoSession) {
+      return CloudProfileStatus.unknown;
+    }
     final user = auth?.currentUser;
     if (user == null) {
       profileStatus = CloudProfileStatus.failed;
@@ -233,6 +247,8 @@ class AppState extends ChangeNotifier {
     bool isCurrentLoad() =>
         !_disposed &&
         !isSigningOut &&
+        !isDemoMode &&
+        !_explicitDemoSession &&
         _profileLoadGeneration == loadGeneration &&
         auth?.currentUser?.uid == uid &&
         (expectedAuthGeneration == null ||
@@ -295,7 +311,9 @@ class AppState extends ChangeNotifier {
 
     try {
       final cloudBills = await firestoreService.loadBills();
+      if (!isCurrentLoad()) return CloudProfileStatus.unknown;
       final cloudExpenses = await firestoreService.loadExpenses();
+      if (!isCurrentLoad()) return CloudProfileStatus.unknown;
       final cloudSavedShops = await firestoreService.loadSavedShops();
       if (!isCurrentLoad()) return CloudProfileStatus.unknown;
 
@@ -328,6 +346,7 @@ class AppState extends ChangeNotifier {
   }
 
   void navigateAfterAuth() {
+    if (isDemoMode || _explicitDemoSession) return;
     switch (profileStatus) {
       case CloudProfileStatus.loaded:
         if (!hasExistingCloudProfile) {
@@ -353,6 +372,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> retryProfileLoad() async {
+    if (isDemoMode || _explicitDemoSession) return;
     final user = auth?.currentUser;
     if (user == null) {
       profileStatus = CloudProfileStatus.failed;
@@ -362,6 +382,102 @@ class AppState extends ChangeNotifier {
       return;
     }
     await _handleAuthStateChanged(user);
+  }
+
+  /// Starts an explicit, local-only demo session before any asynchronous auth
+  /// sign-out or listener callback can run. Old auth/profile work is invalidated
+  /// and its results cannot replace demo state.
+  Future<void> enterDemoMode({String landingPage = 'roleSelection'}) async {
+    _sessionGeneration++;
+    _authEventGeneration++;
+    _profileLoadGeneration++;
+    _authenticationIntentActive = false;
+    _explicitDemoSession = true;
+    isSigningOut = false;
+    _restoreDemoState();
+    page = landingPage;
+    notifyListeners();
+
+    final authInstance = auth;
+    if (authInstance?.currentUser == null) return;
+
+    final task = _finishDemoSignOut(authInstance!);
+    _demoSignOutTask = task;
+    try {
+      final signedOut = await task;
+      if (!signedOut && !_disposed && _explicitDemoSession) {
+        signOutError =
+            'Demo mode is active, but the previous Firebase session could not be signed out.';
+        notifyListeners();
+      }
+    } finally {
+      if (identical(_demoSignOutTask, task)) _demoSignOutTask = null;
+    }
+  }
+
+  Future<bool> _finishDemoSignOut(FirebaseAuth authInstance) async {
+    final pendingSignIn = _pendingCredentialSignIn;
+    if (pendingSignIn != null) {
+      try {
+        await pendingSignIn;
+      } catch (_) {
+        // Sign-out below also cleans up a credential operation that completed
+        // successfully after demo mode was selected.
+      }
+    }
+    if (authInstance.currentUser == null) return true;
+    try {
+      await authInstance.signOut();
+      return authInstance.currentUser == null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Leaves demo mode only for an explicit sign-in action. A stale session is
+  /// signed out first; if that fails, sign-in is blocked and demo remains local.
+  Future<bool> beginAuthentication() async {
+    if (_disposed) return false;
+    if (_authenticationIntentActive && !isDemoMode && !_explicitDemoSession) {
+      return true;
+    }
+
+    final session = ++_sessionGeneration;
+    final pendingDemoSignOut = _demoSignOutTask;
+    if (pendingDemoSignOut != null) {
+      final signedOut = await pendingDemoSignOut;
+      if (session != _sessionGeneration) return false;
+      if (!signedOut && auth?.currentUser != null) {
+        signOutError = 'Could not close the previous session. Retry sign-in.';
+        notifyListeners();
+        return false;
+      }
+    }
+
+    final authInstance = auth;
+    if (_explicitDemoSession && authInstance?.currentUser != null) {
+      final signedOut = await _finishDemoSignOut(authInstance!);
+      if (session != _sessionGeneration) return false;
+      if (!signedOut) {
+        signOutError = 'Could not close the previous session. Retry sign-in.';
+        notifyListeners();
+        return false;
+      }
+    }
+
+    if (session != _sessionGeneration) return false;
+    _explicitDemoSession = false;
+    _authenticationIntentActive = true;
+    _authEventGeneration++;
+    _profileLoadGeneration++;
+    _clearCloudAccountState();
+    isDemoMode = false;
+    profileStatus = CloudProfileStatus.unknown;
+    isCloudLoading = false;
+    cloudError = null;
+    signOutError = null;
+    notifyListeners();
+    return true;
   }
 
   Future<bool> signOut() async {
@@ -375,7 +491,7 @@ class AppState extends ChangeNotifier {
 
     isSigningOut = true;
     signOutError = null;
-    _authEventGeneration++;
+    final eventGeneration = ++_authEventGeneration;
     _profileLoadGeneration++;
     notifyListeners();
 
@@ -384,16 +500,20 @@ class AppState extends ChangeNotifier {
       if (authInstance != null && authInstance.currentUser != null) {
         await authInstance.signOut();
       }
+      if (_disposed || _authEventGeneration != eventGeneration) return true;
       _restoreDemoState();
       page = 'splash';
       return true;
     } catch (e) {
+      if (_disposed || _authEventGeneration != eventGeneration) return false;
       signOutError =
           'Could not sign out. Check your connection and try again. ($e)';
       return false;
     } finally {
-      isSigningOut = false;
-      notifyListeners();
+      if (_authEventGeneration == eventGeneration) {
+        isSigningOut = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -420,6 +540,8 @@ class AppState extends ChangeNotifier {
   bool _isCurrentAuthenticatedSession(String uid, int generation) =>
       !_disposed &&
       !isSigningOut &&
+      !isDemoMode &&
+      !_explicitDemoSession &&
       generation == _authEventGeneration &&
       auth?.currentUser?.uid == uid;
 
@@ -643,15 +765,23 @@ class AppState extends ChangeNotifier {
     isCloudLoading = true;
     cloudError = null;
     notifyListeners();
+    final uid = auth?.currentUser?.uid;
+    final authGeneration = _authEventGeneration;
     try {
       await firestoreService.createReceiptClaim(bill, rawCode: rawCode);
-      lastNotice = 'Receipt claim code is ready. It expires within 24 hours.';
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        lastNotice = 'Receipt claim code is ready. It expires within 24 hours.';
+      }
     } catch (error) {
-      cloudError = error.toString();
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        cloudError = error.toString();
+      }
       rethrow;
     } finally {
-      isCloudLoading = false;
-      notifyListeners();
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        isCloudLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -666,8 +796,14 @@ class AppState extends ChangeNotifier {
     isCloudLoading = true;
     cloudError = null;
     notifyListeners();
+    final uid = auth?.currentUser?.uid;
+    final authGeneration = _authEventGeneration;
     try {
       final receipt = await firestoreService.claimReceipt(rawCode);
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        throw StateError(
+            'Your sign-in session changed while claiming a receipt.');
+      }
       claimedReceipts.removeWhere((entry) =>
           entry.ownerUid == receipt.ownerUid &&
           entry.sourceBillId == receipt.sourceBillId);
@@ -675,11 +811,15 @@ class AppState extends ChangeNotifier {
       lastNotice = 'Receipt added to your account.';
       return receipt;
     } catch (error) {
-      cloudError = error.toString();
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        cloudError = error.toString();
+      }
       rethrow;
     } finally {
-      isCloudLoading = false;
-      notifyListeners();
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        isCloudLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -763,6 +903,9 @@ class AppState extends ChangeNotifier {
       cloudError = null;
       return bill;
     } catch (e) {
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        rethrow;
+      }
       if (e is BillIdCollisionException &&
           identical(_retryableCloudBill, bill)) {
         _retryableCloudBill = null;
@@ -771,8 +914,10 @@ class AppState extends ChangeNotifier {
       lastNotice = 'Failed to save bill to cloud: $e';
       rethrow;
     } finally {
-      isCloudLoading = false;
-      notifyListeners();
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        isCloudLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -843,12 +988,17 @@ class AppState extends ChangeNotifier {
       cloudError = null;
       return true;
     } catch (e) {
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
       cloudError = e.toString();
       lastNotice = 'Failed to save receipt to cloud: $e';
       return false;
     } finally {
-      isCloudLoading = false;
-      notifyListeners();
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        isCloudLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -890,12 +1040,17 @@ class AppState extends ChangeNotifier {
       cloudError = null;
       return true;
     } catch (e) {
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
       cloudError = e.toString();
       lastNotice = 'Failed to update settlement: $e';
       return false;
     } finally {
-      isCloudLoading = false;
-      notifyListeners();
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        isCloudLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -937,12 +1092,17 @@ class AppState extends ChangeNotifier {
       cloudError = null;
       return true;
     } catch (e) {
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
       cloudError = e.toString();
       lastNotice = 'Failed to record expense: $e';
       return false;
     } finally {
-      isCloudLoading = false;
-      notifyListeners();
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        isCloudLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -972,14 +1132,16 @@ class AppState extends ChangeNotifier {
     try {
       if (isCurrentlySaved) {
         await firestoreService.removeSavedShop(name);
-        if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        if (uid == null ||
+            !_isCurrentAuthenticatedSession(uid, authGeneration)) {
           return false;
         }
         savedShops.remove(name);
         lastNotice = 'Removed from saved shops.';
       } else {
         await firestoreService.saveShop(name);
-        if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        if (uid == null ||
+            !_isCurrentAuthenticatedSession(uid, authGeneration)) {
           return false;
         }
         savedShops.add(name);
@@ -988,12 +1150,17 @@ class AppState extends ChangeNotifier {
       cloudError = null;
       return true;
     } catch (e) {
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
       cloudError = e.toString();
       lastNotice = 'Failed to update saved shop: $e';
       return false;
     } finally {
-      isCloudLoading = false;
-      notifyListeners();
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        isCloudLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -1057,12 +1224,17 @@ class AppState extends ChangeNotifier {
       cloudError = null;
       return true;
     } catch (e) {
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
       cloudError = e.toString();
       lastNotice = 'Failed to update profile: $e';
       return false;
     } finally {
-      isCloudLoading = false;
-      notifyListeners();
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        isCloudLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -1115,12 +1287,17 @@ class AppState extends ChangeNotifier {
       cloudError = null;
       return true;
     } catch (e) {
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
       cloudError = e.toString();
       lastNotice = 'Failed to update shop: $e';
       return false;
     } finally {
-      isCloudLoading = false;
-      notifyListeners();
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        isCloudLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -1168,12 +1345,17 @@ class AppState extends ChangeNotifier {
       cloudError = null;
       return true;
     } catch (e) {
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
       cloudError = e.toString();
       lastNotice = 'Failed to update vendor: $e';
       return false;
     } finally {
-      isCloudLoading = false;
-      notifyListeners();
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        isCloudLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -1248,6 +1430,15 @@ class AppState extends ChangeNotifier {
       return;
     }
 
+    if (!await beginAuthentication()) {
+      final err = signOutError ?? 'Could not start sign-in. Please retry.';
+      phoneAuthError = err;
+      notifyListeners();
+      onError(err);
+      return;
+    }
+    final authAttemptGeneration = ++_sessionGeneration;
+
     phoneNumber = formatted;
     isPhoneAuthLoading = true;
     phoneAuthError = null;
@@ -1262,21 +1453,39 @@ class AppState extends ChangeNotifier {
         timeout: const Duration(seconds: 60),
         forceResendingToken: isResend ? resendToken : null,
         verificationCompleted: (PhoneAuthCredential credential) async {
+          if (!_isCurrentAuthenticationGeneration(authAttemptGeneration)) {
+            return;
+          }
+          Future<UserCredential>? pending;
           try {
-            await auth!.signInWithCredential(credential);
-            isDemoMode = false;
+            pending = auth!.signInWithCredential(credential);
+            _pendingCredentialSignIn = pending;
+            await pending;
+            if (!_isCurrentAuthenticationGeneration(authAttemptGeneration)) {
+              return;
+            }
             isPhoneAuthLoading = false;
             phoneAuthError = null;
             notifyListeners();
           } catch (e) {
+            if (!_isCurrentAuthenticationGeneration(authAttemptGeneration)) {
+              return;
+            }
             isPhoneAuthLoading = false;
             final err = _mapAuthException(e);
             phoneAuthError = err;
             notifyListeners();
             onError(err);
+          } finally {
+            if (identical(_pendingCredentialSignIn, pending)) {
+              _pendingCredentialSignIn = null;
+            }
           }
         },
         verificationFailed: (FirebaseAuthException e) {
+          if (!_isCurrentAuthenticationGeneration(authAttemptGeneration)) {
+            return;
+          }
           isPhoneAuthLoading = false;
           final err = _mapAuthException(e);
           phoneAuthError = err;
@@ -1284,6 +1493,9 @@ class AppState extends ChangeNotifier {
           onError(err);
         },
         codeSent: (String verId, int? forceResendingToken) {
+          if (!_isCurrentAuthenticationGeneration(authAttemptGeneration)) {
+            return;
+          }
           verificationId = verId;
           resendToken = forceResendingToken;
           lastOtpSentAt = DateTime.now();
@@ -1293,10 +1505,14 @@ class AppState extends ChangeNotifier {
           onSuccessCodeSent();
         },
         codeAutoRetrievalTimeout: (String verId) {
+          if (!_isCurrentAuthenticationGeneration(authAttemptGeneration)) {
+            return;
+          }
           verificationId = verId;
         },
       );
     } catch (e) {
+      if (!_isCurrentAuthenticationGeneration(authAttemptGeneration)) return;
       isPhoneAuthLoading = false;
       final err = _mapAuthException(e);
       phoneAuthError = err;
@@ -1326,10 +1542,20 @@ class AppState extends ChangeNotifier {
       return;
     }
 
+    if (!await beginAuthentication()) {
+      final err = signOutError ?? 'Could not start sign-in. Please retry.';
+      phoneAuthError = err;
+      notifyListeners();
+      onError(err);
+      return;
+    }
+    final authAttemptGeneration = _sessionGeneration;
+
     isPhoneAuthLoading = true;
     phoneAuthError = null;
     notifyListeners();
 
+    Future<UserCredential>? pending;
     try {
       if (auth == null) {
         throw Exception('FirebaseAuth instance not available.');
@@ -1338,21 +1564,34 @@ class AppState extends ChangeNotifier {
         verificationId: verificationId,
         smsCode: cleanCode,
       );
-      await auth!.signInWithCredential(credential);
-      isDemoMode = false;
+      pending = auth!.signInWithCredential(credential);
+      _pendingCredentialSignIn = pending;
+      await pending;
+      if (!_isCurrentAuthenticationGeneration(authAttemptGeneration)) return;
       isPhoneAuthLoading = false;
       phoneAuthError = null;
       // The auth-state listener owns profile loading and routing. Waiting here
       // would start a duplicate Firestore read and create competing route changes.
       notifyListeners();
     } catch (e) {
+      if (!_isCurrentAuthenticationGeneration(authAttemptGeneration)) return;
       isPhoneAuthLoading = false;
       final err = _mapAuthException(e);
       phoneAuthError = err;
       notifyListeners();
       onError(err);
+    } finally {
+      if (identical(_pendingCredentialSignIn, pending)) {
+        _pendingCredentialSignIn = null;
+      }
     }
   }
+
+  bool _isCurrentAuthenticationGeneration(int generation) =>
+      !_disposed &&
+      generation == _sessionGeneration &&
+      !_explicitDemoSession &&
+      !isDemoMode;
 
   String _mapAuthException(dynamic e) {
     if (e is FirebaseAuthException) {
