@@ -251,12 +251,34 @@ void main() {
         .collection('claimedReceiptsIndex')
         .get();
     expect(index.docs, hasLength(1));
-    expect((await claimRef.get()).data()!['status'], 'claimed');
+    final ownerClaim = (await claimRef.get()).data()!;
+    expect(ownerClaim['status'], 'claimed');
+    expect(ownerClaim['claimedBy'], _claimantAuth.currentUser!.uid);
+    final claimantClaim = await _claimantFirestore
+        .collection('receiptClaims')
+        .doc(digest)
+        .get();
+    expect(claimantClaim.data()?['claimedBy'], _claimantAuth.currentUser!.uid);
+
     final ownerBills = await _service.loadBills();
     expect(ownerBills, hasLength(2));
     expect(
       ownerBills.map((ownerBill) => ownerBill.id),
       containsAll(<String>[bill.id, conflictingBill.id]),
+    );
+
+    // An unrelated authenticated customer must not read a consumed token,
+    // even when they know its SHA-256 document ID.
+    await _auth.signOut();
+    await _auth.signInAnonymously();
+    await _saveRoleProfile(_service, UserRole.customer);
+    await expectLater(
+      _firestore.collection('receiptClaims').doc(digest).get(),
+      throwsA(isA<FirebaseException>().having(
+        (error) => error.code,
+        'code',
+        'permission-denied',
+      )),
     );
   });
 

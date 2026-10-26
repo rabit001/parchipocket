@@ -247,7 +247,7 @@ class FirestoreService {
                 indexSnapshot.data()!['receipt'] as Map<String, dynamic>,
                 candidateReceipt.cast<String, dynamic>());
         if (status == 'claimed') {
-          if (!sameReceipt) return true;
+          if (claim['claimedBy'] != uid || !sameReceipt) return true;
           ownerUid = candidateOwner;
           sourceBillId = candidateBillId;
           receipt = candidateReceipt.cast<String, dynamic>();
@@ -281,6 +281,8 @@ class FirestoreService {
         }
         transaction.update(claimRef, {
           'status': 'claimed',
+          'claimedBy': uid,
+          'claimedAt': FieldValue.serverTimestamp(),
         });
         return false;
       });
