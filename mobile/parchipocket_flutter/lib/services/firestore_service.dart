@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
@@ -14,6 +15,16 @@ class BillIdCollisionException implements Exception {
   @override
   String toString() =>
       'A different bill already uses document ID $billId. Retry to create this bill with a fresh ID.';
+}
+
+class ExpenseIdCollisionException implements Exception {
+  const ExpenseIdCollisionException(this.expenseId);
+
+  final String expenseId;
+
+  @override
+  String toString() =>
+      'A different expense already uses document ID $expenseId. Retry with a fresh ID.';
 }
 
 class ReceiptClaimException implements Exception {
@@ -65,6 +76,13 @@ class FirestoreService {
     final doc = _userDoc;
     if (doc == null) throw Exception('User not authenticated.');
     return doc.collection('bills').doc().id;
+  }
+
+  /// Allocates a stable ID for an expense so retries can reuse the same path.
+  String newExpenseId() {
+    final doc = _userDoc;
+    if (doc == null) throw Exception('User not authenticated.');
+    return doc.collection('expenses').doc().id;
   }
 
   /// Generates 128 bits of entropy from the platform CSPRNG. Only the SHA-256
@@ -547,12 +565,50 @@ class FirestoreService {
   Future<void> addExpense(DemoExpense expense) async {
     final doc = _userDoc;
     if (doc == null) throw Exception('User not authenticated.');
-    await doc.collection('expenses').add({
+    final collection = doc.collection('expenses');
+    final expenseId =
+        expense.id.isEmpty ? collection.doc().id : expense.id;
+    final expenseRef = collection.doc(expenseId);
+    final data = {
       'title': expense.title,
       'category': expense.category,
       'amount': expense.amount,
       'createdAt': Timestamp.fromDate(expense.createdAt),
-    });
+    };
+
+    final hasConflictingExpense = await firestore.runTransaction<bool>(
+      (transaction) async {
+        final existing = await transaction.get(expenseRef);
+        if (existing.exists) {
+          // A retry after a lost acknowledgement succeeds only for an exact
+          // match; expense rules deny updates to existing records.
+          return !_isSameExpense(existing.data()!, data);
+        }
+        transaction.set(expenseRef, data);
+        return false;
+      },
+    );
+
+    if (hasConflictingExpense) {
+      throw ExpenseIdCollisionException(expenseId);
+    }
+  }
+
+  bool _isSameExpense(
+    Map<String, dynamic> existing,
+    Map<String, dynamic> requested,
+  ) {
+    if (existing['title'] != requested['title'] ||
+        existing['category'] != requested['category'] ||
+        existing['amount'] != requested['amount']) {
+      return false;
+    }
+    final existingDate = existing['createdAt'];
+    final requestedDate = requested['createdAt'];
+    return existingDate is Timestamp &&
+        requestedDate is Timestamp &&
+        existingDate.seconds == requestedDate.seconds &&
+        existingDate.nanoseconds == requestedDate.nanoseconds;
   }
 
   Future<List<DemoExpense>> loadExpenses() async {
@@ -572,6 +628,7 @@ class FirestoreService {
         createdAt = DateTime.tryParse(createdAtTs) ?? DateTime.now();
       }
       return DemoExpense(
+        id: docSnap.id,
         title: data['title'] as String? ?? '',
         category: data['category'] as String? ?? '',
         amount: (data['amount'] as num?)?.toDouble() ?? 0.0,
@@ -581,12 +638,19 @@ class FirestoreService {
   }
 
   // Saved Shops serialization & persistence
+  String _savedShopId(String shopName) => sha256
+      .convert(utf8.encode(shopName.trim().toLowerCase()))
+      .toString();
+
+  String _legacySavedShopId(String shopName) =>
+      shopName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+
   Future<void> saveShop(String shopName) async {
     final doc = _userDoc;
     if (doc == null) throw Exception('User not authenticated.');
-    final shopId = shopName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+    final shopId = _savedShopId(shopName);
     await doc.collection('savedShops').doc(shopId).set({
-      'shopName': shopName,
+      'shopName': shopName.trim(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
@@ -594,8 +658,12 @@ class FirestoreService {
   Future<void> removeSavedShop(String shopName) async {
     final doc = _userDoc;
     if (doc == null) return;
-    final shopId = shopName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
-    await doc.collection('savedShops').doc(shopId).delete();
+    final collection = doc.collection('savedShops');
+    final ids = <String>{
+      _savedShopId(shopName),
+      _legacySavedShopId(shopName),
+    };
+    await Future.wait(ids.map((id) => collection.doc(id).delete()));
   }
 
   Future<Set<String>> loadSavedShops() async {
