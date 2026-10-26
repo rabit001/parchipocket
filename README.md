@@ -1,123 +1,121 @@
 # ParchiPocket
 
 **Owner and project author:** Rabit Mansuri (@rabit001)  
-**Project type:** Mobile-first digital billing and transaction-record application  
-**Current client:** Flutter / Dart for Android
+**Project type:** Flutter mobile-first digital billing and receipt application
 
-ParchiPocket is being developed to help customers, shop owners, and street vendors create and review digital bill records. It aims to simplify everyday billing for small businesses without forcing every seller to use a complicated accounting system.
+ParchiPocket is a Flutter app for customers, shop owners, and street vendors. It includes Firebase Authentication, Cloud Firestore persistence, UID-scoped security rules, and a receipt-claim flow. It is still a development project, not a production-ready billing or accounting service.
 
-> **Project status:** Frontend starter/prototype. This repository documents the current demo and its planned development. It is not yet a production-ready billing or accounting service.
+## Current backend
 
-## Product goals
+- Firebase Authentication for account sessions and phone-auth flow.
+- Cloud Firestore for user profiles, bills, expenses, saved shops, and claimed receipt copies.
+- Firestore Security Rules validate user-owned records and constrain financial fields.
+- Receipt claims use a random bearer code, a SHA-256 digest as the document ID, bounded expiry, and an atomic claim/copy/index transaction.
+- Demo mode is designed to use local sample data without cloud reads or writes.
 
-- Let customers review purchase records and receipts.
-- Let shop owners create itemised bills, view bill history, track expenses, and manage udhaar records.
-- Offer street vendors a faster amount-only or simple itemised billing flow.
-- Keep sales, expenses, and credit/udhaar records separate.
-- Plan receipt sharing through QR/link, PDF output, and supported thermal printers.
-- Provide readable, role-specific screens and simple navigation.
+**Important:** Pushing code to GitHub does not deploy Firestore rules to Firebase. Review and deploy rules only after emulator tests pass. Never use production bill data for emulator testing.
 
-## Current prototype features
+## Product capabilities
 
 ### Shared / onboarding
 - Splash and welcome screens.
-- Demo sign-in and phone/OTP flow.
-- Role selection: Customer, Shop Owner, Street Vendor.
+- Explicit local demo mode.
+- Phone / OTP authentication flow.
+- Customer, Shop Owner, and Street Vendor experiences.
 - Profile and settings screens.
-- Help, FAQ, support, privacy, and notification preference screens.
 
 ### Customer
-- Home dashboard and recent purchases.
-- Bills/history and bill detail.
-- QR scanning placeholder and manual bill-code flow.
-- Spending insights.
-- Nearby and saved shops.
-- Profile and edit profile.
+- Home dashboard and bill history.
+- Receipt claim by QR/manual code.
+- Separate read-only claimed receipts.
+- Spending insights, saved shops, and profile screens.
 
 ### Shop owner
-- Dashboard and daily sales preview.
-- Create itemised bills and calculate totals.
-- Receipt preview and bill history.
-- Expenses, udhaar, and settlement confirmation.
-- Sales report/export preview.
-- Customer directory and printer settings/test preview.
+- Create itemised bills, receipts, and bill history.
+- Expenses, udhaar, and settlement tracking.
+- Receipt claim-code generation.
+- Sales report/export previews and printer setup previews.
 
 ### Street vendor
-- Quick billing and multi-item billing.
+- Quick billing and multi-item bills.
 - Receipt preview and sales history.
 - Vendor profile.
 
 ## Technology
 
-- Flutter and Dart.
-- Android Studio and Android SDK for Android development.
-- Local in-memory demo state for the current starter.
+- Flutter / Dart.
+- Firebase Authentication.
+- Cloud Firestore and Firestore Security Rules.
+- Firebase App Check (Android Play Integrity configuration).
+- Local Firebase emulators for rule and integration testing.
 
-## Important limitations
+## Known limitations
 
-The current starter is a **front-end demo**, not a production release:
-
-- Authentication is mocked; the demo OTP is `123456`.
-- Data is held in local in-memory state and resets when the app restarts.
-- Google sign-in, real SMS OTP, a cloud database, secure customer-account linking, and push notifications are not connected.
-- QR scanning is a placeholder.
-- PDF, receipt-sharing, and thermal-printer interfaces are previews rather than completed integrations.
-- Do not use the demo data as an actual business ledger.
+- Google sign-in is a demo flow, not a completed Google OAuth integration.
+- Real SMS OTP delivery depends on Firebase project configuration and the applicable billing plan. Use configured Firebase test phone numbers for development.
+- The demo session uses in-memory sample data and resets when the app process restarts.
+- Receipt claim codes are bearer secrets. Firestore rules enforce a single durable claim and receipt integrity, but rules cannot prove that a client used cryptographically secure randomness or provide robust attempt throttling.
+- User-selected roles are app modes, not proof of a real-world business identity.
+- Firestore rules must be deployed separately; this repository does not prove which rules are active in Firebase Console.
+- PDF generation, thermal printer integration, nearby-shop discovery, push notifications, and robust offline sync/conflict resolution are not production-complete.
+- Do not treat this project as an accounting system until the release gates below are satisfied.
 
 ## Repository layout
 
 ```text
 .
 ├── README.md
-├── .gitignore
+├── firebase.json
+├── firestore.rules
+├── test_rules.js
 ├── docs/
-│   ├── PROJECT_OVERVIEW.md
 │   ├── ARCHITECTURE.md
+│   ├── BACKEND_RUNBOOK.md
 │   ├── FEATURE_STATUS.md
-│   ├── DEVELOPMENT_ROADMAP.md
-│   ├── SETUP_GUIDE.md
-│   └── ADDING_LOCAL_SOURCE.md
-└── mobile/
-    └── parchipocket_flutter/  # add the extracted Flutter project here
+│   └── SETUP_GUIDE.md
+└── mobile/parchipocket_flutter/
+    ├── lib/
+    ├── test/
+    └── integration_test/
 ```
 
-**Source-code status:** The Flutter starter source is now stored under `mobile/parchipocket_flutter/`. See [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) for setup instructions. The documentation folders describe the plan and current limitations; they do not imply that planned services are already implemented.
+## Run the app on Windows
 
-## Run on Windows
+Open `mobile/parchipocket_flutter/` in Android Studio, then run:
 
-1. Install the Flutter SDK and Android Studio, including the Android SDK and either an emulator or a USB-debugging-enabled Android device.
-2. Open `mobile/parchipocket_flutter/` in Android Studio.
-4. Open a terminal at that project root and run:
+```powershell
+flutter pub get
+flutter devices
+flutter run
+```
 
-   ```powershell
-   flutter doctor
-   flutter pub get
-   ```
+For an emulator that shows as `offline`, inspect Android Studio's SDK Location and use its `platform-tools/adb.exe`. Do not wipe emulator data as a first troubleshooting step.
 
-5. If the extracted project does not contain its generated `android/` folder, run:
+## Tests
 
-   ```powershell
-   .\setup_android.ps1
-   ```
+From the Flutter project folder:
 
-6. Start an emulator or connect an Android device, then run:
+```powershell
+flutter pub get
+flutter test --reporter compact
+flutter analyze
+```
 
-   ```powershell
-   flutter devices
-   flutter run
-   ```
+From the repository root, run the Firestore Rules harness through local emulators:
 
-Read [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) for the longer checklist.
+```powershell
+npx firebase-tools emulators:exec --only firestore,auth --project demo-parchipocket-ci "node test_rules.js"
+```
 
-## Planned development stages
+See [docs/BACKEND_RUNBOOK.md](docs/BACKEND_RUNBOOK.md) for the schema, emulator setup, and the separate production-rules deployment procedure.
 
-1. Review and test the current UI and navigation on an emulator and a real phone.
-2. Define the backend, data model, and user/role access rules.
-3. Add real authentication and safe customer/seller account linking.
-4. Persist bills, item rows, expenses, and udhaar records in a backend.
-5. Implement verified receipt sharing, QR generation/scanning, PDF export, and tested printer integration.
-6. Add unit, workflow, error-state, privacy, and offline tests before any pilot.
+## Production release gate
 
-## Ownership
+Do not call the app production-ready until:
+1. Rules and Dart integration tests pass against local emulators.
+2. The reviewed rules have been deployed to the intended Firebase project.
+3. Authentication, App Check enforcement, recovery, privacy, and claim-code limitations are reviewed.
+4. Critical account, bill, expense, settlement, and receipt-claim flows are verified on a current Android build.
+5. A backup/retention and incident-response process is documented.
 
-This project is maintained under **Rabit Mansuri (@rabit001)**. New code, integrations, and documentation should be reviewed and committed under the project owner's GitHub account.
+Maintained under **Rabit Mansuri (@rabit001)**.
