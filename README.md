@@ -119,3 +119,14 @@ Do not call the app production-ready until:
 5. A backup/retention and incident-response process is documented.
 
 Maintained under **Rabit Mansuri (@rabit001)**.
+
+## Assignment 3 submission materials
+
+Assignment 3 evidence and status notes are maintained in [docs/assignment3/README.md](docs/assignment3/README.md).
+
+- [Automated prototype test results](docs/assignment3/TEST_RESULTS.md) — seven browser-prototype checks passed; these are not Android-device test results.
+- [Peer feedback form](docs/assignment3/PEER_FEEDBACK_TEMPLATE.md) — blank template for collecting real participant feedback.
+- [Deployment status](docs/assignment3/DEPLOYMENT_STATUS.md) — distinguishes the source repository from a verified public app build.
+- [Retrospective and next steps](docs/assignment3/RETROSPECTIVE.md).
+
+The demo video is intentionally not included. Do not claim Android build/device testing, public deployment, or peer feedback until each has been completed and evidence is available.
