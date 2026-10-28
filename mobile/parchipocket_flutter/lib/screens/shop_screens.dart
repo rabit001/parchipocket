@@ -8,6 +8,7 @@ class ShopHomeScreen extends StatelessWidget {
   final AppState state;
   @override
   Widget build(BuildContext context) {
+    final isCloudAuthenticated = !state.isDemoMode && state.isAuthenticated;
     final todayBills = state.shopBills.where((b) => !b.isUdhaar).toList();
     final todaySales = todayBills.fold<double>(0, (sum, b) => sum + b.total);
     return PpScaffold(
@@ -20,8 +21,11 @@ class ShopHomeScreen extends StatelessWidget {
             onPressed: () => state.go('shopSettings'),
             icon: const Icon(Icons.more_horiz)),
         body: ListView(children: <Widget>[
-          const Text('Shop owner account · Demo mode',
-              style: TextStyle(fontSize: 11, color: PpColors.secondary)),
+          Text(
+              isCloudAuthenticated
+                  ? 'Shop owner account · Signed in to cloud'
+                  : 'Shop owner account · Demo mode',
+              style: const TextStyle(fontSize: 11, color: PpColors.secondary)),
           const SizedBox(height: 13),
           Container(
               padding: const EdgeInsets.all(17),
@@ -43,7 +47,10 @@ class ShopHomeScreen extends StatelessWidget {
                             fontSize: 27,
                             fontWeight: FontWeight.w800)),
                     const SizedBox(height: 6),
-                    Text('${todayBills.length} recorded bills in this demo',
+                    Text(
+                        isCloudAuthenticated
+                            ? '${todayBills.length} recorded bills in your account'
+                            : '${todayBills.length} recorded bills in this demo',
                         style:
                             const TextStyle(color: Colors.white, fontSize: 11)),
                     const SizedBox(height: 10),
@@ -100,9 +107,10 @@ class ShopHomeScreen extends StatelessWidget {
                 onTap: () => state.openBill(bill),
                 icon: Icons.receipt_long_outlined),
           const SizedBox(height: 10),
-          const PpDemoNotice(
-              message:
-                  'Figures are based on sample/local records. This is not a profit calculation and is not synced to a server.'),
+          PpDemoNotice(
+              message: isCloudAuthenticated
+                  ? 'Your cloud account is active. New bills appear here after Firestore confirms the save. Sales exclude Udhaar and are not a profit calculation.'
+                  : 'Figures are based on sample/local records. This is not a profit calculation and is not synced to a server.'),
         ]));
   }
 }
@@ -231,6 +239,8 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
   @override
   Widget build(BuildContext context) {
     final title = widget.vendorMode ? 'Quick Bill' : 'Create bill';
+    final isCloudAuthenticated =
+        !widget.state.isDemoMode && widget.state.isAuthenticated;
     return PpScaffold(
         state: widget.state,
         title: title,
@@ -362,9 +372,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
             onPressed: _isSubmitting ? null : _createBill,
           ),
           const SizedBox(height: 10),
-          const PpDemoNotice(
-              message:
-                  'This saves a receipt to local demo state. Customer number linking is not verified, and no message or printer action is triggered.'),
+          PpDemoNotice(
+              message: isCloudAuthenticated
+                  ? 'Cloud account active. A bill appears in your account only after Firestore confirms the write. Customer number linking is not verified, and no message or printer action is triggered.'
+                  : 'This saves a receipt to local demo state. Customer number linking is not verified, and no message or printer action is triggered.'),
         ]));
   }
 }

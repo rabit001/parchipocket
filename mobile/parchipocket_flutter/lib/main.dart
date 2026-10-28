@@ -1,7 +1,9 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'app_state.dart';
+import 'app_check_activation.dart';
 import 'firebase_options.dart';
 import 'screens/auth_screens.dart';
 import 'screens/common_screens.dart';
@@ -16,12 +18,15 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  try {
-    await FirebaseAppCheck.instance.activate(
-      androidProvider: AndroidProvider.playIntegrity,
-      appleProvider: AppleProvider.deviceCheck,
-    );
-  } catch (_) {}
+  final appCheckProviders = appCheckProvidersFor(debugMode: kDebugMode);
+  await activateAppCheckSafely(
+    activate: () => FirebaseAppCheck.instance.activate(
+      androidProvider: appCheckProviders.android,
+      appleProvider: appCheckProviders.apple,
+    ),
+    debugMode: kDebugMode,
+    debugLog: debugPrint,
+  );
   runApp(const ParchiPocketApp());
 }
 
