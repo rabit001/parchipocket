@@ -189,9 +189,14 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       return;
     }
     final item = name ?? itemName.text.trim();
-    final count = int.tryParse(quantity.text.trim()) ?? 1;
+    final count = int.tryParse(quantity.text.trim());
     final parsedPrice = price ?? double.tryParse(unitPrice.text.trim());
-    if (item.isEmpty || parsedPrice == null || parsedPrice <= 0 || count < 1) {
+    if (item.isEmpty ||
+        parsedPrice == null ||
+        !parsedPrice.isFinite ||
+        parsedPrice <= 0 ||
+        count == null ||
+        count < 1) {
       setState(() => validationError =
           'Enter an item name, quantity of at least 1 and a price greater than ₹0.');
       return;
