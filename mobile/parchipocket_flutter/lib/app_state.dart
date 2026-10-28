@@ -1488,12 +1488,20 @@ class AppState extends ChangeNotifier {
     if (cleaned.startsWith('+')) {
       final digitsOnly = cleaned.substring(1);
 
-      if (RegExp(r'^[1-9]\d{6,14}$').hasMatch(digitsOnly)) {
-        return '+$digitsOnly';
+      if (!RegExp(r'^[1-9]\d{6,14}$').hasMatch(digitsOnly)) {
+        return null;
       }
-      return null;
-    }
 
+      if (digitsOnly.startsWith('91')) {
+        final indianMobile = digitsOnly.substring(2);
+
+        if (!RegExp(r'^[6-9]\d{9}$').hasMatch(indianMobile)) {
+          return null;
+        }
+      }
+
+      return '+$digitsOnly';
+    }
     if (cleaned.startsWith('0') && cleaned.length == 11) {
       cleaned = cleaned.substring(1);
     }
