@@ -875,7 +875,19 @@ class AppState extends ChangeNotifier {
     }
     final cloudBill = !isDemoMode && isAuthenticated;
     final store = vendorMode ? vendorName : shopName;
-    final normalizedPhone = customerPhone.trim();
+    final rawCustomerPhone = customerPhone.trim();
+    final normalizedPhone = rawCustomerPhone.isEmpty
+        ? ''
+        : formatPhoneNumber(rawCustomerPhone);
+
+    if (normalizedPhone == null) {
+      const err =
+          'Enter a valid customer mobile number or leave it blank.';
+      cloudError = err;
+      lastNotice = err;
+      notifyListeners();
+      throw ArgumentError(err);
+    }
     DemoBill bill;
     if (cloudBill &&
         _matchesRetryableBill(
@@ -1466,17 +1478,22 @@ class AppState extends ChangeNotifier {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) return null;
 
-    String cleaned = trimmed.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+    // Allow digits, spaces, hyphens, parentheses and one leading + only.
+    if (!RegExp(r'^\+?[\d\s\-()]+$').hasMatch(trimmed)) {
+      return null;
+    }
+
+    var cleaned = trimmed.replaceAll(RegExp(r'[\s\-()]'), '');
 
     if (cleaned.startsWith('+')) {
-      final digitsOnly = cleaned.substring(1).replaceAll(RegExp(r'\D'), '');
+      final digitsOnly = cleaned.substring(1);
+
       if (digitsOnly.length >= 7 && digitsOnly.length <= 15) {
         return '+$digitsOnly';
       }
       return null;
     }
 
-    cleaned = cleaned.replaceAll(RegExp(r'\D'), '');
     if (cleaned.startsWith('0') && cleaned.length == 11) {
       cleaned = cleaned.substring(1);
     }
