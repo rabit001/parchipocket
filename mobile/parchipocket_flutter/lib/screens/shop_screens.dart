@@ -716,7 +716,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 ? null
                 : () {
                     final value = double.tryParse(amount.text.trim());
-                    if (value == null || value <= 0) {
+                    if (value == null || !value.isFinite || value <= 0) {
                       setState(
                           () => error = 'Enter an amount greater than ₹0.');
                       return;

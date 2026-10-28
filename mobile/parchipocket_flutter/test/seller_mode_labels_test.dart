@@ -130,5 +130,31 @@ void main() {
       expect(find.textContaining('local demo state'), findsNothing);
       state.dispose();
     });
+    group('Expense amount validation', () {
+      testWidgets('rejects non-finite amount before saving', (tester) async {
+        final state = AppState();
+        final initialExpenseCount = state.expenses.length;
+
+        await tester.pumpWidget(
+          MaterialApp(home: ExpensesScreen(state: state)),
+        );
+
+        await tester.enterText(
+          find.byType(TextField).first,
+          'Infinity',
+        );
+
+        await tester.tap(find.text('Save Expense'));
+        await tester.pump();
+
+        expect(
+          find.text('Enter an amount greater than ₹0.'),
+          findsOneWidget,
+        );
+        expect(state.expenses, hasLength(initialExpenseCount));
+
+        state.dispose();
+      });
+    });
   });
 }
