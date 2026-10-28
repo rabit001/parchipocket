@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:parchipocket/app_state.dart';
 import 'package:parchipocket/screens/shop_screens.dart';
 import 'package:parchipocket/screens/vendor_screens.dart';
+import 'package:parchipocket/widgets/ui.dart';
 
 class _SignedInUser extends Fake implements User {
   @override
@@ -152,6 +153,62 @@ void main() {
           findsOneWidget,
         );
         expect(state.expenses, hasLength(initialExpenseCount));
+
+        state.dispose();
+      });
+    });
+    group('Create bill input validation', () {
+      testWidgets('rejects invalid quantity before adding an item',
+          (tester) async {
+        final state = AppState();
+        final initialBillCount = state.bills.length;
+
+        await tester.pumpWidget(
+          MaterialApp(home: CreateBillScreen(state: state)),
+        );
+
+        Future<Finder> fieldFor(String label) async {
+          final labelFinder = find.text(label);
+
+          await tester.scrollUntilVisible(
+            labelFinder,
+            250,
+            scrollable: find.byType(Scrollable).first,
+          );
+
+          final field = find.descendant(
+            of: find.ancestor(
+              of: labelFinder,
+              matching: find.byType(PpField),
+            ),
+            matching: find.byType(TextField),
+          );
+
+          expect(field, findsOneWidget);
+          return field;
+        }
+
+        await tester.enterText(await fieldFor('Item name'), 'Milk');
+        await tester.enterText(await fieldFor('Quantity'), 'abc');
+        await tester.enterText(await fieldFor('Unit price (₹)'), '10');
+
+        final addButton = find.text('Add item to bill');
+
+        await tester.scrollUntilVisible(
+          addButton,
+          250,
+          scrollable: find.byType(Scrollable).first,
+        );
+
+        await tester.tap(addButton);
+        await tester.pump();
+
+        expect(
+          find.textContaining('quantity of at least 1'),
+          findsOneWidget,
+        );
+        expect(find.text('Selected items (0)'), findsOneWidget);
+        expect(state.bills, hasLength(initialBillCount));
 
         state.dispose();
       });
