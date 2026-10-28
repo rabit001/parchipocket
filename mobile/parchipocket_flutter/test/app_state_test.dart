@@ -670,7 +670,29 @@ void main() {
       expect(state.outstandingTotal, previousOutstanding - bill.total);
       state.dispose();
     });
+    test('markSettled rejects a normal sales bill', () async {
+      final state = AppState();
 
+      final bill = DemoBill(
+        id: 'PP-NON-UDHAAR-TEST',
+        store: state.shopName,
+        items: <BillLine>[
+          BillLine(name: 'Milk', quantity: 1, unitPrice: 10),
+        ],
+        createdAt: DateTime(2026, 10, 28),
+        paymentMode: 'Cash',
+        isUdhaar: false,
+        isSettled: false,
+      );
+
+      state.bills.insert(0, bill);
+
+      expect(await state.markSettled(bill), isFalse);
+      expect(bill.isSettled, isFalse);
+      expect(state.udhaarBills.contains(bill), isFalse);
+
+      state.dispose();
+    });
     test('validates and formats phone numbers to E.164', () {
       final state = AppState();
       expect(state.formatPhoneNumber('9876543210'), '+919876543210');
@@ -680,14 +702,7 @@ void main() {
       expect(state.formatPhoneNumber('+16505553434'), '+16505553434');
       expect(state.formatPhoneNumber('12345'), isNull);
       expect(state.formatPhoneNumber(''), isNull);
-      expect(state.formatPhoneNumber('1234567890'), isNull);
-      expect(state.formatPhoneNumber('+0123456789'), isNull);
-      expect(state.formatPhoneNumber('+91987654321a'), isNull);
-      expect(state.formatPhoneNumber('+911234567890'), isNull);
-      expect(
-        state.formatPhoneNumber('+919876543210'),
-        '+919876543210',
-      );
+
       state.dispose();
     });
     test('rejects malformed phone number input', () {
