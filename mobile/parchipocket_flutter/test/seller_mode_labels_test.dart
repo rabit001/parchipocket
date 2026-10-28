@@ -212,6 +212,74 @@ void main() {
 
         state.dispose();
       });
+      testWidgets(
+        'invalid customer phone stays on form without setting global error',
+        (tester) async {
+          final state = AppState();
+          final initialBillCount = state.bills.length;
+
+          await tester.pumpWidget(
+            MaterialApp(home: CreateBillScreen(state: state)),
+          );
+
+          Future<Finder> fieldFor(String label) async {
+            final labelFinder = find.text(label);
+
+            await tester.scrollUntilVisible(
+              labelFinder,
+              250,
+              scrollable: find.byType(Scrollable).first,
+            );
+
+            final field = find.descendant(
+              of: find.ancestor(
+                of: labelFinder,
+                matching: find.byType(PpField),
+              ),
+              matching: find.byType(TextField),
+            );
+
+            expect(field, findsOneWidget);
+            return field;
+          }
+
+          await tester.enterText(await fieldFor('Item name'), 'Milk');
+          await tester.enterText(await fieldFor('Quantity'), '1');
+          await tester.enterText(await fieldFor('Unit price (₹)'), '10');
+
+          final addButton = find.text('Add item to bill');
+          await tester.scrollUntilVisible(
+            addButton,
+            250,
+            scrollable: find.byType(Scrollable).first,
+          );
+          await tester.tap(addButton);
+          await tester.pump();
+
+          await tester.enterText(
+            await fieldFor('Customer mobile (optional)'),
+            'abc9876543210',
+          );
+
+          final generateButton = find.text('Generate Bill');
+          await tester.scrollUntilVisible(
+            generateButton,
+            250,
+            scrollable: find.byType(Scrollable).first,
+          );
+          await tester.tap(generateButton);
+          await tester.pumpAndSettle();
+
+          expect(
+            find.text('Enter a valid customer mobile number or leave it blank.'),
+            findsOneWidget,
+          );
+          expect(state.cloudError, isNull);
+          expect(state.bills, hasLength(initialBillCount));
+
+          state.dispose();
+        },
+      );
     });
   });
 }
