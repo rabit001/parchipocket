@@ -680,6 +680,9 @@ void main() {
       expect(state.formatPhoneNumber('+16505553434'), '+16505553434');
       expect(state.formatPhoneNumber('12345'), isNull);
       expect(state.formatPhoneNumber(''), isNull);
+      expect(state.formatPhoneNumber('1234567890'), isNull);
+      expect(state.formatPhoneNumber('+0123456789'), isNull);
+      expect(state.formatPhoneNumber('+91987654321a'), isNull);
       state.dispose();
     });
     test('rejects malformed phone number input', () {

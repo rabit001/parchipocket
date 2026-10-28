@@ -1488,7 +1488,7 @@ class AppState extends ChangeNotifier {
     if (cleaned.startsWith('+')) {
       final digitsOnly = cleaned.substring(1);
 
-      if (digitsOnly.length >= 7 && digitsOnly.length <= 15) {
+      if (RegExp(r'^[1-9]\d{6,14}$').hasMatch(digitsOnly)) {
         return '+$digitsOnly';
       }
       return null;
@@ -1498,7 +1498,7 @@ class AppState extends ChangeNotifier {
       cleaned = cleaned.substring(1);
     }
 
-    if (cleaned.length == 10) {
+    if (RegExp(r'^[6-9]\d{9}$').hasMatch(cleaned)) {
       return '+91$cleaned';
     }
 
