@@ -231,15 +231,22 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       );
     } catch (error) {
       if (mounted) {
-        final message = widget.state.cloudError ??
-            'Bill was not saved. Check your connection and retry. ($error)';
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(message)));
+        if (error is ArgumentError) {
+          setState(() {
+            validationError = error.message?.toString() ??
+                'Please check the bill details and try again.';
+          });
+        } else {
+          final message = widget.state.cloudError ??
+              'Bill was not saved. Check your connection and retry. ($error)';
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(message)));
+        }
       }
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
-    }
-  }
+        } finally {
+          if (mounted) setState(() => _isSubmitting = false);
+        }
+      }
 
   @override
   Widget build(BuildContext context) {

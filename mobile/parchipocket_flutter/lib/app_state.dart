@@ -868,9 +868,6 @@ class AppState extends ChangeNotifier {
     if (hasInvalidItem || !billTotal.isFinite || billTotal <= 0) {
     const err =
       'Each bill item needs a name, a quantity of at least 1, and a valid price; the total must be finite and greater than ₹0.';
-    cloudError = err;
-    lastNotice = err;
-    notifyListeners();
     throw ArgumentError(err);
     }
     final cloudBill = !isDemoMode && isAuthenticated;
@@ -883,9 +880,6 @@ class AppState extends ChangeNotifier {
     if (normalizedPhone == null) {
       const err =
           'Enter a valid customer mobile number or leave it blank.';
-      cloudError = err;
-      lastNotice = err;
-      notifyListeners();
       throw ArgumentError(err);
     }
     DemoBill bill;
