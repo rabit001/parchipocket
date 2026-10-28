@@ -1040,6 +1040,15 @@ class AppState extends ChangeNotifier {
 
   Future<bool> markSettled(DemoBill bill) async {
     if (isCloudLoading || isSigningOut) return false;
+    if (!bill.isUdhaar) {
+      const err = 'Only Udhaar bills can be marked as settled.';
+      cloudError = null;
+      lastNotice = err;
+      notifyListeners();
+      return false;
+    }
+
+    if (bill.isSettled) return true;
     if (isDemoMode || !isAuthenticated) {
       bill.isSettled = true;
       lastNotice = '${bill.id} settled (demo).';
