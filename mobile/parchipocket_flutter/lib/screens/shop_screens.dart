@@ -189,9 +189,14 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       return;
     }
     final item = name ?? itemName.text.trim();
-    final count = int.tryParse(quantity.text.trim()) ?? 1;
+    final count = int.tryParse(quantity.text.trim());
     final parsedPrice = price ?? double.tryParse(unitPrice.text.trim());
-    if (item.isEmpty || parsedPrice == null || parsedPrice <= 0 || count < 1) {
+    if (item.isEmpty ||
+        parsedPrice == null ||
+        !parsedPrice.isFinite ||
+        parsedPrice <= 0 ||
+        count == null ||
+        count < 1) {
       setState(() => validationError =
           'Enter an item name, quantity of at least 1 and a price greater than ₹0.');
       return;
@@ -226,15 +231,22 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
       );
     } catch (error) {
       if (mounted) {
-        final message = widget.state.cloudError ??
-            'Bill was not saved. Check your connection and retry. ($error)';
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(message)));
+        if (error is ArgumentError) {
+          setState(() {
+            validationError = error.message?.toString() ??
+                'Please check the bill details and try again.';
+          });
+        } else {
+          final message = widget.state.cloudError ??
+              'Bill was not saved. Check your connection and retry. ($error)';
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(message)));
+        }
       }
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
-    }
-  }
+        } finally {
+          if (mounted) setState(() => _isSubmitting = false);
+        }
+      }
 
   @override
   Widget build(BuildContext context) {
@@ -711,7 +723,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                 ? null
                 : () {
                     final value = double.tryParse(amount.text.trim());
-                    if (value == null || value <= 0) {
+                    if (value == null || !value.isFinite || value <= 0) {
                       setState(
                           () => error = 'Enter an amount greater than ₹0.');
                       return;
