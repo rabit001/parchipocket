@@ -1275,15 +1275,23 @@ class AppState extends ChangeNotifier {
   }
 
   Future<bool> updateShop(
-      {required String name,
+      {required String ownerName,
+      required String name,
       required String category,
       required String address}) async {
     if (isCloudLoading || isSigningOut) return false;
+    final newOwnerName = ownerName.trim();
+    if (newOwnerName.isEmpty) {
+      cloudError = 'Enter the owner/contact full name before saving the shop profile.';
+      notifyListeners();
+      return false;
+    }
     final newShopName = name.trim().isEmpty ? shopName : name.trim();
     final newCategory = category;
     final newAddress = address.trim().isEmpty ? shopAddress : address.trim();
 
     if (isDemoMode || !isAuthenticated) {
+      customerName = newOwnerName;
       shopName = newShopName;
       shopCategory = newCategory;
       shopAddress = newAddress;
@@ -1302,7 +1310,7 @@ class AppState extends ChangeNotifier {
     try {
       await firestoreService.saveUserProfile(
         role: role,
-        name: customerName,
+        name: newOwnerName,
         email: customerEmail,
         city: city,
         shopName: newShopName,
@@ -1314,6 +1322,7 @@ class AppState extends ChangeNotifier {
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
         return false;
       }
+      customerName = newOwnerName;
       shopName = newShopName;
       shopCategory = newCategory;
       shopAddress = newAddress;
@@ -1338,12 +1347,21 @@ class AppState extends ChangeNotifier {
   }
 
   Future<bool> updateVendor(
-      {required String name, required String category}) async {
+      {required String ownerName,
+      required String name,
+      required String category}) async {
     if (isCloudLoading || isSigningOut) return false;
+    final newOwnerName = ownerName.trim();
+    if (newOwnerName.isEmpty) {
+      cloudError = 'Enter the owner/contact full name before saving the vendor profile.';
+      notifyListeners();
+      return false;
+    }
     final newVendorName = name.trim().isEmpty ? vendorName : name.trim();
     final newCategory = category;
 
     if (isDemoMode || !isAuthenticated) {
+      customerName = newOwnerName;
       vendorName = newVendorName;
       vendorCategory = newCategory;
       lastNotice = 'Vendor updated (demo).';
@@ -1361,7 +1379,7 @@ class AppState extends ChangeNotifier {
     try {
       await firestoreService.saveUserProfile(
         role: role,
-        name: customerName,
+        name: newOwnerName,
         email: customerEmail,
         city: city,
         shopName: shopName,
@@ -1373,6 +1391,7 @@ class AppState extends ChangeNotifier {
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
         return false;
       }
+      customerName = newOwnerName;
       vendorName = newVendorName;
       vendorCategory = newCategory;
       hasExistingCloudProfile = true;

@@ -476,20 +476,30 @@ class ShopSetupScreen extends StatefulWidget {
   State<ShopSetupScreen> createState() => _ShopSetupScreenState();
 }
 class _ShopSetupScreenState extends State<ShopSetupScreen> {
+  late final TextEditingController contactName = TextEditingController(text: widget.state.customerName);
   late final TextEditingController name = TextEditingController(text: widget.state.shopName);
   late final TextEditingController address = TextEditingController(text: widget.state.shopAddress);
   String category = 'Kirana';
+  String? _contactNameError;
   bool _isSubmitting = false;
 
   @override
-  void dispose() { name.dispose(); address.dispose(); super.dispose(); }
+  void dispose() { contactName.dispose(); name.dispose(); address.dispose(); super.dispose(); }
 
   Future<void> _saveShop() async {
     if (_isSubmitting) return;
+    if (contactName.text.trim().isEmpty) {
+      setState(() => _contactNameError = 'Enter the owner/contact full name to continue.');
+      return;
+    }
     final messenger = ScaffoldMessenger.of(context);
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _contactNameError = null;
+      _isSubmitting = true;
+    });
     try {
       final success = await widget.state.updateShop(
+        ownerName: contactName.text,
         name: name.text,
         category: category,
         address: address.text,
@@ -520,6 +530,23 @@ class _ShopSetupScreenState extends State<ShopSetupScreen> {
   Widget build(BuildContext context) => PpScaffold(state: widget.state, title: 'Register your shop', backTo: 'roleSelection', body: ListView(children: <Widget>[
         const Text('Set up billing for your business.', style: TextStyle(fontSize: 13, color: PpColors.secondary)),
         const SizedBox(height: 20),
+        const Text('Owner/contact full name', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: PpColors.secondary)),
+        const SizedBox(height: 7),
+        TextField(
+          controller: contactName,
+          textCapitalization: TextCapitalization.words,
+          onChanged: (_) {
+            if (_contactNameError != null) {
+              setState(() => _contactNameError = null);
+            }
+          },
+          decoration: const InputDecoration(hintText: 'Enter your full name'),
+        ),
+        if (_contactNameError != null) ...<Widget>[
+          const SizedBox(height: 6),
+          Text(_contactNameError!, style: const TextStyle(color: PpColors.error, fontSize: 12)),
+        ],
+        const SizedBox(height: 15),
         PpField(label: 'Shop name', controller: name, hint: 'e.g. Sharma Kirana Store'),
         const SizedBox(height: 15),
         const Text('Shop category', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: PpColors.secondary)),
@@ -544,19 +571,32 @@ class VendorSetupScreen extends StatefulWidget {
   State<VendorSetupScreen> createState() => _VendorSetupScreenState();
 }
 class _VendorSetupScreenState extends State<VendorSetupScreen> {
+  late final TextEditingController contactName = TextEditingController(text: widget.state.customerName);
   late final TextEditingController name = TextEditingController(text: widget.state.vendorName);
   String category = 'Tea / Snacks';
+  String? _contactNameError;
   bool _isSubmitting = false;
 
   @override
-  void dispose() { name.dispose(); super.dispose(); }
+  void dispose() { contactName.dispose(); name.dispose(); super.dispose(); }
 
   Future<void> _saveVendor() async {
     if (_isSubmitting) return;
+    if (contactName.text.trim().isEmpty) {
+      setState(() => _contactNameError = 'Enter the owner/contact full name to continue.');
+      return;
+    }
     final messenger = ScaffoldMessenger.of(context);
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _contactNameError = null;
+      _isSubmitting = true;
+    });
     try {
-      final success = await widget.state.updateVendor(name: name.text, category: category);
+      final success = await widget.state.updateVendor(
+        ownerName: contactName.text,
+        name: name.text,
+        category: category,
+      );
       if (!mounted) return;
       if (success) {
         final message = widget.state.isDemoMode
@@ -583,6 +623,23 @@ class _VendorSetupScreenState extends State<VendorSetupScreen> {
   Widget build(BuildContext context) => PpScaffold(state: widget.state, title: 'Quick setup', backTo: 'roleSelection', body: ListView(children: <Widget>[
         const Text('Start billing without creating a product catalogue.', style: TextStyle(fontSize: 13, color: PpColors.secondary)),
         const SizedBox(height: 22),
+        const Text('Owner/contact full name', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: PpColors.secondary)),
+        const SizedBox(height: 7),
+        TextField(
+          controller: contactName,
+          textCapitalization: TextCapitalization.words,
+          onChanged: (_) {
+            if (_contactNameError != null) {
+              setState(() => _contactNameError = null);
+            }
+          },
+          decoration: const InputDecoration(hintText: 'Enter your full name'),
+        ),
+        if (_contactNameError != null) ...<Widget>[
+          const SizedBox(height: 6),
+          Text(_contactNameError!, style: const TextStyle(color: PpColors.error, fontSize: 12)),
+        ],
+        const SizedBox(height: 15),
         PpField(label: 'Vendor or stall name', controller: name, hint: 'e.g. Raju Tea Stall'),
         const SizedBox(height: 15),
         const Text('What do you usually sell?', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: PpColors.secondary)),

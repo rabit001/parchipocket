@@ -52,6 +52,7 @@ class CountingFirestoreService extends FirestoreService {
   int savedShopReads = 0;
   int claimedReceiptReads = 0;
   int writes = 0;
+  Map<String, Object?>? savedProfile;
   Completer<Map<String, dynamic>?>? profileCompleter;
 
   @override
@@ -132,6 +133,17 @@ class CountingFirestoreService extends FirestoreService {
     required String vendorCategory,
   }) async {
     writes++;
+    savedProfile = <String, Object?>{
+      'role': role,
+      'name': name,
+      'email': email,
+      'city': city,
+      'shopName': shopName,
+      'shopCategory': shopCategory,
+      'shopAddress': shopAddress,
+      'vendorName': vendorName,
+      'vendorCategory': vendorCategory,
+    };
   }
 }
 
@@ -358,7 +370,10 @@ void main() {
       );
       expect(
         await state.updateShop(
-            name: 'Demo Shop', category: 'Kirana', address: 'Ujjain'),
+            ownerName: 'Demo Owner',
+            name: 'Demo Shop',
+            category: 'Kirana',
+            address: 'Ujjain'),
         isTrue,
       );
       expect(service.writes, 0);
@@ -635,6 +650,90 @@ void main() {
   });
 
   group('AppState cloud failure handling & role consistency', () {
+    testWidgets('shop registration saves the entered owner name to the profile',
+        (tester) async {
+      final service = CountingFirestoreService();
+      final state = AppState()
+        ..isDemoMode = false
+        ..profileStatus = CloudProfileStatus.missing
+        ..role = UserRole.shopOwner
+        ..customerName = ''
+        ..auth = MockFirebaseAuth()
+        ..firestoreService = service
+        ..page = 'shopSetup';
+
+      await tester.pumpWidget(MaterialApp(home: ShopSetupScreen(state: state)));
+      final fields = find.byType(TextField);
+      await tester.enterText(fields.at(0), 'Asha Verma');
+      await tester.enterText(fields.at(1), 'Asha General Store');
+      await tester.enterText(fields.at(2), '12 Main Road, Ujjain');
+      await tester.ensureVisible(find.text('Create Shop Profile'));
+      await tester.tap(find.text('Create Shop Profile'));
+      await tester.pumpAndSettle();
+
+      expect(service.writes, 1);
+      expect(service.savedProfile?['role'], UserRole.shopOwner);
+      expect(service.savedProfile?['name'], 'Asha Verma');
+      expect(service.savedProfile?['shopName'], 'Asha General Store');
+      expect(service.savedProfile?['shopAddress'], '12 Main Road, Ujjain');
+      expect(state.customerName, 'Asha Verma');
+      expect(state.page, 'shopHome');
+      state.dispose();
+    });
+
+    testWidgets('missing owner name is explained and preserves shop details',
+        (tester) async {
+      final service = CountingFirestoreService();
+      final state = AppState()
+        ..isDemoMode = false
+        ..profileStatus = CloudProfileStatus.missing
+        ..role = UserRole.shopOwner
+        ..customerName = ''
+        ..auth = MockFirebaseAuth()
+        ..firestoreService = service
+        ..page = 'shopSetup';
+
+      await tester.pumpWidget(MaterialApp(home: ShopSetupScreen(state: state)));
+      final fields = find.byType(TextField);
+      await tester.enterText(fields.at(1), 'Asha General Store');
+      await tester.enterText(fields.at(2), '12 Main Road, Ujjain');
+      await tester.ensureVisible(find.text('Create Shop Profile'));
+      await tester.tap(find.text('Create Shop Profile'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Enter the owner/contact full name to continue.'),
+          findsOneWidget);
+      expect(tester.widget<TextField>(fields.at(1)).controller!.text,
+          'Asha General Store');
+      expect(tester.widget<TextField>(fields.at(2)).controller!.text,
+          '12 Main Road, Ujjain');
+      expect(service.writes, 0);
+      expect(state.page, 'shopSetup');
+      state.dispose();
+    });
+
+    test('vendor profile also saves the required owner name', () async {
+      final service = CountingFirestoreService();
+      final state = AppState()
+        ..isDemoMode = false
+        ..role = UserRole.streetVendor
+        ..customerName = ''
+        ..auth = MockFirebaseAuth()
+        ..firestoreService = service;
+
+      final saved = await state.updateVendor(
+        ownerName: '  Ramesh Patel  ',
+        name: 'Patel Tea Stall',
+        category: 'Tea / Snacks',
+      );
+
+      expect(saved, isTrue);
+      expect(service.savedProfile?['role'], UserRole.streetVendor);
+      expect(service.savedProfile?['name'], 'Ramesh Patel');
+      expect(state.customerName, 'Ramesh Patel');
+      state.dispose();
+    });
+
     test('saveSelectedBill handles write failure and preserves state',
         () async {
       final state = AppState();
