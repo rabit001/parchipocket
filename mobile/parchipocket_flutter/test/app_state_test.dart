@@ -682,6 +682,56 @@ void main() {
       expect(state.formatPhoneNumber(''), isNull);
       state.dispose();
     });
+    test('rejects malformed phone number input', () {
+      final state = AppState();
+
+      expect(state.formatPhoneNumber('abc9876543210'), isNull);
+      expect(state.formatPhoneNumber('98765@43210'), isNull);
+      expect(state.formatPhoneNumber('+91+9876543210'), isNull);
+      expect(state.formatPhoneNumber('123456'), isNull);
+      expect(state.formatPhoneNumber('1234567890123456'), isNull);
+
+      state.dispose();
+    });
+
+    test('createBill rejects an invalid customer phone number', () async {
+      final state = AppState();
+      final initialBillCount = state.bills.length;
+
+      await expectLater(
+        state.createBill(
+          items: <BillLine>[
+            BillLine(name: 'Milk', quantity: 1, unitPrice: 10),
+          ],
+          paymentMode: 'Cash',
+          customerPhone: 'abc9876543210',
+          vendorMode: false,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      expect(state.bills, hasLength(initialBillCount));
+      expect(state.selectedBill, isNull);
+
+      state.dispose();
+    });
+
+    test('createBill normalizes a valid customer phone number', () async {
+      final state = AppState();
+
+      final bill = await state.createBill(
+        items: <BillLine>[
+          BillLine(name: 'Milk', quantity: 1, unitPrice: 10),
+        ],
+        paymentMode: 'Cash',
+        customerPhone: '987 654 3210',
+        vendorMode: false,
+      );
+
+      expect(bill.customerPhone, '+919876543210');
+
+      state.dispose();
+    });
 
     test('DemoBill item serialization & calculation check', () {
       final bill = DemoBill(
