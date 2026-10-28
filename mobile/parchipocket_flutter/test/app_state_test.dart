@@ -540,6 +540,84 @@ void main() {
   });
 
   group('AppState local demo workflows & serialization', () {
+  test('createBill rejects non-finite prices', () async {
+    final state = AppState();
+    final initialBillCount = state.bills.length;
+
+    await expectLater(
+      state.createBill(
+        items: <BillLine>[
+          BillLine(
+            name: 'Milk',
+            quantity: 1,
+            unitPrice: double.infinity,
+          ),
+        ],
+        paymentMode: 'Cash',
+        vendorMode: false,
+      ),
+      throwsA(isA<ArgumentError>()),
+    );
+
+    expect(state.bills, hasLength(initialBillCount));
+    expect(state.selectedBill, isNull);
+    state.dispose();
+  });
+
+  test('addExpense rejects invalid amounts', () async {
+    final state = AppState();
+    final initialExpenseCount = state.expenses.length;
+
+    for (final amount in <double>[
+      0,
+      -1,
+      double.nan,
+      double.infinity,
+    ]) {
+      expect(
+        await state.addExpense(
+          title: 'Invalid expense',
+          category: 'Other',
+          amount: amount,
+        ),
+        isFalse,
+      );
+    }
+
+    expect(state.expenses, hasLength(initialExpenseCount));
+    state.dispose();
+  });
+  test('createBill rejects invalid quantity, empty name and overflow', () async {
+    final invalidItems = <List<BillLine>>[
+      <BillLine>[
+        BillLine(name: 'Milk', quantity: 0, unitPrice: 10),
+      ],
+      <BillLine>[
+        BillLine(name: '   ', quantity: 1, unitPrice: 10),
+      ],
+      <BillLine>[
+        BillLine(name: 'Milk', quantity: 2, unitPrice: double.maxFinite),
+      ],
+    ];
+
+    for (final items in invalidItems) {
+      final state = AppState();
+      final initialBillCount = state.bills.length;
+
+      await expectLater(
+          state.createBill(
+          items: items,
+          paymentMode: 'Cash',
+          vendorMode: false,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      expect(state.bills, hasLength(initialBillCount));
+      expect(state.selectedBill, isNull);
+      state.dispose();
+    }
+  });
     test('creates a bill and calculates its total', () async {
       final state = AppState();
       final bill = await state.createBill(
@@ -592,7 +670,29 @@ void main() {
       expect(state.outstandingTotal, previousOutstanding - bill.total);
       state.dispose();
     });
+    test('markSettled rejects a normal sales bill', () async {
+      final state = AppState();
 
+      final bill = DemoBill(
+        id: 'PP-NON-UDHAAR-TEST',
+        store: state.shopName,
+        items: <BillLine>[
+          BillLine(name: 'Milk', quantity: 1, unitPrice: 10),
+        ],
+        createdAt: DateTime(2026, 10, 28),
+        paymentMode: 'Cash',
+        isUdhaar: false,
+        isSettled: false,
+      );
+
+      state.bills.insert(0, bill);
+
+      expect(await state.markSettled(bill), isFalse);
+      expect(bill.isSettled, isFalse);
+      expect(state.udhaarBills.contains(bill), isFalse);
+
+      state.dispose();
+    });
     test('validates and formats phone numbers to E.164', () {
       final state = AppState();
       expect(state.formatPhoneNumber('9876543210'), '+919876543210');
@@ -602,6 +702,57 @@ void main() {
       expect(state.formatPhoneNumber('+16505553434'), '+16505553434');
       expect(state.formatPhoneNumber('12345'), isNull);
       expect(state.formatPhoneNumber(''), isNull);
+
+      state.dispose();
+    });
+    test('rejects malformed phone number input', () {
+      final state = AppState();
+
+      expect(state.formatPhoneNumber('abc9876543210'), isNull);
+      expect(state.formatPhoneNumber('98765@43210'), isNull);
+      expect(state.formatPhoneNumber('+91+9876543210'), isNull);
+      expect(state.formatPhoneNumber('123456'), isNull);
+      expect(state.formatPhoneNumber('1234567890123456'), isNull);
+
+      state.dispose();
+    });
+
+    test('createBill rejects an invalid customer phone number', () async {
+      final state = AppState();
+      final initialBillCount = state.bills.length;
+
+      await expectLater(
+        state.createBill(
+          items: <BillLine>[
+            BillLine(name: 'Milk', quantity: 1, unitPrice: 10),
+          ],
+          paymentMode: 'Cash',
+          customerPhone: 'abc9876543210',
+          vendorMode: false,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      expect(state.bills, hasLength(initialBillCount));
+      expect(state.selectedBill, isNull);
+
+      state.dispose();
+    });
+
+    test('createBill normalizes a valid customer phone number', () async {
+      final state = AppState();
+
+      final bill = await state.createBill(
+        items: <BillLine>[
+          BillLine(name: 'Milk', quantity: 1, unitPrice: 10),
+        ],
+        paymentMode: 'Cash',
+        customerPhone: '987 654 3210',
+        vendorMode: false,
+      );
+
+      expect(bill.customerPhone, '+919876543210');
+
       state.dispose();
     });
 

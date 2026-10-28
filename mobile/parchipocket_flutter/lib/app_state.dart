@@ -852,10 +852,36 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       throw Exception(err);
     }
+    final hasInvalidItem = items.any((item) {
+    final itemTotal = item.total;
+    return item.name.trim().isEmpty ||
+      item.quantity < 1 ||
+      !item.unitPrice.isFinite ||
+      item.unitPrice <= 0 ||
+      !itemTotal.isFinite ||
+      itemTotal <= 0;
+    });
 
+    final billTotal =
+    items.fold<double>(0, (sum, item) => sum + item.total);
+
+    if (hasInvalidItem || !billTotal.isFinite || billTotal <= 0) {
+    const err =
+      'Each bill item needs a name, a quantity of at least 1, and a valid price; the total must be finite and greater than ₹0.';
+    throw ArgumentError(err);
+    }
     final cloudBill = !isDemoMode && isAuthenticated;
     final store = vendorMode ? vendorName : shopName;
-    final normalizedPhone = customerPhone.trim();
+    final rawCustomerPhone = customerPhone.trim();
+    final normalizedPhone = rawCustomerPhone.isEmpty
+        ? ''
+        : formatPhoneNumber(rawCustomerPhone);
+
+    if (normalizedPhone == null) {
+      const err =
+          'Enter a valid customer mobile number or leave it blank.';
+      throw ArgumentError(err);
+    }
     DemoBill bill;
     if (cloudBill &&
         _matchesRetryableBill(
@@ -1014,6 +1040,15 @@ class AppState extends ChangeNotifier {
 
   Future<bool> markSettled(DemoBill bill) async {
     if (isCloudLoading || isSigningOut) return false;
+    if (!bill.isUdhaar) {
+      const err = 'Only Udhaar bills can be marked as settled.';
+      cloudError = null;
+      lastNotice = err;
+      notifyListeners();
+      return false;
+    }
+
+    if (bill.isSettled) return true;
     if (isDemoMode || !isAuthenticated) {
       bill.isSettled = true;
       lastNotice = '${bill.id} settled (demo).';
@@ -1070,6 +1105,14 @@ class AppState extends ChangeNotifier {
     required double amount,
   }) async {
     if (isCloudLoading || isSigningOut) return false;
+    if (!amount.isFinite || amount <= 0) {
+      const err =
+          'Expense amount must be a finite number greater than ₹0.';
+      cloudError = err;
+      lastNotice = err;
+      notifyListeners();
+      return false;
+    }
 
     final normalizedTitle =
         title.trim().isEmpty ? 'Other expense' : title.trim();
@@ -1438,22 +1481,35 @@ class AppState extends ChangeNotifier {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) return null;
 
-    String cleaned = trimmed.replaceAll(RegExp(r'[\s\-\(\)]'), '');
-
-    if (cleaned.startsWith('+')) {
-      final digitsOnly = cleaned.substring(1).replaceAll(RegExp(r'\D'), '');
-      if (digitsOnly.length >= 7 && digitsOnly.length <= 15) {
-        return '+$digitsOnly';
-      }
+    // Allow digits, spaces, hyphens, parentheses and one leading + only.
+    if (!RegExp(r'^\+?[\d\s\-()]+$').hasMatch(trimmed)) {
       return null;
     }
 
-    cleaned = cleaned.replaceAll(RegExp(r'\D'), '');
+    var cleaned = trimmed.replaceAll(RegExp(r'[\s\-()]'), '');
+
+    if (cleaned.startsWith('+')) {
+      final digitsOnly = cleaned.substring(1);
+
+      if (!RegExp(r'^[1-9]\d{6,14}$').hasMatch(digitsOnly)) {
+        return null;
+      }
+
+      if (digitsOnly.startsWith('91')) {
+        final indianMobile = digitsOnly.substring(2);
+
+        if (!RegExp(r'^[6-9]\d{9}$').hasMatch(indianMobile)) {
+          return null;
+        }
+      }
+
+      return '+$digitsOnly';
+    }
     if (cleaned.startsWith('0') && cleaned.length == 11) {
       cleaned = cleaned.substring(1);
     }
 
-    if (cleaned.length == 10) {
+    if (RegExp(r'^[6-9]\d{9}$').hasMatch(cleaned)) {
       return '+91$cleaned';
     }
 
