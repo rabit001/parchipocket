@@ -852,7 +852,27 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       throw Exception(err);
     }
+    final hasInvalidItem = items.any((item) {
+    final itemTotal = item.total;
+    return item.name.trim().isEmpty ||
+      item.quantity < 1 ||
+      !item.unitPrice.isFinite ||
+      item.unitPrice <= 0 ||
+      !itemTotal.isFinite ||
+      itemTotal <= 0;
+    });
 
+    final billTotal =
+    items.fold<double>(0, (sum, item) => sum + item.total);
+
+    if (hasInvalidItem || !billTotal.isFinite || billTotal <= 0) {
+    const err =
+      'Each bill item needs a name, a quantity of at least 1, and a valid price; the total must be finite and greater than ₹0.';
+    cloudError = err;
+    lastNotice = err;
+    notifyListeners();
+    throw ArgumentError(err);
+    }
     final cloudBill = !isDemoMode && isAuthenticated;
     final store = vendorMode ? vendorName : shopName;
     final normalizedPhone = customerPhone.trim();
@@ -1070,6 +1090,14 @@ class AppState extends ChangeNotifier {
     required double amount,
   }) async {
     if (isCloudLoading || isSigningOut) return false;
+    if (!amount.isFinite || amount <= 0) {
+      const err =
+          'Expense amount must be a finite number greater than ₹0.';
+      cloudError = err;
+      lastNotice = err;
+      notifyListeners();
+      return false;
+    }
 
     final normalizedTitle =
         title.trim().isEmpty ? 'Other expense' : title.trim();

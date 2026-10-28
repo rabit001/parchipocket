@@ -540,6 +540,84 @@ void main() {
   });
 
   group('AppState local demo workflows & serialization', () {
+  test('createBill rejects non-finite prices', () async {
+    final state = AppState();
+    final initialBillCount = state.bills.length;
+
+    await expectLater(
+      state.createBill(
+        items: <BillLine>[
+          BillLine(
+            name: 'Milk',
+            quantity: 1,
+            unitPrice: double.infinity,
+          ),
+        ],
+        paymentMode: 'Cash',
+        vendorMode: false,
+      ),
+      throwsA(isA<ArgumentError>()),
+    );
+
+    expect(state.bills, hasLength(initialBillCount));
+    expect(state.selectedBill, isNull);
+    state.dispose();
+  });
+
+  test('addExpense rejects invalid amounts', () async {
+    final state = AppState();
+    final initialExpenseCount = state.expenses.length;
+
+    for (final amount in <double>[
+      0,
+      -1,
+      double.nan,
+      double.infinity,
+    ]) {
+      expect(
+        await state.addExpense(
+          title: 'Invalid expense',
+          category: 'Other',
+          amount: amount,
+        ),
+        isFalse,
+      );
+    }
+
+    expect(state.expenses, hasLength(initialExpenseCount));
+    state.dispose();
+  });
+  test('createBill rejects invalid quantity, empty name and overflow', () async {
+    final invalidItems = <List<BillLine>>[
+      <BillLine>[
+        BillLine(name: 'Milk', quantity: 0, unitPrice: 10),
+      ],
+      <BillLine>[
+        BillLine(name: '   ', quantity: 1, unitPrice: 10),
+      ],
+      <BillLine>[
+        BillLine(name: 'Milk', quantity: 2, unitPrice: double.maxFinite),
+      ],
+    ];
+
+    for (final items in invalidItems) {
+      final state = AppState();
+      final initialBillCount = state.bills.length;
+
+      await expectLater(
+          state.createBill(
+          items: items,
+          paymentMode: 'Cash',
+          vendorMode: false,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      expect(state.bills, hasLength(initialBillCount));
+      expect(state.selectedBill, isNull);
+      state.dispose();
+    }
+  });
     test('creates a bill and calculates its total', () async {
       final state = AppState();
       final bill = await state.createBill(
