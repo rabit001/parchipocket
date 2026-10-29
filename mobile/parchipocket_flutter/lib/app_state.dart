@@ -762,12 +762,16 @@ class AppState extends ChangeNotifier {
       return;
     }
 
-    role = value;
-    page = switch (value) {
-      UserRole.customer => 'customerSetup',
-      UserRole.shopOwner => 'shopSetup',
-      UserRole.streetVendor => 'vendorSetup',
-    };
+    if (value != UserRole.customer) {
+      // Seller/vendor experiences are paused in the current product scope.
+      role = UserRole.customer;
+      page = 'customerSetup';
+      lastNotice = 'Only Home & Family is available in this version.';
+      notifyListeners();
+      return;
+    }
+    role = UserRole.customer;
+    page = 'customerSetup';
     notifyListeners();
   }
 
