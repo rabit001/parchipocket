@@ -4,26 +4,27 @@ Status is based on code in this repository. Implementation does not prove the Fi
 
 | Area | Status | Notes |
 |---|---|---|
-| Welcome and onboarding | Implemented | Local navigation routes available |
+| Home & Family daily-spending experience | In progress | Household-focused onboarding and dashboard; seller/vendor role choices hidden for this iteration |
+| Manual household purchase entry | Implemented on feature branch | Item, amount, category, date, source; must be reviewed before saving |
+| Voice-assisted household entry | MVP on feature branch | Platform speech-to-text plus conservative local parser; one purchase phrase at a time, not an LLM agent |
+| Household expense persistence | Implemented on feature branch | Owner-scoped `users/{uid}/householdExpenses` collection with strict schema and immutable entries |
+| Daily log and category insights | Implemented on feature branch | Totals use household entries; category totals no longer use fixed percentages |
 | Explicit local demo session | Implemented | In-memory sample data; must not access Firestore |
 | Phone / OTP authentication | Integrated | Firebase Auth flow; real SMS depends on project configuration and billing |
 | Google sign-in | Demo only | Not a completed Google OAuth integration |
-| Account profiles and roles | Cloud persistence implemented | UID-scoped profiles; roles are app-selected, not business verification |
-| Bill creation / persistence | Implemented | Firestore-generated IDs, create-only transaction retries |
-| Bill history and settlement flags | Implemented | Owner-only reads; financial fields protected by rules |
-| Expenses | Implemented | Owner-only immutable records, stable retry IDs |
-| Saved shops | Implemented | Digest-based IDs avoid name-sanitization collisions; legacy deletes supported |
+| Account profiles and legacy roles | Cloud persistence implemented | Existing seller roles are retained in stored profiles, but route to Home & Family while seller modes are paused |
+| Legacy bill history, seller expenses, Udhaar | Retained but paused | Existing code and records are not deleted by this feature |
 | Receipt claim QR/manual code | Implemented | 128-bit client CSPRNG, SHA-256 digest, bounded expiry |
-| Customer claimed receipts | Implemented | Separate minimized read-only copies and index |
+| Claimed receipts | Implemented | Separate minimized read-only copies and index; QR claim remains secondary in the current customer interface |
 | Receipt-claim security | Implemented in rules | Atomic claim/copy/index constraints; emulator test and deployment still required for release |
-| Firestore Security Rules | Checked into repository | GitHub pushes do not deploy rules |
+| Firestore Security Rules | Updated on feature branch | Household rules are checked in, but GitHub pushes do not deploy rules |
 | Firebase App Check | Client configured | Console enforcement/debug-token configuration must be verified separately |
 | Nearby shop discovery | Demo/placeholder | No live location-based discovery service |
 | PDF generation/share | Preview/planned | Not production-complete |
 | Thermal printer integration | Preview/planned | Not validated on target hardware |
 | Push notifications | Not implemented | No messaging backend |
 | Offline sync/conflict resolution | Not implemented | No complete offline queue/reconciliation model |
-| CI validation | Added | Workflow runs Flutter checks, rules emulator, and Android integration tests |
+| CI validation | Added | Workflow runs Flutter checks, rules emulator, and Android integration tests; feature branch CI still needs verification |
 
 ## Release gate
 
