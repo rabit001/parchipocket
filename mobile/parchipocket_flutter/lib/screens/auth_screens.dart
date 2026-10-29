@@ -450,7 +450,7 @@ class _CustomerSetupScreenState extends State<CustomerSetupScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => PpScaffold(state: widget.state, title: 'Set up your profile', backTo: 'roleSelection', body: ListView(children: <Widget>[
+  Widget build(BuildContext context) => PpScaffold(state: widget.state, title: 'Set up your profile', backTo: 'login', body: ListView(children: <Widget>[
         const SizedBox(height: 10),
         const Center(child: CircleAvatar(radius: 34, backgroundColor: PpColors.soft, child: Text('RM', style: TextStyle(fontWeight: FontWeight.w800, color: PpColors.forest, fontSize: 20)))),
         const SizedBox(height: 12),
