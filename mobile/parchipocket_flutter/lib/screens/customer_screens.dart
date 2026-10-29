@@ -1129,8 +1129,15 @@ class CustomerProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final modeLabel = state.isDemoMode
-        ? 'Customer account · Local demo mode'
-        : 'Customer account · Cloud authenticated';
+        ? 'Home & Family · Local demo mode'
+        : 'Home & Family · Cloud synced';
+    final initials = state.customerName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .take(2)
+        .map((part) => part[0].toUpperCase())
+        .join();
 
     return PpScaffold(
         state: state,
@@ -1140,12 +1147,12 @@ class CustomerProfileScreen extends StatelessWidget {
         bottomTab: 'customerProfile',
         body: ListView(children: <Widget>[
           const SizedBox(height: 6),
-          const Center(
+          Center(
               child: CircleAvatar(
                   radius: 35,
                   backgroundColor: PpColors.soft,
-                  child: Text('RM',
-                      style: TextStyle(
+                  child: Text(initials.isEmpty ? 'PP' : initials,
+                      style: const TextStyle(
                           color: PpColors.forest,
                           fontSize: 22,
                           fontWeight: FontWeight.w800)))),
@@ -1164,13 +1171,13 @@ class CustomerProfileScreen extends StatelessWidget {
               onPressed: () => state.go('editProfile')),
           const SizedBox(height: 14),
           _ProfileLink(
-              icon: Icons.receipt_long_outlined,
-              label: 'My Purchase History',
-              onTap: () => state.go('bills')),
+              icon: Icons.shopping_bag_outlined,
+              label: 'Daily Spending Log',
+              onTap: () => state.go('householdExpenses')),
           _ProfileLink(
-              icon: Icons.favorite_border,
-              label: 'Saved Shops',
-              onTap: () => state.go('savedShops')),
+              icon: Icons.receipt_long_outlined,
+              label: 'Receipt QR History',
+              onTap: () => state.go('bills')),
           _ProfileLink(
               icon: Icons.pie_chart_outline,
               label: 'Spending Insights',
