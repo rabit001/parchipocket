@@ -79,7 +79,7 @@ class SplashScreen extends StatelessWidget {
           const SizedBox(height: 10),
           const Text('Every small purchase, properly recorded.', textAlign: TextAlign.center, style: TextStyle(color: PpColors.secondary, fontSize: 14)),
           const SizedBox(height: 8),
-          const Text('Bills for customers. Clear records for sellers.', textAlign: TextAlign.center, style: TextStyle(color: PpColors.secondary, fontSize: 12)),
+          const Text('Daily household spending, captured by voice or manually.', textAlign: TextAlign.center, style: TextStyle(color: PpColors.secondary, fontSize: 12)),
           const SizedBox(height: 42),
           PpPrimaryButton('Get Started', onPressed: () => state.go('login')),
         ])))),
@@ -96,7 +96,7 @@ class LoginScreen extends StatelessWidget {
           const SizedBox(height: 28),
           const Center(child: CircleAvatar(radius: 30, backgroundColor: PpColors.forest, child: Text('P', style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w800)))),
           const SizedBox(height: 15),
-          const Text('Your everyday bills, in one place.', textAlign: TextAlign.center, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+          const Text('Your daily spending, in one place.', textAlign: TextAlign.center, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           const SizedBox(height: 28),
           PpSecondaryButton('Continue with Google (Demo)', icon: Icons.account_circle_outlined, onPressed: () => unawaited(state.enterDemoMode())),
           const SizedBox(height: 12),
@@ -186,7 +186,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
         children: <Widget>[
           const SizedBox(height: 8),
           const Text(
-            'Enter your mobile number to keep your bills safe and accessible.',
+            'Enter your mobile number to keep your household spending history safe and accessible.',
             style: TextStyle(fontSize: 13, color: PpColors.secondary),
           ),
           const SizedBox(height: 24),
