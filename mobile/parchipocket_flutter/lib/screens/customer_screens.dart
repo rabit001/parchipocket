@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../app_state.dart';
+import '../household_expense_parser.dart';
 import '../theme.dart';
 import '../widgets/ui.dart';
 
@@ -10,9 +13,17 @@ class CustomerHomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final recent = state.customerBills.take(3).toList();
-    final receiptCount = state.customerBills.length + state.claimedReceipts.length;
-    final modeLabel = state.isDemoMode ? 'Local demo' : 'Cloud synced';
+    final now = DateTime.now();
+    final entries = state.householdExpenses.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final today = entries.where((e) => e.createdAt.year == now.year &&
+        e.createdAt.month == now.month && e.createdAt.day == now.day);
+    final month = entries.where((e) => e.createdAt.year == now.year &&
+        e.createdAt.month == now.month);
+    final todayTotal = today.fold<double>(0, (sum, e) => sum + e.amount);
+    final monthTotal = month.fold<double>(0, (sum, e) => sum + e.amount);
+    final parts = state.customerName.trim().split(RegExp(r'\s+'));
+    final firstName = parts.isEmpty || parts.first.isEmpty ? 'there' : parts.first;
 
     return PpScaffold(
       state: state,
@@ -22,108 +33,409 @@ class CustomerHomeScreen extends StatelessWidget {
       bottomTab: 'customerHome',
       padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
       trailing: IconButton(
-          onPressed: () => state.go('notifications'),
-          icon: const Icon(Icons.notifications_none_rounded)),
+        onPressed: () => state.go('notifications'),
+        icon: const Icon(Icons.notifications_none_rounded),
+      ),
       body: ListView(children: <Widget>[
-        const Text('Good afternoon',
-            style: TextStyle(fontSize: 11, color: PpColors.secondary)),
+        Text('Hello, ${firstName}',
+            style: const TextStyle(fontSize: 11, color: PpColors.secondary)),
         const SizedBox(height: 7),
-        const Text('Your bills, all in one place.',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+        const Text('Every purchase. One clear picture.',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 5),
+        const Text(
+          'Track daily household spending and understand where your money goes.',
+          style: TextStyle(fontSize: 12, color: PpColors.secondary, height: 1.4),
+        ),
         const SizedBox(height: 16),
-        InkWell(
-            onTap: () => state.go('search'),
-            borderRadius: BorderRadius.circular(12),
-            child: const IgnorePointer(
-                child: TextField(
-                    decoration: InputDecoration(
-                        prefixIcon: Icon(Icons.search),
-                        hintText: 'Search bills or shops')))),
-        const SizedBox(height: 16),
-        Container(
-            padding: const EdgeInsets.all(17),
-            decoration: BoxDecoration(
-                color: PpColors.forest,
-                borderRadius: BorderRadius.circular(17)),
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  const Text('TOTAL SAVED BILLS',
-                      style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white70)),
-                  const SizedBox(height: 7),
-          Text('$receiptCount receipts ($modeLabel)',
-                      style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white)),
-                  const SizedBox(height: 6),
-                  Text(
-                      state.isDemoMode
-                          ? 'Explore sample features in demo mode.'
-                          : 'Your purchases are saved securely in Firestore.',
-                      style:
-                          const TextStyle(fontSize: 11, color: Colors.white)),
-                ])),
+        Row(children: <Widget>[
+          Expanded(child: _SpendingSummaryCard(
+            label: 'SPENT TODAY', value: money(todayTotal),
+            detail: '${today.length} entries')),
+          const SizedBox(width: 10),
+          Expanded(child: _SpendingSummaryCard(
+            label: 'THIS MONTH', value: money(monthTotal),
+            detail: '${month.length} entries')),
+        ]),
         const SizedBox(height: 14),
-        Card(
-            child: InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: () => state.go('scan'),
-                child: const Padding(
-                    padding: EdgeInsets.all(15),
-                    child: Row(children: <Widget>[
-                      CircleAvatar(
-                          backgroundColor: PpColors.soft,
-                          child: Icon(Icons.qr_code_scanner,
-                              color: PpColors.forest)),
-                      SizedBox(width: 12),
-                      Expanded(
-                          child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                            Text('Scan a receipt QR',
-                                style: TextStyle(
-                                    fontSize: 13, fontWeight: FontWeight.w800)),
-                            SizedBox(height: 4),
-                            Text('Save a purchase from a printed receipt',
-                                style: TextStyle(
-                                    fontSize: 10, color: PpColors.secondary))
-                          ])),
-                      Icon(Icons.chevron_right),
-                    ])))),
-        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: PpColors.forest, borderRadius: BorderRadius.circular(17)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+            const Text('ADD A PURCHASE',
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800,
+                color: Colors.white70, letterSpacing: .6)),
+            const SizedBox(height: 7),
+            const Text('Speak naturally. Review once. Save.',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800,
+                color: Colors.white)),
+            const SizedBox(height: 6),
+            const Text('Example: “Aaj 250 rupaye ki sabzi li.”',
+              style: TextStyle(fontSize: 11, color: Colors.white, height: 1.4)),
+            const SizedBox(height: 13),
+            Row(children: <Widget>[
+              Expanded(child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white, foregroundColor: PpColors.forest,
+                  padding: const EdgeInsets.symmetric(vertical: 13)),
+                icon: const Icon(Icons.mic_none_rounded),
+                label: const Text('Speak'),
+                onPressed: () => state.go('householdExpenseEntry'))),
+              const SizedBox(width: 10),
+              Expanded(child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white70),
+                  padding: const EdgeInsets.symmetric(vertical: 13)),
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Type instead'),
+                onPressed: () => state.go('householdExpenseEntry'))),
+            ]),
+          ]),
+        ),
+        const SizedBox(height: 18),
         PpSectionTitle('Recent purchases',
-            action: 'See all', onAction: () => state.go('bills')),
-        if (recent.isEmpty && state.claimedReceipts.isEmpty)
-          const PpEmptyState(
-              icon: Icons.receipt_long_outlined,
-              title: 'No saved bills yet',
-              message:
-                  'Scan or create a receipt to start your digital bill history.')
+          action: 'View all', onAction: () => state.go('householdExpenses')),
+        const SizedBox(height: 8),
+        if (entries.isEmpty)
+          const PpEmptyState(icon: Icons.shopping_bag_outlined,
+            title: 'No purchases recorded yet',
+            message: 'Add your first purchase by speaking or typing the details.')
         else
-          ...recent.map((bill) => PpTransactionTile(
-              title: bill.store,
-              subtitle:
-                  '${formatShortDate(bill.createdAt)} · ${bill.displayNumber}',
-              trailing: money(bill.total),
-              onTap: () => state.openBill(bill))),
-        if (state.claimedReceipts.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 18),
-          const PpSectionTitle('Claimed receipts'),
-          for (final claimed in state.claimedReceipts.take(3))
+          for (final entry in entries.take(5))
             PpTransactionTile(
-                title: claimed.bill.store,
-                subtitle:
-                    '${formatShortDate(claimed.bill.createdAt)} · ${claimed.bill.displayNumber} · claimed copy',
-                trailing: money(claimed.bill.total),
-                onTap: () => state.openClaimedReceipt(claimed)),
-        ],
+              title: entry.title,
+              subtitle: '${entry.category} · ${formatShortDate(entry.createdAt)} · ${entry.source == 'voice' ? 'Voice' : 'Manual'}',
+              trailing: money(entry.amount),
+              icon: Icons.shopping_bag_outlined,
+              onTap: () => showDialog<void>(
+                context: context,
+                builder: (dialogContext) => AlertDialog(
+                  title: Text(entry.title),
+                  content: Text('${entry.category}\n${money(entry.amount)}\n${formatDateTime(entry.createdAt)}'),
+                  actions: <Widget>[
+                    TextButton(onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text('Close')),
+                  ],
+                ),
+              ),
+            ),
+        const SizedBox(height: 8),
+        TextButton.icon(onPressed: () => state.go('scan'),
+          icon: const Icon(Icons.qr_code_scanner),
+          label: const Text('Have a shop receipt QR? Scan it')),
+        if (state.isDemoMode)
+          const PpDemoNotice(message:
+            'Demo mode uses sample entries in memory. Sign in to keep your own household records in the cloud.'),
       ]),
     );
   }
+}
+
+class _SpendingSummaryCard extends StatelessWidget {
+  const _SpendingSummaryCard({required this.label, required this.value, required this.detail});
+  final String label, value, detail;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(color: PpColors.soft,
+      borderRadius: BorderRadius.circular(15)),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+      Text(label, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800,
+        color: PpColors.secondary)),
+      const SizedBox(height: 8),
+      Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800,
+          color: PpColors.ink)),
+      const SizedBox(height: 4),
+      Text(detail, style: const TextStyle(fontSize: 10, color: PpColors.secondary)),
+    ]),
+  );
+}
+
+class HouseholdExpensesScreen extends StatelessWidget {
+  const HouseholdExpensesScreen({super.key, required this.state});
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = state.householdExpenses.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final total = entries.fold<double>(0, (sum, entry) => sum + entry.amount);
+    return PpScaffold(
+      state: state, title: 'Daily Log', showBack: false,
+      bottomNav: true, bottomTab: 'householdExpenses',
+      body: ListView(children: <Widget>[
+        PpMetricCard(label: 'Recorded household spending', value: money(total),
+          subtitle: '${entries.length} purchase entries'),
+        const SizedBox(height: 14),
+        PpPrimaryButton('Add a purchase', icon: Icons.add_rounded,
+          onPressed: () => state.go('householdExpenseEntry')),
+        const SizedBox(height: 18),
+        const PpSectionTitle('All entries'),
+        const SizedBox(height: 7),
+        if (entries.isEmpty)
+          const PpEmptyState(icon: Icons.receipt_long_outlined,
+            title: 'Your daily log is empty',
+            message: 'Your saved purchases will appear here.')
+        else
+          for (final entry in entries)
+            PpTransactionTile(
+              title: entry.title,
+              subtitle: '${entry.category} · ${formatDateTime(entry.createdAt)} · ${entry.source == 'voice' ? 'Voice' : 'Manual'}',
+              trailing: money(entry.amount),
+              icon: Icons.shopping_bag_outlined,
+              onTap: () => showDialog<void>(
+                context: context,
+                builder: (dialogContext) => AlertDialog(
+                  title: Text(entry.title),
+                  content: Text('${entry.category}\n${money(entry.amount)}\n${formatDateTime(entry.createdAt)}'),
+                  actions: <Widget>[
+                    TextButton(onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text('Close')),
+                  ],
+                ),
+              ),
+            ),
+      ]),
+    );
+  }
+}
+
+class HouseholdExpenseEntryScreen extends StatefulWidget {
+  const HouseholdExpenseEntryScreen({super.key, required this.state});
+  final AppState state;
+
+  @override
+  State<HouseholdExpenseEntryScreen> createState() =>
+      _HouseholdExpenseEntryScreenState();
+}
+
+class _HouseholdExpenseEntryScreenState extends State<HouseholdExpenseEntryScreen> {
+  static const List<String> _categories = <String>[
+    'Groceries', 'Vegetables', 'Dairy', 'Food & Dining', 'Household',
+    'Transport', 'Utilities', 'Health', 'Education', 'Other',
+  ];
+  final TextEditingController _title = TextEditingController();
+  final TextEditingController _amount = TextEditingController();
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  String _category = 'Groceries';
+  String _source = 'manual';
+  String _localeId = 'hi_IN';
+  String _transcript = '';
+  String? _error;
+  bool _speechAvailable = false;
+  bool _initializingSpeech = false;
+  bool _isListening = false;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_initializeSpeech());
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _amount.dispose();
+    unawaited(_speech.stop());
+    super.dispose();
+  }
+
+  Future<void> _initializeSpeech() async {
+    if (_initializingSpeech || _speechAvailable) return;
+    setState(() => _initializingSpeech = true);
+    try {
+      final available = await _speech.initialize(
+        onStatus: (status) {
+          if (mounted) setState(() => _isListening = status == 'listening');
+        },
+        onError: (error) {
+          if (mounted) setState(() {
+            _isListening = false;
+            _error = 'Voice recognition error: ${error.errorMsg}';
+          });
+        },
+      );
+      var localeId = 'hi_IN';
+      if (available) {
+        final locales = await _speech.locales();
+        if (!locales.any((locale) => locale.localeId == 'hi_IN')) {
+          if (locales.any((locale) => locale.localeId == 'en_IN')) {
+            localeId = 'en_IN';
+          } else if (locales.isNotEmpty) {
+            localeId = locales.first.localeId;
+          }
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _speechAvailable = available;
+        _localeId = localeId;
+        if (!available) _error =
+          'Speech recognition is unavailable on this device. You can still type the entry.';
+      });
+    } catch (_) {
+      if (mounted) setState(() {
+        _speechAvailable = false;
+        _error = 'Could not start speech recognition. You can still type the entry.';
+      });
+    } finally {
+      if (mounted) setState(() => _initializingSpeech = false);
+    }
+  }
+
+  void _onSpeechResult(stt.SpeechRecognitionResult result) {
+    final heard = result.recognizedWords.trim();
+    if (heard.isEmpty || !mounted) return;
+    final parsed = parseHouseholdExpense(heard);
+    setState(() {
+      _transcript = heard;
+      _source = 'voice';
+      _title.text = parsed.title == 'Purchase' ? heard : parsed.title;
+      if (parsed.amount != null) {
+        _amount.text = parsed.amount!.toStringAsFixed(
+          parsed.amount! % 1 == 0 ? 0 : 2);
+        _error = null;
+      } else {
+        _error = 'I heard the purchase but could not find its price. Enter the amount before saving.';
+      }
+      _category = _categories.contains(parsed.category) ? parsed.category : 'Other';
+    });
+  }
+
+  Future<void> _toggleListening() async {
+    if (_speech.isListening) {
+      await _speech.stop();
+      if (mounted) setState(() => _isListening = false);
+      return;
+    }
+    if (!_speechAvailable) {
+      await _initializeSpeech();
+      if (!_speechAvailable) return;
+    }
+    setState(() { _error = null; _transcript = ''; });
+    try {
+      await _speech.listen(
+        onResult: _onSpeechResult,
+        localeId: _localeId,
+        listenFor: const Duration(seconds: 25),
+        pauseFor: const Duration(seconds: 4),
+      );
+      if (mounted) setState(() => _isListening = true);
+    } catch (_) {
+      if (mounted) setState(() {
+        _isListening = false;
+        _error = 'Could not start the microphone. Check its permission and retry.';
+      });
+    }
+  }
+
+  Future<void> _save() async {
+    if (_isSaving) return;
+    final title = _title.text.trim();
+    final amount = double.tryParse(_amount.text.trim().replaceAll(',', '.'));
+    if (title.isEmpty || amount == null || !amount.isFinite || amount <= 0) {
+      setState(() => _error = 'Enter the purchase name and a valid amount greater than ₹0.');
+      return;
+    }
+    setState(() { _isSaving = true; _error = null; });
+    try {
+      final success = await widget.state.addHouseholdExpense(
+        title: title, category: _category, amount: amount, source: _source);
+      if (!mounted) return;
+      if (!success) setState(() {
+        _error = widget.state.cloudError ?? 'The entry was not saved. Retry after checking the details.';
+      });
+    } catch (_) {
+      if (mounted) setState(() => _error = 'The entry was not saved. Check your connection and retry.');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PpScaffold(
+    state: widget.state, title: 'Add Purchase', backTo: 'customerHome',
+    bottomNav: true, bottomTab: 'householdExpenseEntry',
+    body: ListView(children: <Widget>[
+      const Text('Say what you bought and how much you paid.',
+        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+      const SizedBox(height: 6),
+      const Text('The app fills a draft. Check the item, category and amount before saving.',
+        style: TextStyle(fontSize: 11, color: PpColors.secondary, height: 1.4)),
+      const SizedBox(height: 16),
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: PpColors.soft, borderRadius: BorderRadius.circular(16)),
+        child: Column(children: <Widget>[
+          CircleAvatar(radius: 30, backgroundColor: PpColors.forest,
+            child: Icon(_isListening ? Icons.graphic_eq : Icons.mic_none_rounded,
+              size: 28, color: Colors.white)),
+          const SizedBox(height: 10),
+          Text(_isListening ? 'Listening…' : 'Speak one purchase',
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 4),
+          const Text('Example: “Aaj 250 rupaye ki sabzi li.”',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: PpColors.secondary)),
+          const SizedBox(height: 12),
+          SizedBox(width: double.infinity, child: ElevatedButton.icon(
+            onPressed: _isSaving || _initializingSpeech ? null : _toggleListening,
+            icon: Icon(_isListening ? Icons.stop_circle_outlined : Icons.mic_rounded),
+            label: Text(_isListening ? 'Stop listening' :
+              _initializingSpeech ? 'Preparing microphone…' : 'Start voice entry'))),
+          if (!_speechAvailable && !_initializingSpeech)
+            const Padding(padding: EdgeInsets.only(top: 7),
+              child: Text('Voice needs a compatible Android speech service. Manual entry is always available.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 10, color: PpColors.secondary))),
+        ]),
+      ),
+      if (_transcript.isNotEmpty) ...<Widget>[
+        const SizedBox(height: 12),
+        PpCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          const Text('HEARD', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800,
+            color: PpColors.secondary)),
+          const SizedBox(height: 5),
+          Text(_transcript, style: const TextStyle(fontSize: 12)),
+        ])),
+      ],
+      const SizedBox(height: 17),
+      TextField(controller: _title, onChanged: (_) => setState(() => _error = null),
+        textCapitalization: TextCapitalization.sentences,
+        decoration: const InputDecoration(labelText: 'What did you buy?',
+          hintText: 'e.g. Vegetables', prefixIcon: Icon(Icons.shopping_bag_outlined))),
+      const SizedBox(height: 12),
+      TextField(controller: _amount, onChanged: (_) => setState(() => _error = null),
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: const InputDecoration(labelText: 'Amount paid',
+          prefixIcon: Icon(Icons.currency_rupee), hintText: 'e.g. 250')),
+      const SizedBox(height: 12),
+      DropdownButtonFormField<String>(
+        value: _category,
+        decoration: const InputDecoration(labelText: 'Category',
+          prefixIcon: Icon(Icons.category_outlined)),
+        items: _categories.map((value) => DropdownMenuItem<String>(
+          value: value, child: Text(value))).toList(),
+        onChanged: (value) { if (value != null) setState(() => _category = value); },
+      ),
+      if (_error != null) ...<Widget>[
+        const SizedBox(height: 10),
+        Text(_error!, style: const TextStyle(color: PpColors.error,
+          fontSize: 11, fontWeight: FontWeight.w600)),
+      ],
+      const SizedBox(height: 18),
+      PpPrimaryButton(_isSaving ? 'Saving…' : 'Review and save entry',
+        icon: Icons.check_circle_outline, onPressed: _isSaving ? null : _save),
+      const SizedBox(height: 8),
+      const PpDemoNotice(message:
+        'Nothing is saved by voice alone. Review the draft first, then confirm the entry.'),
+    ]),
+  );
 }
 
 class BillsScreen extends StatefulWidget {
@@ -498,74 +810,62 @@ class _ScanBillScreenState extends State<ScanBillScreen> {
 class InsightsScreen extends StatelessWidget {
   const InsightsScreen({super.key, required this.state});
   final AppState state;
+
   @override
   Widget build(BuildContext context) {
-    final total = state.customerBills.fold<double>(
-          0,
-          (sum, bill) => sum + bill.total,
-        ) +
-        state.claimedReceipts.fold<double>(
-          0,
-          (sum, receipt) => sum + receipt.bill.total,
-        );
-    final categoryValues = <String, double>{
-      'Groceries': total * .45,
-      'Snacks': total * .20,
-      'Household': total * .20,
-      'Other': total * .15
-    };
-    final receiptCount = state.customerBills.length + state.claimedReceipts.length;
+    final now = DateTime.now();
+    final entries = state.householdExpenses.where((entry) =>
+      entry.createdAt.year == now.year && entry.createdAt.month == now.month).toList();
+    final total = entries.fold<double>(0, (sum, entry) => sum + entry.amount);
+    final categoryValues = <String, double>{};
+    for (final entry in entries) {
+      categoryValues.update(entry.category, (value) => value + entry.amount,
+        ifAbsent: () => entry.amount);
+    }
+    final sortedCategories = categoryValues.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
     final modeNotice = state.isDemoMode
-        ? 'From $receiptCount sample receipts (demo mode)'
-        : 'From $receiptCount cloud receipts, including claimed copies';
+      ? 'Calculated from local demo household entries'
+      : 'Calculated from your saved household entries';
 
     return PpScaffold(
-        state: state,
-        title: 'Spending insights',
-        showBack: false,
-        bottomNav: true,
-        bottomTab: 'insights',
-        body: ListView(children: <Widget>[
-          const Text('Know where your everyday money goes.',
-              style: TextStyle(fontSize: 12, color: PpColors.secondary)),
-          const SizedBox(height: 15),
-          PpMetricCard(
-              label: 'Recorded spending',
-              value: money(total),
-              subtitle: modeNotice),
-          const SizedBox(height: 20),
-          const PpSectionTitle('By category'),
-          const SizedBox(height: 9),
-          for (final entry in categoryValues.entries)
-            Padding(
-                padding: const EdgeInsets.only(bottom: 17),
-                child: Column(children: <Widget>[
-                  Row(children: <Widget>[
-                    Expanded(
-                        child: Text(entry.key,
-                            style: const TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.w700))),
-                    Text(money(entry.value),
-                        style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: PpColors.forest))
-                  ]),
-                  const SizedBox(height: 8),
-                  ClipRRect(
-                      borderRadius: BorderRadius.circular(5),
-                      child: LinearProgressIndicator(
-                          value: total == 0 ? 0 : entry.value / total,
-                          minHeight: 8,
-                          color: PpColors.forest,
-                          backgroundColor: PpColors.soft)),
-                ])),
-          const SizedBox(height: 6),
-          PpDemoNotice(
-              message: state.isDemoMode
-                  ? 'Insights are calculated from local sample receipts.'
-                  : 'Insights are calculated from your cloud-saved receipts.'),
-        ]));
+      state: state, title: 'Spending insights', showBack: false,
+      bottomNav: true, bottomTab: 'insights',
+      body: ListView(children: <Widget>[
+        const Text('See where your household money goes.',
+          style: TextStyle(fontSize: 12, color: PpColors.secondary)),
+        const SizedBox(height: 15),
+        PpMetricCard(label: 'THIS MONTH', value: money(total),
+          subtitle: '${entries.length} entries · ${modeNotice}'),
+        const SizedBox(height: 20),
+        const PpSectionTitle('Spending by category'),
+        const SizedBox(height: 9),
+        if (sortedCategories.isEmpty)
+          const PpEmptyState(icon: Icons.pie_chart_outline,
+            title: 'Not enough data yet',
+            message: 'Add a few purchases to see the category breakdown for this month.')
+        else
+          for (final entry in sortedCategories)
+            Padding(padding: const EdgeInsets.only(bottom: 17),
+              child: Column(children: <Widget>[
+                Row(children: <Widget>[
+                  Expanded(child: Text(entry.key,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700))),
+                  Text(money(entry.value), style: const TextStyle(fontSize: 11,
+                    fontWeight: FontWeight.w700, color: PpColors.forest)),
+                ]),
+                const SizedBox(height: 8),
+                ClipRRect(borderRadius: BorderRadius.circular(5),
+                  child: LinearProgressIndicator(
+                    value: total == 0 ? 0 : entry.value / total,
+                    minHeight: 8, color: PpColors.forest,
+                    backgroundColor: PpColors.soft)),
+              ])),
+        const SizedBox(height: 6),
+        TextButton.icon(onPressed: () => state.go('householdExpenses'),
+          icon: const Icon(Icons.history), label: const Text('View daily log')),
+      ]),
+    );
   }
 }
 
