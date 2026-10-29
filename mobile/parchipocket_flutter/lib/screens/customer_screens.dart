@@ -37,7 +37,7 @@ class CustomerHomeScreen extends StatelessWidget {
         icon: const Icon(Icons.notifications_none_rounded),
       ),
       body: ListView(children: <Widget>[
-        Text('Hello, ${firstName}',
+        Text('Hello, $firstName',
             style: const TextStyle(fontSize: 11, color: PpColors.secondary)),
         const SizedBox(height: 7),
         const Text('Every purchase. One clear picture.',
@@ -254,10 +254,12 @@ class _HouseholdExpenseEntryScreenState extends State<HouseholdExpenseEntryScree
           if (mounted) setState(() => _isListening = status == 'listening');
         },
         onError: (error) {
-          if (mounted) setState(() {
-            _isListening = false;
-            _error = 'Voice recognition error: ${error.errorMsg}';
-          });
+          if (mounted) {
+            setState(() {
+              _isListening = false;
+              _error = 'Voice recognition error: ${error.errorMsg}';
+            });
+          }
         },
       );
       var localeId = 'hi_IN';
@@ -275,14 +277,18 @@ class _HouseholdExpenseEntryScreenState extends State<HouseholdExpenseEntryScree
       setState(() {
         _speechAvailable = available;
         _localeId = localeId;
-        if (!available) _error =
-          'Speech recognition is unavailable on this device. You can still type the entry.';
+        if (!available) {
+          _error =
+              'Speech recognition is unavailable on this device. You can still type the entry.';
+        }
       });
     } catch (_) {
-      if (mounted) setState(() {
-        _speechAvailable = false;
-        _error = 'Could not start speech recognition. You can still type the entry.';
-      });
+      if (mounted) {
+        setState(() {
+          _speechAvailable = false;
+          _error = 'Could not start speech recognition. You can still type the entry.';
+        });
+      }
     } finally {
       if (mounted) setState(() => _initializingSpeech = false);
     }
@@ -328,10 +334,12 @@ class _HouseholdExpenseEntryScreenState extends State<HouseholdExpenseEntryScree
       );
       if (mounted) setState(() => _isListening = true);
     } catch (_) {
-      if (mounted) setState(() {
-        _isListening = false;
-        _error = 'Could not start the microphone. Check its permission and retry.';
-      });
+      if (mounted) {
+        setState(() {
+          _isListening = false;
+          _error = 'Could not start the microphone. Check its permission and retry.';
+        });
+      }
     }
   }
 
@@ -348,9 +356,11 @@ class _HouseholdExpenseEntryScreenState extends State<HouseholdExpenseEntryScree
       final success = await widget.state.addHouseholdExpense(
         title: title, category: _category, amount: amount, source: _source);
       if (!mounted) return;
-      if (!success) setState(() {
-        _error = widget.state.cloudError ?? 'The entry was not saved. Retry after checking the details.';
-      });
+      if (!success) {
+        setState(() {
+          _error = widget.state.cloudError ?? 'The entry was not saved. Retry after checking the details.';
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _error = 'The entry was not saved. Check your connection and retry.');
     } finally {
@@ -417,7 +427,7 @@ class _HouseholdExpenseEntryScreenState extends State<HouseholdExpenseEntryScree
           prefixIcon: Icon(Icons.currency_rupee), hintText: 'e.g. 250')),
       const SizedBox(height: 12),
       DropdownButtonFormField<String>(
-        value: _category,
+        initialValue: _category,
         decoration: const InputDecoration(labelText: 'Category',
           prefixIcon: Icon(Icons.category_outlined)),
         items: _categories.map((value) => DropdownMenuItem<String>(
@@ -837,7 +847,7 @@ class InsightsScreen extends StatelessWidget {
           style: TextStyle(fontSize: 12, color: PpColors.secondary)),
         const SizedBox(height: 15),
         PpMetricCard(label: 'THIS MONTH', value: money(total),
-          subtitle: '${entries.length} entries · ${modeNotice}'),
+          subtitle: '${entries.length} entries · $modeNotice'),
         const SizedBox(height: 20),
         const PpSectionTitle('Spending by category'),
         const SizedBox(height: 9),
