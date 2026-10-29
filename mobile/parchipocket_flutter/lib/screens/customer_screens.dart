@@ -141,7 +141,7 @@ class CustomerHomeScreen extends StatelessWidget {
               detail: 'Enter details',
               icon: Icons.edit_outlined,
               primary: false,
-              onTap: () => state.go('householdExpenseEntry'),
+              onTap: () => state.go('householdExpenseEntryManual'),
             )),
           ]),
           const SizedBox(height: 18),
@@ -359,8 +359,13 @@ class HouseholdExpensesScreen extends StatelessWidget {
 }
 
 class HouseholdExpenseEntryScreen extends StatefulWidget {
-  const HouseholdExpenseEntryScreen({super.key, required this.state});
+  const HouseholdExpenseEntryScreen({
+    super.key,
+    required this.state,
+    this.initialMode = 'voice',
+  });
   final AppState state;
+  final String initialMode;
 
   @override
   State<HouseholdExpenseEntryScreen> createState() =>
@@ -376,7 +381,7 @@ class _HouseholdExpenseEntryScreenState extends State<HouseholdExpenseEntryScree
   final TextEditingController _amount = TextEditingController();
   final stt.SpeechToText _speech = stt.SpeechToText();
   String _category = 'Groceries';
-  String _entryMode = 'voice';
+  late String _entryMode;
   String _source = 'manual';
   String _localeId = 'hi_IN';
   String _transcript = '';
@@ -389,6 +394,7 @@ class _HouseholdExpenseEntryScreenState extends State<HouseholdExpenseEntryScree
   @override
   void initState() {
     super.initState();
+    _entryMode = widget.initialMode;
     unawaited(_initializeSpeech());
   }
 
