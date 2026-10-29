@@ -88,6 +88,18 @@ class CountingFirestoreService extends FirestoreService {
   }
 
   @override
+  String newHouseholdExpenseId() => 'test-household-expense';
+
+  @override
+  Future<void> addHouseholdExpense(HouseholdExpense expense) async {
+    writes++;
+  }
+
+  @override
+  Future<List<HouseholdExpense>> loadHouseholdExpenses() async =>
+      <HouseholdExpense>[];
+
+  @override
   Future<Set<String>> loadSavedShops() async {
     savedShopReads++;
     return <String>{};
@@ -185,6 +197,10 @@ class ProfileFirestoreService extends FirestoreService {
 
   @override
   Future<List<DemoExpense>> loadExpenses() async => loadedExpenses;
+
+  @override
+  Future<List<HouseholdExpense>> loadHouseholdExpenses() async =>
+      <HouseholdExpense>[];
 
   @override
   Future<Set<String>> loadSavedShops() async => loadedSavedShops;
@@ -351,7 +367,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(state.isDemoMode, isTrue);
-      expect(state.page, 'roleSelection');
+      expect(state.page, 'customerSetup');
       expect(state.cloudError, isNull);
       expect(state.isCloudLoading, isFalse);
       expect(service.profileReads, 0);
@@ -437,7 +453,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(state.isDemoMode, isTrue);
-      expect(state.page, 'roleSelection');
+      expect(state.page, 'customerSetup');
       expect(state.cloudError, isNull);
       expect(service.billReads, 0);
       expect(service.claimedReceiptReads, 0);
@@ -838,7 +854,7 @@ void main() {
       expect(service.savedProfile?['shopName'], 'Asha General Store');
       expect(service.savedProfile?['shopAddress'], '12 Main Road, Ujjain');
       expect(state.customerName, 'Asha Verma');
-      expect(state.page, 'shopHome');
+      expect(state.page, 'customerHome');
       state.dispose();
     });
 
@@ -1092,10 +1108,11 @@ void main() {
 
       expect(missingResult, CloudProfileStatus.missing);
       expect(missingState.profileStatus, CloudProfileStatus.missing);
-      expect(missingState.page, 'roleSelection');
+      expect(missingState.page, 'customerSetup');
       expect(missingState.role, UserRole.streetVendor);
       missingState.setRole(UserRole.shopOwner);
-      expect(missingState.role, UserRole.shopOwner);
+      expect(missingState.role, UserRole.customer);
+      expect(missingState.page, 'customerSetup');
       missingState.dispose();
     });
 
@@ -1295,8 +1312,8 @@ void main() {
       state.profileStatus = CloudProfileStatus.missing;
 
       state.setRole(UserRole.shopOwner);
-      expect(state.role, UserRole.shopOwner);
-      expect(state.page, 'shopSetup');
+      expect(state.role, UserRole.customer);
+      expect(state.page, 'customerSetup');
 
       state.hasExistingCloudProfile = true;
       state.profileStatus = CloudProfileStatus.loaded;
@@ -1308,7 +1325,7 @@ void main() {
     });
 
     test(
-        'navigateAfterAuth routes existing user to home and new user to roleSelection',
+        'navigateAfterAuth routes profiles to household home and new users to setup',
         () {
       final state = AppState();
       state.isDemoMode = false;
@@ -1330,7 +1347,7 @@ void main() {
       state.role = UserRole.streetVendor;
       state.profileStatus = CloudProfileStatus.loaded;
       state.navigateAfterAuth();
-      expect(state.page, 'vendorHome');
+      expect(state.page, 'customerHome');
 
       // New user without profile
       state.hasExistingCloudProfile = false;
