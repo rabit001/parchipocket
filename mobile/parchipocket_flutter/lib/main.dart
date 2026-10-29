@@ -60,8 +60,8 @@ class _ParchiPocketAppState extends State<ParchiPocketApp> {
         'customerHome' => CustomerHomeScreen(state: state),
         'householdExpenses' => HouseholdExpensesScreen(state: state),
         'householdExpenseEntry' => HouseholdExpenseEntryScreen(state: state),
-        'householdExpenseEntryManual' => HouseholdExpenseEntryScreen(
-            state: state, initialMode: 'manual'),
+        'householdExpenseEntryManual' =>
+          HouseholdExpenseEntryScreen(state: state, initialMode: 'manual'),
         'bills' => BillsScreen(state: state),
         'billDetail' => BillDetailScreen(state: state),
         'scan' => ScanBillScreen(state: state),

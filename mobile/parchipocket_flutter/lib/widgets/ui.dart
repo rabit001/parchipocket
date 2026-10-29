@@ -33,10 +33,22 @@ class PpScaffold extends StatelessWidget {
   // repository, but they are not reachable from the current navigation.
   List<({String label, IconData icon, String route})> get _tabs => const [
         (label: 'Home', icon: Icons.home_outlined, route: 'customerHome'),
-        (label: 'Daily Log', icon: Icons.receipt_long_outlined, route: 'householdExpenses'),
-        (label: 'Add', icon: Icons.add_circle_outline, route: 'householdExpenseEntry'),
+        (
+          label: 'Daily Log',
+          icon: Icons.receipt_long_outlined,
+          route: 'householdExpenses'
+        ),
+        (
+          label: 'Add',
+          icon: Icons.add_circle_outline,
+          route: 'householdExpenseEntry'
+        ),
         (label: 'Insights', icon: Icons.pie_chart_outline, route: 'insights'),
-        (label: 'Profile', icon: Icons.person_outline, route: 'customerProfile'),
+        (
+          label: 'Profile',
+          icon: Icons.person_outline,
+          route: 'customerProfile'
+        ),
       ];
 
   @override
@@ -71,7 +83,8 @@ class PpScaffold extends StatelessWidget {
                 Container(
                   width: double.infinity,
                   margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.red.shade50,
                     borderRadius: BorderRadius.circular(8),
@@ -79,12 +92,14 @@ class PpScaffold extends StatelessWidget {
                   ),
                   child: Row(
                     children: <Widget>[
-                      Icon(Icons.error_outline, size: 16, color: Colors.red.shade800),
+                      Icon(Icons.error_outline,
+                          size: 16, color: Colors.red.shade800),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           state.cloudError!,
-                          style: TextStyle(fontSize: 11, color: Colors.red.shade800),
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.red.shade800),
                         ),
                       ),
                     ],
@@ -98,10 +113,14 @@ class PpScaffold extends StatelessWidget {
       bottomNavigationBar: bottomNav
           ? NavigationBar(
               height: 68,
-              selectedIndex: _tabs.indexWhere((tab) => tab.route == (bottomTab ?? state.page)).clamp(0, _tabs.length - 1).toInt(),
+              selectedIndex: _tabs
+                  .indexWhere((tab) => tab.route == (bottomTab ?? state.page))
+                  .clamp(0, _tabs.length - 1)
+                  .toInt(),
               onDestinationSelected: (index) => state.go(_tabs[index].route),
               destinations: _tabs
-                  .map((tab) => NavigationDestination(icon: Icon(tab.icon), label: tab.label))
+                  .map((tab) => NavigationDestination(
+                      icon: Icon(tab.icon), label: tab.label))
                   .toList(growable: false),
             )
           : null,
@@ -110,7 +129,8 @@ class PpScaffold extends StatelessWidget {
 }
 
 class PpPrimaryButton extends StatelessWidget {
-  const PpPrimaryButton(this.label, {super.key, required this.onPressed, this.icon});
+  const PpPrimaryButton(this.label,
+      {super.key, required this.onPressed, this.icon});
   final String label;
   final VoidCallback? onPressed;
   final IconData? icon;
@@ -122,17 +142,21 @@ class PpPrimaryButton extends StatelessWidget {
           onPressed: onPressed,
           child: icon == null
               ? Text(label)
-              : Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: <Widget>[
-                  Icon(icon, size: 18),
-                  const SizedBox(width: 8),
-                  Flexible(child: Text(label, textAlign: TextAlign.center)),
-                ]),
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                      Icon(icon, size: 18),
+                      const SizedBox(width: 8),
+                      Flexible(child: Text(label, textAlign: TextAlign.center)),
+                    ]),
         ),
       );
 }
 
 class PpSecondaryButton extends StatelessWidget {
-  const PpSecondaryButton(this.label, {super.key, required this.onPressed, this.icon});
+  const PpSecondaryButton(this.label,
+      {super.key, required this.onPressed, this.icon});
   final String label;
   final VoidCallback? onPressed;
   final IconData? icon;
@@ -144,17 +168,24 @@ class PpSecondaryButton extends StatelessWidget {
           onPressed: onPressed,
           child: icon == null
               ? Text(label)
-              : Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: <Widget>[
-                  Icon(icon, size: 18),
-                  const SizedBox(width: 8),
-                  Flexible(child: Text(label, textAlign: TextAlign.center)),
-                ]),
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                      Icon(icon, size: 18),
+                      const SizedBox(width: 8),
+                      Flexible(child: Text(label, textAlign: TextAlign.center)),
+                    ]),
         ),
       );
 }
 
 class PpCard extends StatelessWidget {
-  const PpCard({super.key, required this.child, this.padding = const EdgeInsets.all(14), this.color = PpColors.card});
+  const PpCard(
+      {super.key,
+      required this.child,
+      this.padding = const EdgeInsets.all(14),
+      this.color = PpColors.card});
   final Widget child;
   final EdgeInsets padding;
   final Color color;
@@ -175,34 +206,55 @@ class PpSectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(
         children: <Widget>[
-          Expanded(child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: PpColors.ink))),
+          Expanded(
+              child: Text(title,
+                  style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: PpColors.ink))),
           if (action != null)
-            TextButton(onPressed: onAction, child: Text(action!, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700))),
+            TextButton(
+                onPressed: onAction,
+                child: Text(action!,
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w700))),
         ],
       );
 }
 
 class PpDemoNotice extends StatelessWidget {
-  const PpDemoNotice({super.key, this.message = 'Demo mode. Data is stored locally in this running app only.'});
+  const PpDemoNotice(
+      {super.key,
+      this.message =
+          'Demo mode. Data is stored locally in this running app only.'});
   final String message;
 
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: PpColors.soft, borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(
+            color: PpColors.soft, borderRadius: BorderRadius.circular(12)),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             const Icon(Icons.info_outline, size: 18, color: PpColors.forest),
             const SizedBox(width: 9),
-            Expanded(child: Text(message, style: const TextStyle(fontSize: 11, height: 1.4, color: PpColors.ink))),
+            Expanded(
+                child: Text(message,
+                    style: const TextStyle(
+                        fontSize: 11, height: 1.4, color: PpColors.ink))),
           ],
         ),
       );
 }
 
 class PpMetricCard extends StatelessWidget {
-  const PpMetricCard({super.key, required this.label, required this.value, this.subtitle, this.color = PpColors.forest});
+  const PpMetricCard(
+      {super.key,
+      required this.label,
+      required this.value,
+      this.subtitle,
+      this.color = PpColors.forest});
   final String label;
   final String value;
   final String? subtitle;
@@ -210,25 +262,56 @@ class PpMetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => PpCard(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-          Text(label.toUpperCase(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: PpColors.secondary)),
-          const SizedBox(height: 8),
-          Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: color)),
-          if (subtitle != null) ...<Widget>[
-            const SizedBox(height: 5),
-            Text(subtitle!, style: const TextStyle(fontSize: 10, color: PpColors.secondary)),
-          ],
-        ]),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(label.toUpperCase(),
+                  style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: PpColors.secondary)),
+              const SizedBox(height: 8),
+              Text(value,
+                  style: TextStyle(
+                      fontSize: 22, fontWeight: FontWeight.w800, color: color)),
+              if (subtitle != null) ...<Widget>[
+                const SizedBox(height: 5),
+                Text(subtitle!,
+                    style: const TextStyle(
+                        fontSize: 10, color: PpColors.secondary)),
+              ],
+            ]),
       );
 }
 
 String money(num value) => '₹${value.toStringAsFixed(value % 1 == 0 ? 0 : 2)}';
-String formatShortDate(DateTime value) => '${value.day.toString().padLeft(2, '0')} ${_month(value.month)}';
-String formatDateTime(DateTime value) => '${formatShortDate(value)} ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
-String _month(int month) => const <String>['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][month - 1];
+String formatShortDate(DateTime value) =>
+    '${value.day.toString().padLeft(2, '0')} ${_month(value.month)}';
+String formatDateTime(DateTime value) =>
+    '${formatShortDate(value)} ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+String _month(int month) => const <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ][month - 1];
 
 class PpTransactionTile extends StatelessWidget {
-  const PpTransactionTile({super.key, required this.title, required this.subtitle, required this.trailing, required this.onTap, this.icon = Icons.storefront_outlined});
+  const PpTransactionTile(
+      {super.key,
+      required this.title,
+      required this.subtitle,
+      required this.trailing,
+      required this.onTap,
+      this.icon = Icons.storefront_outlined});
   final String title;
   final String subtitle;
   final String trailing;
@@ -243,15 +326,38 @@ class PpTransactionTile extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
             child: Row(children: <Widget>[
-              Container(width: 40, height: 40, decoration: BoxDecoration(color: PpColors.soft, borderRadius: BorderRadius.circular(10)), child: Icon(icon, size: 20, color: PpColors.forest)),
+              Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                      color: PpColors.soft,
+                      borderRadius: BorderRadius.circular(10)),
+                  child: Icon(icon, size: 20, color: PpColors.forest)),
               const SizedBox(width: 11),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-                Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: PpColors.ink)),
-                const SizedBox(height: 5),
-                Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: PpColors.secondary)),
-              ])),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                    Text(title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: PpColors.ink)),
+                    const SizedBox(height: 5),
+                    Text(subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 10, color: PpColors.secondary)),
+                  ])),
               const SizedBox(width: 8),
-              Text(trailing, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: PpColors.ink)),
+              Text(trailing,
+                  style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: PpColors.ink)),
             ]),
           ),
         ),
@@ -259,7 +365,14 @@ class PpTransactionTile extends StatelessWidget {
 }
 
 class PpField extends StatelessWidget {
-  const PpField({super.key, required this.label, required this.controller, this.hint, this.keyboardType, this.readOnly = false, this.maxLines = 1});
+  const PpField(
+      {super.key,
+      required this.label,
+      required this.controller,
+      this.hint,
+      this.keyboardType,
+      this.readOnly = false,
+      this.maxLines = 1});
   final String label;
   final TextEditingController controller;
   final String? hint;
@@ -268,15 +381,29 @@ class PpField extends StatelessWidget {
   final int maxLines;
 
   @override
-  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-        Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: PpColors.secondary)),
+  Widget build(BuildContext context) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        Text(label,
+            style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: PpColors.secondary)),
         const SizedBox(height: 7),
-        TextField(controller: controller, keyboardType: keyboardType, readOnly: readOnly, maxLines: maxLines, decoration: InputDecoration(hintText: hint)),
+        TextField(
+            controller: controller,
+            keyboardType: keyboardType,
+            readOnly: readOnly,
+            maxLines: maxLines,
+            decoration: InputDecoration(hintText: hint)),
       ]);
 }
 
 class PpEmptyState extends StatelessWidget {
-  const PpEmptyState({super.key, required this.icon, required this.title, required this.message});
+  const PpEmptyState(
+      {super.key,
+      required this.icon,
+      required this.title,
+      required this.message});
   final IconData icon;
   final String title;
   final String message;
@@ -286,11 +413,22 @@ class PpEmptyState extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 24),
           child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-            Container(width: 64, height: 64, decoration: const BoxDecoration(color: PpColors.soft, shape: BoxShape.circle), child: Icon(icon, color: PpColors.forest, size: 28)),
+            Container(
+                width: 64,
+                height: 64,
+                decoration: const BoxDecoration(
+                    color: PpColors.soft, shape: BoxShape.circle),
+                child: Icon(icon, color: PpColors.forest, size: 28)),
             const SizedBox(height: 14),
-            Text(title, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            Text(title,
+                textAlign: TextAlign.center,
+                style:
+                    const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
             const SizedBox(height: 7),
-            Text(message, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: PpColors.secondary, height: 1.4)),
+            Text(message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 12, color: PpColors.secondary, height: 1.4)),
           ]),
         ),
       );

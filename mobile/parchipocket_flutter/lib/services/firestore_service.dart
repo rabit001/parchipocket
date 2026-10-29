@@ -574,8 +574,7 @@ class FirestoreService {
     final doc = _userDoc;
     if (doc == null) throw Exception('User not authenticated.');
     final collection = doc.collection('expenses');
-    final expenseId =
-        expense.id.isEmpty ? collection.doc().id : expense.id;
+    final expenseId = expense.id.isEmpty ? collection.doc().id : expense.id;
     final expenseRef = collection.doc(expenseId);
     final data = {
       'title': expense.title,
@@ -650,8 +649,7 @@ class FirestoreService {
     final doc = _userDoc;
     if (doc == null) throw Exception('User not authenticated.');
     final collection = doc.collection('householdExpenses');
-    final expenseId =
-        expense.id.isEmpty ? collection.doc().id : expense.id;
+    final expenseId = expense.id.isEmpty ? collection.doc().id : expense.id;
     final expenseRef = collection.doc(expenseId);
     final data = <String, dynamic>{
       'id': expenseId,

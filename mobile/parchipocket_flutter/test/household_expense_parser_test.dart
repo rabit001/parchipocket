@@ -12,8 +12,7 @@ void main() {
     });
 
     test('supports Hindi words and Devanagari digits', () {
-      final result =
-          parseHouseholdExpense('मैंने आज २५० रुपये की सब्जी खरीदी');
+      final result = parseHouseholdExpense('मैंने आज २५० रुपये की सब्जी खरीदी');
 
       expect(result.amount, 250);
       expect(result.title, 'सब्जी');
@@ -42,7 +41,8 @@ void main() {
       expect(result.category, 'Dairy');
     });
 
-    test('uses the stated price when the phrase includes quantity and price', () {
+    test('uses the stated price when the phrase includes quantity and price',
+        () {
       final result = parseHouseholdExpense('1 kilo doodh 60 rupaye ka liya');
 
       expect(result.amount, 60);
@@ -58,7 +58,8 @@ void main() {
       expect(result.category, 'Dairy');
     });
 
-    test('leaves unknown purchases in Other instead of guessing a category', () {
+    test('leaves unknown purchases in Other instead of guessing a category',
+        () {
       final result = parseHouseholdExpense('₹125 decorative vase');
 
       expect(result.amount, 125);

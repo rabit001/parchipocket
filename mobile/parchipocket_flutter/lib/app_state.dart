@@ -105,6 +105,7 @@ class HouseholdExpense {
   final String category;
   final double amount;
   final DateTime createdAt;
+
   /// Either manual or voice. The field records how the entry was initiated,
   /// not whether the user confirmed it.
   final String source;
@@ -219,10 +220,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _handleAuthStateChanged(User? user) async {
-  if (_disposed || isSigningOut) return;
+    if (_disposed || isSigningOut) return;
 
-  final eventGeneration = ++_authEventGeneration;
-  _profileLoadGeneration++;
+    final eventGeneration = ++_authEventGeneration;
+    _profileLoadGeneration++;
     if (_explicitDemoSession) return;
 
     if (user == null) {
@@ -904,33 +905,30 @@ class AppState extends ChangeNotifier {
       throw Exception(err);
     }
     final hasInvalidItem = items.any((item) {
-    final itemTotal = item.total;
-    return item.name.trim().isEmpty ||
-      item.quantity < 1 ||
-      !item.unitPrice.isFinite ||
-      item.unitPrice <= 0 ||
-      !itemTotal.isFinite ||
-      itemTotal <= 0;
+      final itemTotal = item.total;
+      return item.name.trim().isEmpty ||
+          item.quantity < 1 ||
+          !item.unitPrice.isFinite ||
+          item.unitPrice <= 0 ||
+          !itemTotal.isFinite ||
+          itemTotal <= 0;
     });
 
-    final billTotal =
-    items.fold<double>(0, (sum, item) => sum + item.total);
+    final billTotal = items.fold<double>(0, (sum, item) => sum + item.total);
 
     if (hasInvalidItem || !billTotal.isFinite || billTotal <= 0) {
-    const err =
-      'Each bill item needs a name, a quantity of at least 1, and a valid price; the total must be finite and greater than ₹0.';
-    throw ArgumentError(err);
+      const err =
+          'Each bill item needs a name, a quantity of at least 1, and a valid price; the total must be finite and greater than ₹0.';
+      throw ArgumentError(err);
     }
     final cloudBill = !isDemoMode && isAuthenticated;
     final store = vendorMode ? vendorName : shopName;
     final rawCustomerPhone = customerPhone.trim();
-    final normalizedPhone = rawCustomerPhone.isEmpty
-        ? ''
-        : formatPhoneNumber(rawCustomerPhone);
+    final normalizedPhone =
+        rawCustomerPhone.isEmpty ? '' : formatPhoneNumber(rawCustomerPhone);
 
     if (normalizedPhone == null) {
-      const err =
-          'Enter a valid customer mobile number or leave it blank.';
+      const err = 'Enter a valid customer mobile number or leave it blank.';
       throw ArgumentError(err);
     }
     DemoBill bill;
@@ -1247,8 +1245,7 @@ class AppState extends ChangeNotifier {
   }) async {
     if (isCloudLoading || isSigningOut) return false;
     if (!amount.isFinite || amount <= 0) {
-      const err =
-          'Expense amount must be a finite number greater than ₹0.';
+      const err = 'Expense amount must be a finite number greater than ₹0.';
       cloudError = err;
       lastNotice = err;
       notifyListeners();
@@ -1466,7 +1463,8 @@ class AppState extends ChangeNotifier {
     if (isCloudLoading || isSigningOut) return false;
     final newOwnerName = ownerName.trim();
     if (newOwnerName.isEmpty) {
-      cloudError = 'Enter the owner/contact full name before saving the shop profile.';
+      cloudError =
+          'Enter the owner/contact full name before saving the shop profile.';
       notifyListeners();
       return false;
     }
@@ -1537,7 +1535,8 @@ class AppState extends ChangeNotifier {
     if (isCloudLoading || isSigningOut) return false;
     final newOwnerName = ownerName.trim();
     if (newOwnerName.isEmpty) {
-      cloudError = 'Enter the owner/contact full name before saving the vendor profile.';
+      cloudError =
+          'Enter the owner/contact full name before saving the vendor profile.';
       notifyListeners();
       return false;
     }
