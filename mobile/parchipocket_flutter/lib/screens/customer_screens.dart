@@ -301,6 +301,7 @@ class _HouseholdExpenseEntryScreenState extends State<HouseholdExpenseEntryScree
           parsed.amount! % 1 == 0 ? 0 : 2);
         _error = null;
       } else {
+        _amount.clear();
         _error = 'I heard the purchase but could not find its price. Enter the amount before saving.';
       }
       _category = _categories.contains(parsed.category) ? parsed.category : 'Other';
@@ -337,7 +338,7 @@ class _HouseholdExpenseEntryScreenState extends State<HouseholdExpenseEntryScree
   Future<void> _save() async {
     if (_isSaving) return;
     final title = _title.text.trim();
-    final amount = double.tryParse(_amount.text.trim().replaceAll(',', '.'));
+    final amount = double.tryParse(_amount.text.trim().replaceAll(',', ''));
     if (title.isEmpty || amount == null || !amount.isFinite || amount <= 0) {
       setState(() => _error = 'Enter the purchase name and a valid amount greater than ₹0.');
       return;
