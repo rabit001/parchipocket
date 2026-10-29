@@ -28,14 +28,14 @@ String _normalizeHindiDigits(String input) {
 }
 
 const Set<String> _fillerWords = <String>{
-  'aaj', 'today', 'maine', 'mene', 'mai', 'mein', 'for', 'i', 'bought',
-  'buy', 'purchase', 'purchased', 'spend', 'spent', 'spending', 'on', 'at', 'of', 'diye', 'diya', 'pay', 'paid', 'kiya', 'kharida', 'khareeda',
-  'kharidi', 'khareedi', 'li', 'lia', 'liya', 'lee', 'lii', 'ke',
-  'ka', 'ki', 'rupee', 'rupees', 'rs', 'rupaye', 'rupya', 'rupay',
-  'रुपये', 'रुपए', 'रुपया', 'रुपयों', 'आज', 'मैंने', 'मैने', 'मैं',
-  'मुझे', 'खरीदा', 'खरीदी', 'खरीदे', 'खरीदी', 'लिया', 'ली', 'लिए',
-  'किया', 'की', 'का', 'के', 'रुपये', 'रुपए', 'रुपया', 'में',
-  'आजका', 'खरीदकर', 'है', 'था', 'थी',
+  'aaj', 'today', 'maine', 'mene', 'mai', 'mein', 'i', 'bought', 'buy',
+  'purchase', 'purchased', 'spend', 'spent', 'spending', 'on', 'at', 'of',
+  'diye', 'diya', 'pay', 'paid', 'kiya', 'kharida', 'khareeda', 'kharidi',
+  'khareedi', 'li', 'lia', 'liya', 'lee', 'lii', 'ke', 'ka', 'ki', 'rupee',
+  'rupees', 'rs', 'rupaye', 'rupya', 'rupay', 'रुपये', 'रुपए', 'रुपया',
+  'रुपयों', 'आज', 'मैंने', 'मैने', 'मैं', 'मुझे', 'खरीदा', 'खरीदी', 'खरीदे',
+  'लिया', 'ली', 'लिए', 'किया', 'की', 'का', 'के', 'में', 'आजका', 'खरीदकर',
+  'है', 'था', 'थी',
 };
 
 const Map<String, List<String>> _categoryKeywords = <String, List<String>>{
