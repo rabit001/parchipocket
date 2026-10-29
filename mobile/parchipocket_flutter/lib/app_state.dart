@@ -398,7 +398,7 @@ class AppState extends ChangeNotifier {
         // authenticated profiles now enter the household experience.
         page = 'customerHome';
       case CloudProfileStatus.missing:
-        page = 'roleSelection';
+        page = 'customerSetup';
       case CloudProfileStatus.failed:
         page = 'profileLoadError';
       case CloudProfileStatus.loading:
@@ -424,7 +424,7 @@ class AppState extends ChangeNotifier {
   /// Starts an explicit, local-only demo session before any asynchronous auth
   /// sign-out or listener callback can run. Old auth/profile work is invalidated
   /// and its results cannot replace demo state.
-  Future<void> enterDemoMode({String landingPage = 'roleSelection'}) async {
+  Future<void> enterDemoMode({String landingPage = 'customerSetup'}) async {
     _sessionGeneration++;
     _authEventGeneration++;
     _profileLoadGeneration++;
