@@ -196,9 +196,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _handleAuthStateChanged(User? user) async {
-    final eventGeneration = ++_authEventGeneration;
-    _profileLoadGeneration++;
-    if (_disposed || isSigningOut) return;
+  if (_disposed || isSigningOut) return;
+
+  final eventGeneration = ++_authEventGeneration;
+  _profileLoadGeneration++;
     if (_explicitDemoSession) return;
 
     if (user == null) {

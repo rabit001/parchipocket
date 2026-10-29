@@ -34,10 +34,20 @@ class ControlledFirebaseAuth extends MockFirebaseAuth {
     user = null;
   }
 
-  final StreamController<User?> events = StreamController<User?>.broadcast();
+  final StreamController<User?> events =
+    StreamController<User?>.broadcast(sync: true);
 
   @override
   Stream<User?> authStateChanges() => events.stream;
+  @override
+  Future<void> signOut() async {
+    signOutCalls++;
+    if (failSignOut) {
+      throw Exception('Simulated sign-out failure');
+    }
+    user = null;
+    events.add(null);
+  }
 
   void emit(User? value) {
     user = value;
@@ -980,6 +990,24 @@ void main() {
       state.dispose();
     });
 
+    test(
+        'signOut completes when Firebase emits auth change synchronously',
+        () async {
+      final auth = ControlledFirebaseAuth()..user = MockUser();
+      final state = AppState(auth: auth)
+        ..isDemoMode = false
+        ..page = 'logout';
+
+      final result = await state.signOut();
+
+      expect(result, isTrue);
+      expect(auth.currentUser, isNull);
+      expect(state.page, 'splash');
+      expect(state.isSigningOut, isFalse);
+
+      state.dispose();
+      await auth.events.close();
+    });
     test(
         'signOut calls Firebase and clears account-specific state only on success',
         () async {
