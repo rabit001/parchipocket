@@ -29,7 +29,7 @@ String _normalizeHindiDigits(String input) {
 
 const Set<String> _fillerWords = <String>{
   'aaj', 'today', 'maine', 'mene', 'mai', 'mein', 'for', 'i', 'bought',
-  'buy', 'purchase', 'purchased', 'kiya', 'kharida', 'khareeda',
+  'buy', 'purchase', 'purchased', 'spend', 'spent', 'spending', 'on', 'at', 'of', 'diye', 'diya', 'pay', 'paid', 'kiya', 'kharida', 'khareeda',
   'kharidi', 'khareedi', 'li', 'lia', 'liya', 'lee', 'lii', 'ke',
   'ka', 'ki', 'rupee', 'rupees', 'rs', 'rupaye', 'rupya', 'rupay',
   'रुपये', 'रुपए', 'रुपया', 'रुपयों', 'आज', 'मैंने', 'मैने', 'मैं',
@@ -89,12 +89,11 @@ String _guessCategory(String text) {
 ParsedHouseholdExpense parseHouseholdExpense(String transcript) {
   final normalized = _normalizeHindiDigits(transcript).trim();
   final amountPattern = RegExp(
-    r'(?:₹\s*)?(\d+(?:[.,]\d{1,2})?)\s*(?:rupees?|rs\.?|rupaye|rupya|रुपये|रुपए|रुपया)?',
+    r'(?:₹\s*)?((?:\d{1,3}(?:,\d{2,3})+|\d+)(?:\.\d{1,2})?)\s*(?:rupees?|rs\.?|rupaye|rupya|रुपये|रुपए|रुपया)?',
     caseSensitive: false,
   );
   final amountMatch = amountPattern.firstMatch(normalized);
-  final amountText = amountMatch?.group(1)?.replaceAll(',', '.');
-  final amount = amountText == null ? null : double.tryParse(amountText);
+  final amountText = amountMatch?.group(1)?.replaceAll(',', '')  final amount = amountText == null ? null : double.tryParse(amountText);
 
   var titleText = normalized;
   if (amountMatch != null) {
