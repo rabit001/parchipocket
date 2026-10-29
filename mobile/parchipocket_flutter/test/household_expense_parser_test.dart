@@ -34,6 +34,22 @@ void main() {
       expect(result.amount, 2500);
     });
 
+    test('does not mistake a quantity for a price', () {
+      final result = parseHouseholdExpense('Maine 1 kilo doodh kharida');
+
+      expect(result.amount, isNull);
+      expect(result.title, '1 kilo doodh');
+      expect(result.category, 'Dairy');
+    });
+
+    test('uses the stated price when the phrase includes quantity and price', () {
+      final result = parseHouseholdExpense('1 kilo doodh 60 rupaye ka liya');
+
+      expect(result.amount, 60);
+      expect(result.title, '1 kilo doodh');
+      expect(result.category, 'Dairy');
+    });
+
     test('keeps the amount missing when speech does not include a price', () {
       final result = parseHouseholdExpense('Maine doodh kharida');
 
