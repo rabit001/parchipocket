@@ -26,33 +26,18 @@ class PpScaffold extends StatelessWidget {
   final bool bottomNav;
   final EdgeInsets padding;
 
-  String get _homePage => switch (state.role) {
-        UserRole.customer => 'customerHome',
-        UserRole.shopOwner => 'shopHome',
-        UserRole.streetVendor => 'vendorHome',
-      };
+  String get _homePage => 'customerHome';
 
-  List<({String label, IconData icon, String route})> get _tabs => switch (state.role) {
-        UserRole.customer => const [
-            (label: 'Home', icon: Icons.home_outlined, route: 'customerHome'),
-            (label: 'My Bills', icon: Icons.receipt_long_outlined, route: 'bills'),
-            (label: 'Scan', icon: Icons.qr_code_scanner, route: 'scan'),
-            (label: 'Insights', icon: Icons.pie_chart_outline, route: 'insights'),
-            (label: 'Profile', icon: Icons.person_outline, route: 'customerProfile'),
-          ],
-        UserRole.shopOwner => const [
-            (label: 'Home', icon: Icons.home_outlined, route: 'shopHome'),
-            (label: 'Bills', icon: Icons.receipt_long_outlined, route: 'billHistory'),
-            (label: 'Udhaar', icon: Icons.currency_rupee, route: 'udhaar'),
-            (label: 'More', icon: Icons.more_horiz, route: 'shopSettings'),
-          ],
-        UserRole.streetVendor => const [
-            (label: 'Home', icon: Icons.home_outlined, route: 'vendorHome'),
-            (label: 'Quick Bill', icon: Icons.add_circle_outline, route: 'vendorBill'),
-            (label: 'Sales', icon: Icons.receipt_long_outlined, route: 'vendorSales'),
-            (label: 'Profile', icon: Icons.person_outline, route: 'vendorProfile'),
-          ],
-      };
+  // Shop Owner and Street Vendor navigation is paused while the app focuses
+  // on daily household spending. Their legacy screens and data remain in the
+  // repository, but they are not reachable from the current navigation.
+  List<({String label, IconData icon, String route})> get _tabs => const [
+        (label: 'Home', icon: Icons.home_outlined, route: 'customerHome'),
+        (label: 'Daily Log', icon: Icons.receipt_long_outlined, route: 'householdExpenses'),
+        (label: 'Add', icon: Icons.add_circle_outline, route: 'householdExpenseEntry'),
+        (label: 'Insights', icon: Icons.pie_chart_outline, route: 'insights'),
+        (label: 'Profile', icon: Icons.person_outline, route: 'customerProfile'),
+      ];
 
   @override
   Widget build(BuildContext context) {
