@@ -85,6 +85,13 @@ class FirestoreService {
     return doc.collection('expenses').doc().id;
   }
 
+  /// Allocates a stable ID for a personal household expense entry.
+  String newHouseholdExpenseId() {
+    final doc = _userDoc;
+    if (doc == null) throw Exception('User not authenticated.');
+    return doc.collection('householdExpenses').doc().id;
+  }
+
   /// Generates 128 bits of entropy from the platform CSPRNG. Only the SHA-256
   /// digest is persisted; rules cannot verify entropy, so callers must use this.
   String newReceiptClaimCode() {
@@ -634,6 +641,86 @@ class FirestoreService {
         category: data['category'] as String? ?? '',
         amount: (data['amount'] as num?)?.toDouble() ?? 0.0,
         createdAt: createdAt,
+      );
+    }).toList();
+  }
+
+  // Personal household spending is separate from seller business expenses.
+  Future<void> addHouseholdExpense(HouseholdExpense expense) async {
+    final doc = _userDoc;
+    if (doc == null) throw Exception('User not authenticated.');
+    final collection = doc.collection('householdExpenses');
+    final expenseId =
+        expense.id.isEmpty ? collection.doc().id : expense.id;
+    final expenseRef = collection.doc(expenseId);
+    final data = <String, dynamic>{
+      'id': expenseId,
+      'title': expense.title,
+      'category': expense.category,
+      'amount': expense.amount,
+      'createdAt': Timestamp.fromDate(expense.createdAt),
+      'source': expense.source,
+    };
+
+    final hasConflictingExpense = await firestore.runTransaction<bool>(
+      (transaction) async {
+        final existing = await transaction.get(expenseRef);
+        if (existing.exists) {
+          // An ambiguous retry is safe only if this is the exact same entry.
+          return !_isSameHouseholdExpense(existing.data()!, data);
+        }
+        transaction.set(expenseRef, data);
+        return false;
+      },
+    );
+
+    if (hasConflictingExpense) {
+      throw StateError('Household expense ID collision. Please retry.');
+    }
+  }
+
+  bool _isSameHouseholdExpense(
+    Map<String, dynamic> existing,
+    Map<String, dynamic> requested,
+  ) {
+    if (existing['id'] != requested['id'] ||
+        existing['title'] != requested['title'] ||
+        existing['category'] != requested['category'] ||
+        existing['amount'] != requested['amount'] ||
+        existing['source'] != requested['source']) {
+      return false;
+    }
+    final existingDate = existing['createdAt'];
+    final requestedDate = requested['createdAt'];
+    return existingDate is Timestamp &&
+        requestedDate is Timestamp &&
+        existingDate.seconds == requestedDate.seconds &&
+        existingDate.nanoseconds == requestedDate.nanoseconds;
+  }
+
+  Future<List<HouseholdExpense>> loadHouseholdExpenses() async {
+    final doc = _userDoc;
+    if (doc == null) return [];
+    final snapshot = await doc
+        .collection('householdExpenses')
+        .orderBy('createdAt', descending: true)
+        .get();
+    return snapshot.docs.map((docSnap) {
+      final data = docSnap.data();
+      final createdAtValue = data['createdAt'];
+      DateTime createdAt = DateTime.now();
+      if (createdAtValue is Timestamp) {
+        createdAt = createdAtValue.toDate();
+      } else if (createdAtValue is String) {
+        createdAt = DateTime.tryParse(createdAtValue) ?? DateTime.now();
+      }
+      return HouseholdExpense(
+        id: docSnap.id,
+        title: data['title'] as String? ?? '',
+        category: data['category'] as String? ?? 'Other',
+        amount: (data['amount'] as num?)?.toDouble() ?? 0,
+        createdAt: createdAt,
+        source: data['source'] as String? ?? 'manual',
       );
     }).toList();
   }
