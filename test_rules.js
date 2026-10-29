@@ -658,6 +658,56 @@ async function runTests() {
     expectedStatus: 403,
   });
 
+  const validHouseholdExpense = {
+    id: 'home-exp1',
+    title: 'Vegetables',
+    category: 'Vegetables',
+    amount: 250.0,
+    createdAt: timestampField(),
+    source: 'voice',
+  };
+  await assertRule({
+    description: '13.6 User A can create a valid household expense',
+    method: 'PATCH',
+    path: '/users/userA/householdExpenses/home-exp1',
+    data: wrapDocument(validHouseholdExpense),
+    userId: 'userA',
+    expectedStatus: 200,
+  });
+
+  await assertRule({
+    description: '13.6a Household expense with zero amount is denied',
+    method: 'PATCH',
+    path: '/users/userA/householdExpenses/home-invalid',
+    data: wrapDocument({
+      ...validHouseholdExpense,
+      id: 'home-invalid',
+      amount: 0,
+    }),
+    userId: 'userA',
+    expectedStatus: 403,
+  });
+
+  await assertRule({
+    description: '13.6b Owner cannot edit a saved household expense',
+    method: 'PATCH',
+    path: '/users/userA/householdExpenses/home-exp1',
+    data: wrapDocument({
+      ...validHouseholdExpense,
+      amount: 500.0,
+    }),
+    userId: 'userA',
+    expectedStatus: 403,
+  });
+
+  await assertRule({
+    description: '13.6c Another user cannot read a household expense',
+    method: 'GET',
+    path: '/users/userA/householdExpenses/home-exp1',
+    userId: 'userB',
+    expectedStatus: 403,
+  });
+
   await assertRule({
     description: '13.6 User B denied read on User A savedShop',
     method: 'GET',
