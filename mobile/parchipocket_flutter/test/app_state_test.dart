@@ -1303,6 +1303,58 @@ void main() {
       state.dispose();
     });
 
+    test('household expenses validate amounts and stay separate from business expenses',
+        () async {
+      final state = AppState();
+      final initialLength = state.householdExpenses.length;
+
+      final rejected = await state.addHouseholdExpense(
+        title: 'Milk',
+        category: 'Dairy',
+        amount: 0,
+      );
+      expect(rejected, isFalse);
+      expect(state.householdExpenses.length, initialLength);
+
+      final saved = await state.addHouseholdExpense(
+        title: 'Milk',
+        category: 'Dairy',
+        amount: 60,
+        source: 'voice',
+      );
+      expect(saved, isTrue);
+      expect(state.householdExpenses.first.title, 'Milk');
+      expect(state.householdExpenses.first.category, 'Dairy');
+      expect(state.householdExpenses.first.amount, 60);
+      expect(state.householdExpenses.first.source, 'voice');
+      expect(state.page, 'householdExpenses');
+      state.dispose();
+    });
+
+    test('cloud household expense uses its own owner-scoped write', () async {
+      final service = CountingFirestoreService();
+      final state = AppState()
+        ..isDemoMode = false
+        ..auth = MockFirebaseAuth()
+        ..firestoreService = service;
+      state.householdExpenses.clear();
+
+      final saved = await state.addHouseholdExpense(
+        title: 'Vegetables',
+        category: 'Vegetables',
+        amount: 250,
+        source: 'manual',
+      );
+
+      expect(saved, isTrue);
+      expect(service.writes, 1);
+      expect(state.householdExpenses.single.id, 'test-household-expense');
+      expect(state.householdExpenses.single.title, 'Vegetables');
+      expect(state.page, 'householdExpenses');
+      expect(state.isCloudLoading, isFalse);
+      state.dispose();
+    });
+
     test(
         'role consistency: new user sets initial role, existing cloud user preserves role',
         () {
@@ -1315,11 +1367,14 @@ void main() {
       expect(state.role, UserRole.customer);
       expect(state.page, 'customerSetup');
 
+      // Existing stored seller roles remain intact; only the active experience
+      // is redirected while these modes are paused.
+      state.role = UserRole.shopOwner;
       state.hasExistingCloudProfile = true;
       state.profileStatus = CloudProfileStatus.loaded;
       state.setRole(UserRole.customer);
       expect(state.role,
-          UserRole.shopOwner); // Role is preserved for existing cloud user
+          UserRole.shopOwner); // Stored profile role is not rewritten
       expect(state.lastNotice, contains('locked'));
       state.dispose();
     });
