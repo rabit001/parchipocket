@@ -93,7 +93,8 @@ ParsedHouseholdExpense parseHouseholdExpense(String transcript) {
     caseSensitive: false,
   );
   final amountMatch = amountPattern.firstMatch(normalized);
-  final amountText = amountMatch?.group(1)?.replaceAll(',', '')  final amount = amountText == null ? null : double.tryParse(amountText);
+  final amountText = amountMatch?.group(1)?.replaceAll(',', '');
+  final amount = amountText == null ? null : double.tryParse(amountText);
 
   var titleText = normalized;
   if (amountMatch != null) {
