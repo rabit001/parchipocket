@@ -23,6 +23,39 @@ env:
   FIRESTORE_EMULATOR_PROJECT_ID: demo-parchipocket-phase4
 
 jobs:
+  android-debug-apk:
+    name: Build and upload Android debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Fetch dependencies
+        working-directory: mobile/parchipocket_flutter
+        run: flutter pub get
+      - name: Build debug APK
+        working-directory: mobile/parchipocket_flutter
+        run: flutter build apk --debug
+      - name: Verify APK exists
+        working-directory: mobile/parchipocket_flutter
+        run: test -f build/app/outputs/flutter-apk/app-debug.apk
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: parchipocket-debug-apk
+          path: mobile/parchipocket_flutter/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+
   flutter:
     name: Flutter tests and static analysis
     runs-on: ubuntu-latest
