@@ -50,8 +50,8 @@ const Map<String, List<String>> _categoryKeywords = <String, List<String>>{
   ],
   'Groceries': <String>[
     'grocery', 'groceries', 'atta', 'flour', 'rice', 'chawal', 'dal', 'daal',
-    'chana', 'sugar', 'shakkar', 'chini', 'oil', 'salt', 'किराना', 'आटा',
-    'चावल', 'दाल', 'चना', 'शक्कर', 'चीनी', 'तेल', 'नमक',
+    'chana', 'chane', 'chickpea', 'chickpeas', 'sugar', 'shakkar', 'chini', 'oil', 'salt', 'किराना', 'आटा',
+    'चावल', 'दाल', 'चना', 'चने', 'शक्कर', 'चीनी', 'तेल', 'नमक',
   ],
   'Transport': <String>[
     'bus', 'auto', 'taxi', 'cab', 'petrol', 'diesel', 'fuel', 'rickshaw',
