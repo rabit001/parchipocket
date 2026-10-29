@@ -854,7 +854,7 @@ void main() {
       expect(service.savedProfile?['shopName'], 'Asha General Store');
       expect(service.savedProfile?['shopAddress'], '12 Main Road, Ujjain');
       expect(state.customerName, 'Asha Verma');
-      expect(state.page, 'customerHome');
+      expect(state.page, 'shopHome');
       state.dispose();
     });
 
