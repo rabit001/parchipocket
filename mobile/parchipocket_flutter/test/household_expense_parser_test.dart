@@ -28,6 +28,12 @@ void main() {
       expect(result.category, 'Dairy');
     });
 
+    test('preserves Indian comma-grouped amounts', () {
+      final result = parseHouseholdExpense('Maine 2,500 rupaye ka saman liya');
+
+      expect(result.amount, 2500);
+    });
+
     test('keeps the amount missing when speech does not include a price', () {
       final result = parseHouseholdExpense('Maine doodh kharida');
 
@@ -37,11 +43,11 @@ void main() {
     });
 
     test('leaves unknown purchases in Other instead of guessing a category', () {
-      final result = parseHouseholdExpense('₹125 notebook cover');
+      final result = parseHouseholdExpense('₹125 decorative vase');
 
       expect(result.amount, 125);
-      expect(result.title.toLowerCase(), 'notebook cover');
-      expect(result.category, 'Education');
+      expect(result.title.toLowerCase(), 'decorative vase');
+      expect(result.category, 'Other');
     });
 
     test('does not silently save or persist anything', () {
