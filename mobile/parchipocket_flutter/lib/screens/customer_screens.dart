@@ -288,8 +288,8 @@ class _HouseholdExpenseEntryScreenState extends State<HouseholdExpenseEntryScree
     }
   }
 
-  void _onSpeechResult(stt.SpeechRecognitionResult result) {
-    final heard = result.recognizedWords.trim();
+  void _onSpeechResult(String recognizedWords) {
+    final heard = recognizedWords.trim();
     if (heard.isEmpty || !mounted) return;
     final parsed = parseHouseholdExpense(heard);
     setState(() {
@@ -321,7 +321,7 @@ class _HouseholdExpenseEntryScreenState extends State<HouseholdExpenseEntryScree
     setState(() { _error = null; _transcript = ''; });
     try {
       await _speech.listen(
-        onResult: _onSpeechResult,
+        onResult: (result) => _onSpeechResult(result.recognizedWords),
         localeId: _localeId,
         listenFor: const Duration(seconds: 25),
         pauseFor: const Duration(seconds: 4),
