@@ -360,21 +360,32 @@ class _OtpScreenState extends State<OtpScreen> {
 class RoleSelectionScreen extends StatelessWidget {
   const RoleSelectionScreen({super.key, required this.state});
   final AppState state;
+
   @override
-  Widget build(BuildContext context) => PpScaffold(state: state, title: 'Choose account type', backTo: 'login', body: ListView(children: <Widget>[
-        const SizedBox(height: 5),
-        const Text('How will you use ParchiPocket?', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 7),
-        const Text('Choose the experience that fits your everyday needs.', style: TextStyle(fontSize: 12, color: PpColors.secondary)),
-        const SizedBox(height: 22),
-        _RoleCard(title: 'Customer', detail: 'Save bills and track spending', icon: Icons.receipt_long_outlined, onTap: () => state.setRole(UserRole.customer)),
-        const SizedBox(height: 12),
-        _RoleCard(title: 'Shop Owner', detail: 'Create receipts, record expenses and manage udhaar', icon: Icons.storefront_outlined, onTap: () => state.setRole(UserRole.shopOwner)),
-        const SizedBox(height: 12),
-        _RoleCard(title: 'Street Vendor', detail: 'Quick billing with minimal setup', icon: Icons.shopping_basket_outlined, onTap: () => state.setRole(UserRole.streetVendor)),
-        const SizedBox(height: 14),
-        const PpDemoNotice(message: 'This role selection controls the local prototype. It does not create a real user account.'),
-      ]));
+  Widget build(BuildContext context) => PpScaffold(
+        state: state,
+        title: 'Home & Family',
+        backTo: 'login',
+        body: ListView(children: <Widget>[
+          const SizedBox(height: 5),
+          const Text(
+            'Track everyday spending',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'Record household purchases, by voice or manually, and see where your money goes.',
+            style: TextStyle(fontSize: 12, color: PpColors.secondary),
+          ),
+          const SizedBox(height: 22),
+          _RoleCard(
+            title: 'Home & Family',
+            detail: 'Daily purchases, spending history and monthly insights',
+            icon: Icons.wallet_outlined,
+            onTap: () => state.setRole(UserRole.customer),
+          ),
+        ]),
+      );
 }
 
 class _RoleCard extends StatelessWidget {
@@ -460,7 +471,7 @@ class _CustomerSetupScreenState extends State<CustomerSetupScreen> {
         const SizedBox(height: 15),
         PpField(label: 'Email (optional)', controller: email, hint: 'name@example.com', keyboardType: TextInputType.emailAddress),
         const SizedBox(height: 18),
-        const PpDemoNotice(message: 'A seller should link a receipt to your account only with verified details and your permission.'),
+        const PpDemoNotice(message: 'Your household spending is saved under your own account. Review each entry before saving it.'),
         const SizedBox(height: 20),
         PpPrimaryButton(
           _isSubmitting ? 'Saving…' : 'Save & Continue',
