@@ -576,10 +576,12 @@ class _HouseholdExpenseEntryScreenState
     try {
       await _speech.listen(
         onResult: (result) => _onSpeechResult(result.recognizedWords),
-        localeId: _localeId,
-        listenFor: const Duration(seconds: 25),
-        pauseFor: const Duration(seconds: 4),
-        listenOptions: stt.SpeechListenOptions(partialResults: false),
+        listenOptions: stt.SpeechListenOptions(
+          localeId: _localeId,
+          listenFor: const Duration(seconds: 25),
+          pauseFor: const Duration(seconds: 4),
+          partialResults: false,
+        ),
       );
       if (mounted) setState(() => _isListening = true);
     } catch (_) {
