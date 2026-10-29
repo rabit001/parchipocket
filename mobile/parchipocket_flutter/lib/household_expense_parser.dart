@@ -89,12 +89,36 @@ String _guessCategory(String text) {
 ParsedHouseholdExpense parseHouseholdExpense(String transcript) {
   final normalized = _normalizeHindiDigits(transcript).trim();
   final amountPattern = RegExp(
-    r'(?:₹\s*)?((?:\d{1,3}(?:,\d{2,3})+|\d+)(?:\.\d{1,2})?)\s*(?:rupees?|rs\.?|rupaye|rupya|रुपये|रुपए|रुपया)?',
+    r'(?:₹|rs\.?)\s*((?:\d{1,3}(?:,\d{2,3})+|\d+)(?:\.\d{1,2})?)|((?:\d{1,3}(?:,\d{2,3})+|\d+)(?:\.\d{1,2})?)\s*(?:rupees?|rupaye|rupya|rupay|रुपये|रुपए|रुपया)',
     caseSensitive: false,
   );
-  final amountMatch = amountPattern.firstMatch(normalized);
-  final amountText = amountMatch?.group(1)?.replaceAll(',', '');
-  final amount = amountText == null ? null : double.tryParse(amountText);
+  Match? amountMatch = amountPattern.firstMatch(normalized);
+  String? amountText;
+  if (amountMatch != null) {
+    amountText = amountMatch.group(1) ?? amountMatch.group(2);
+  } else {
+    // If speech gives quantities such as "1 kilo milk", do not mistake the
+    // quantity for a price. When multiple unlabelled numbers are spoken,
+    // leave the amount blank and let the user confirm it manually.
+    final numberPattern = RegExp(
+      r'((?:\d{1,3}(?:,\d{2,3})+|\d+)(?:\.\d{1,2})?)',
+    );
+    final unitAfterNumber = RegExp(
+      r'^(?:kg|kgs|kilo(?:gram)?s?|g|gm|grams?|ml|l|litres?|liters?|pcs?|pieces?)\b',
+      caseSensitive: false,
+    );
+    final candidates = numberPattern.allMatches(normalized).where((match) {
+      final remaining = normalized.substring(match.end).trimLeft();
+      return !unitAfterNumber.hasMatch(remaining);
+    }).toList();
+    if (candidates.length == 1) {
+      amountMatch = candidates.single;
+      amountText = amountMatch?.group(1);
+    }
+  }
+  final amount = amountText == null
+      ? null
+      : double.tryParse(amountText.replaceAll(',', ''));
 
   var titleText = normalized;
   if (amountMatch != null) {
