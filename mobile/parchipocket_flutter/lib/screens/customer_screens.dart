@@ -16,14 +16,24 @@ class CustomerHomeScreen extends StatelessWidget {
     final now = DateTime.now();
     final entries = state.householdExpenses.toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    final today = entries.where((e) => e.createdAt.year == now.year &&
-        e.createdAt.month == now.month && e.createdAt.day == now.day);
-    final month = entries.where((e) => e.createdAt.year == now.year &&
-        e.createdAt.month == now.month);
+    final today = entries.where((e) =>
+      e.createdAt.year == now.year &&
+      e.createdAt.month == now.month &&
+      e.createdAt.day == now.day).toList();
+    final month = entries.where((e) =>
+      e.createdAt.year == now.year && e.createdAt.month == now.month).toList();
     final todayTotal = today.fold<double>(0, (sum, e) => sum + e.amount);
     final monthTotal = month.fold<double>(0, (sum, e) => sum + e.amount);
     final parts = state.customerName.trim().split(RegExp(r'\s+'));
     final firstName = parts.isEmpty || parts.first.isEmpty ? 'there' : parts.first;
+    final greeting = now.hour < 12
+      ? 'Good morning'
+      : now.hour < 17 ? 'Good afternoon' : 'Good evening';
+    const months = <String>[
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    final monthLabel = months[now.month - 1];
 
     return PpScaffold(
       state: state,
@@ -31,127 +41,271 @@ class CustomerHomeScreen extends StatelessWidget {
       showBack: false,
       bottomNav: true,
       bottomTab: 'customerHome',
-      padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
       trailing: IconButton(
-        onPressed: () => state.go('notifications'),
-        icon: const Icon(Icons.notifications_none_rounded),
+        tooltip: 'Profile',
+        onPressed: () => state.go('customerProfile'),
+        icon: CircleAvatar(
+          radius: 15,
+          backgroundColor: PpColors.forest,
+          child: Text(
+            parts.isEmpty || parts.first.isEmpty
+              ? 'U'
+              : parts.first.substring(0, 1).toUpperCase(),
+            style: const TextStyle(
+              color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800),
+          ),
+        ),
       ),
-      body: ListView(children: <Widget>[
-        Text('Hello, $firstName',
-            style: const TextStyle(fontSize: 11, color: PpColors.secondary)),
-        const SizedBox(height: 7),
-        const Text('Every purchase. One clear picture.',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 5),
-        const Text(
-          'Track daily household spending and understand where your money goes.',
-          style: TextStyle(fontSize: 12, color: PpColors.secondary, height: 1.4),
-        ),
-        const SizedBox(height: 16),
-        Row(children: <Widget>[
-          Expanded(child: _SpendingSummaryCard(
-            label: 'SPENT TODAY', value: money(todayTotal),
-            detail: '${today.length} entries')),
-          const SizedBox(width: 10),
-          Expanded(child: _SpendingSummaryCard(
-            label: 'THIS MONTH', value: money(monthTotal),
-            detail: '${month.length} entries')),
-        ]),
-        const SizedBox(height: 14),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: PpColors.forest, borderRadius: BorderRadius.circular(17)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-            const Text('ADD A PURCHASE',
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800,
-                color: Colors.white70, letterSpacing: .6)),
-            const SizedBox(height: 7),
-            const Text('Speak naturally. Review once. Save.',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800,
-                color: Colors.white)),
-            const SizedBox(height: 6),
-            const Text('Example: “Aaj 250 rupaye ki sabzi li.”',
-              style: TextStyle(fontSize: 11, color: Colors.white, height: 1.4)),
-            const SizedBox(height: 13),
-            Row(children: <Widget>[
-              Expanded(child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white, foregroundColor: PpColors.forest,
-                  padding: const EdgeInsets.symmetric(vertical: 13)),
-                icon: const Icon(Icons.mic_none_rounded),
-                label: const Text('Speak'),
-                onPressed: () => state.go('householdExpenseEntry'))),
-              const SizedBox(width: 10),
-              Expanded(child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  side: const BorderSide(color: Colors.white70),
-                  padding: const EdgeInsets.symmetric(vertical: 13)),
-                icon: const Icon(Icons.edit_outlined),
-                label: const Text('Type instead'),
-                onPressed: () => state.go('householdExpenseEntry'))),
-            ]),
+      body: ListView(
+        children: <Widget>[
+          Text('$greeting, $firstName',
+            style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w800,
+              color: PpColors.ink)),
+          const SizedBox(height: 4),
+          const Text(
+            'Here’s how your household is doing.',
+            style: TextStyle(fontSize: 12, color: PpColors.secondary, height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          Row(children: <Widget>[
+            const Icon(Icons.calendar_month_outlined,
+              size: 15, color: PpColors.forest),
+            const SizedBox(width: 6),
+            Text('$monthLabel ${now.year}',
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
+                color: PpColors.secondary)),
           ]),
-        ),
-        const SizedBox(height: 18),
-        PpSectionTitle('Recent purchases',
-          action: 'View all', onAction: () => state.go('householdExpenses')),
-        const SizedBox(height: 8),
-        if (entries.isEmpty)
-          const PpEmptyState(icon: Icons.shopping_bag_outlined,
-            title: 'No purchases recorded yet',
-            message: 'Add your first purchase by speaking or typing the details.')
-        else
-          for (final entry in entries.take(5))
-            PpTransactionTile(
-              title: entry.title,
-              subtitle: '${entry.category} · ${formatShortDate(entry.createdAt)} · ${entry.source == 'voice' ? 'Voice' : 'Manual'}',
-              trailing: money(entry.amount),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: PpColors.forest,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Text('TOTAL HOUSEHOLD SPEND',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800,
+                    color: Colors.white70, letterSpacing: .55)),
+                const SizedBox(height: 8),
+                Text(money(monthTotal),
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 31, height: 1.15,
+                    fontWeight: FontWeight.w800, color: Colors.white)),
+                const SizedBox(height: 7),
+                Text('Across your household · ${month.length} purchases',
+                  style: const TextStyle(fontSize: 11, color: Colors.white,
+                    height: 1.35)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(children: <Widget>[
+            Expanded(child: _HomeStatCard(
+              label: 'SPENT TODAY',
+              value: money(todayTotal),
+              detail: 'Today’s total',
+              icon: Icons.currency_rupee_rounded,
+              iconBackground: PpColors.soft,
+            )),
+            const SizedBox(width: 10),
+            Expanded(child: _HomeStatCard(
+              label: 'PURCHASES TODAY',
+              value: '${today.length}',
+              detail: today.length == 1 ? 'purchase entry' : 'purchase entries',
+              icon: Icons.receipt_long_outlined,
+              iconBackground: const Color(0xFFEAF0E7),
+            )),
+          ]),
+          const SizedBox(height: 18),
+          const Text('Add a purchase',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800,
+              color: PpColors.ink)),
+          const SizedBox(height: 4),
+          const Text('Choose what feels easiest.',
+            style: TextStyle(fontSize: 11, color: PpColors.secondary)),
+          const SizedBox(height: 10),
+          Row(children: <Widget>[
+            Expanded(child: _HomeQuickAction(
+              title: 'Speak',
+              detail: 'Say item + amount',
+              icon: Icons.mic_none_rounded,
+              primary: true,
+              onTap: () => state.go('householdExpenseEntry'),
+            )),
+            const SizedBox(width: 10),
+            Expanded(child: _HomeQuickAction(
+              title: 'Type manually',
+              detail: 'Enter details',
+              icon: Icons.edit_outlined,
+              primary: false,
+              onTap: () => state.go('householdExpenseEntry'),
+            )),
+          ]),
+          const SizedBox(height: 18),
+          PpSectionTitle(
+            'Recent purchases',
+            action: 'View all',
+            onAction: () => state.go('householdExpenses'),
+          ),
+          const SizedBox(height: 7),
+          if (entries.isEmpty)
+            const PpEmptyState(
               icon: Icons.shopping_bag_outlined,
-              onTap: () => showDialog<void>(
-                context: context,
-                builder: (dialogContext) => AlertDialog(
-                  title: Text(entry.title),
-                  content: Text('${entry.category}\n${money(entry.amount)}\n${formatDateTime(entry.createdAt)}'),
-                  actions: <Widget>[
-                    TextButton(onPressed: () => Navigator.of(dialogContext).pop(),
-                      child: const Text('Close')),
-                  ],
+              title: 'No purchases recorded yet',
+              message: 'Add your first purchase by speaking or typing the details.',
+            )
+          else
+            for (final entry in entries.take(3))
+              PpTransactionTile(
+                title: entry.title,
+                subtitle: '${entry.category} · ${formatShortDate(entry.createdAt)} · ${entry.source == 'voice' ? 'Voice' : 'Manual'}',
+                trailing: money(entry.amount),
+                icon: Icons.shopping_bag_outlined,
+                onTap: () => showDialog<void>(
+                  context: context,
+                  builder: (dialogContext) => AlertDialog(
+                    title: Text(entry.title),
+                    content: Text('${entry.category}\n${money(entry.amount)}\n${formatDateTime(entry.createdAt)}'),
+                    actions: <Widget>[
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
+          if (entries.isNotEmpty)
+            Align(
+              alignment: Alignment.center,
+              child: TextButton.icon(
+                onPressed: () => state.go('householdExpenses'),
+                icon: const Icon(Icons.receipt_long_outlined, size: 17),
+                label: const Text('Open daily spending log'),
+              ),
             ),
-        const SizedBox(height: 8),
-        TextButton.icon(onPressed: () => state.go('scan'),
-          icon: const Icon(Icons.qr_code_scanner),
-          label: const Text('Have a shop receipt QR? Scan it')),
-        if (state.isDemoMode)
-          const PpDemoNotice(message:
-            'Demo mode uses sample entries in memory. Sign in to keep your own household records in the cloud.'),
-      ]),
+          const SizedBox(height: 4),
+          TextButton.icon(
+            onPressed: () => state.go('scan'),
+            icon: const Icon(Icons.qr_code_scanner, size: 18),
+            label: const Text('Scan a shop receipt QR'),
+          ),
+          if (state.isDemoMode)
+            const PpDemoNotice(
+              message: 'Demo mode uses sample entries in memory. Sign in to keep your own household records in the cloud.',
+            ),
+        ],
+      ),
     );
   }
 }
 
-class _SpendingSummaryCard extends StatelessWidget {
-  const _SpendingSummaryCard({required this.label, required this.value, required this.detail});
-  final String label, value, detail;
+class _HomeStatCard extends StatelessWidget {
+  const _HomeStatCard({
+    required this.label,
+    required this.value,
+    required this.detail,
+    required this.icon,
+    required this.iconBackground,
+  });
+
+  final String label;
+  final String value;
+  final String detail;
+  final IconData icon;
+  final Color iconBackground;
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(color: PpColors.soft,
-      borderRadius: BorderRadius.circular(15)),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-      Text(label, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800,
-        color: PpColors.secondary)),
-      const SizedBox(height: 8),
-      Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800,
-          color: PpColors.ink)),
-      const SizedBox(height: 4),
-      Text(detail, style: const TextStyle(fontSize: 10, color: PpColors.secondary)),
-    ]),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: PpColors.card,
+      borderRadius: BorderRadius.circular(15),
+      border: Border.all(color: PpColors.border),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(children: <Widget>[
+          CircleAvatar(
+            radius: 15,
+            backgroundColor: iconBackground,
+            child: Icon(icon, size: 16, color: PpColors.forest),
+          ),
+          const SizedBox(width: 7),
+          Expanded(child: Text(label,
+            maxLines: 2, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800,
+              color: PpColors.secondary))),
+        ]),
+        const SizedBox(height: 10),
+        Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800,
+            color: PpColors.ink)),
+        const SizedBox(height: 3),
+        Text(detail, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 9.5, color: PpColors.secondary)),
+      ],
+    ),
+  );
+}
+
+class _HomeQuickAction extends StatelessWidget {
+  const _HomeQuickAction({
+    required this.title,
+    required this.detail,
+    required this.icon,
+    required this.primary,
+    required this.onTap,
+  });
+
+  final String title;
+  final String detail;
+  final IconData icon;
+  final bool primary;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: primary ? PpColors.forest : PpColors.card,
+    borderRadius: BorderRadius.circular(16),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 82),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: primary ? PpColors.forest : PpColors.border),
+        ),
+        child: Row(children: <Widget>[
+          CircleAvatar(
+            radius: 17,
+            backgroundColor: primary ? PpColors.forestLight : PpColors.soft,
+            child: Icon(icon, size: 18,
+              color: primary ? Colors.white : PpColors.forest),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800,
+                  color: primary ? Colors.white : PpColors.ink)),
+              const SizedBox(height: 4),
+              Text(detail, maxLines: 2, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 9.5, height: 1.2,
+                  color: primary ? Colors.white : PpColors.secondary)),
+            ],
+          )),
+        ]),
+      ),
+    ),
   );
 }
 
@@ -222,6 +376,7 @@ class _HouseholdExpenseEntryScreenState extends State<HouseholdExpenseEntryScree
   final TextEditingController _amount = TextEditingController();
   final stt.SpeechToText _speech = stt.SpeechToText();
   String _category = 'Groceries';
+  String _entryMode = 'voice';
   String _source = 'manual';
   String _localeId = 'hi_IN';
   String _transcript = '';
@@ -369,84 +524,291 @@ class _HouseholdExpenseEntryScreenState extends State<HouseholdExpenseEntryScree
   }
 
   @override
-  Widget build(BuildContext context) => PpScaffold(
-    state: widget.state, title: 'Add Purchase', backTo: 'customerHome',
-    bottomNav: true, bottomTab: 'householdExpenseEntry',
-    body: ListView(children: <Widget>[
-      const Text('Say what you bought and how much you paid.',
-        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-      const SizedBox(height: 6),
-      const Text('The app fills a draft. Check the item, category and amount before saving.',
-        style: TextStyle(fontSize: 11, color: PpColors.secondary, height: 1.4)),
-      const SizedBox(height: 16),
-      Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: PpColors.soft, borderRadius: BorderRadius.circular(16)),
-        child: Column(children: <Widget>[
-          CircleAvatar(radius: 30, backgroundColor: PpColors.forest,
-            child: Icon(_isListening ? Icons.graphic_eq : Icons.mic_none_rounded,
-              size: 28, color: Colors.white)),
-          const SizedBox(height: 10),
-          Text(_isListening ? 'Listening…' : 'Speak one purchase',
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+  Widget build(BuildContext context) {
+    Widget modeOption({
+      required String label,
+      required String value,
+      required IconData icon,
+    }) {
+      final selected = _entryMode == value;
+      return Expanded(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(11),
+          onTap: () {
+            if (value == 'manual' && _speech.isListening) {
+              unawaited(_speech.stop());
+            }
+            setState(() {
+              _entryMode = value;
+              if (value == 'manual') {
+                _source = 'manual';
+                _isListening = false;
+              }
+            });
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? PpColors.card : Colors.transparent,
+              borderRadius: BorderRadius.circular(11),
+              border: selected ? Border.all(color: PpColors.border) : null,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Icon(icon, size: 16,
+                  color: selected ? PpColors.forest : PpColors.secondary),
+                const SizedBox(width: 6),
+                Flexible(child: Text(label,
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? PpColors.forest : PpColors.secondary))),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return PpScaffold(
+      state: widget.state,
+      title: 'Add a purchase',
+      backTo: 'customerHome',
+      bottomNav: true,
+      bottomTab: 'householdExpenseEntry',
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
+      body: Column(
+        children: <Widget>[
+          Expanded(
+            child: ListView(
+              children: <Widget>[
+                const Text('Capture it now. Understand it later.',
+                  style: TextStyle(fontSize: 13,
+                    color: PpColors.secondary, height: 1.4)),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: PpColors.soft,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(children: <Widget>[
+                    modeOption(label: 'Speak', value: 'voice',
+                      icon: Icons.mic_none_rounded),
+                    modeOption(label: 'Type manually', value: 'manual',
+                      icon: Icons.edit_outlined),
+                  ]),
+                ),
+                if (_entryMode == 'voice') ...<Widget>[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F7F0),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: PpColors.soft),
+                    ),
+                    child: Column(
+                      children: <Widget>[
+                        Row(
+                          children: <Widget>[
+                            CircleAvatar(
+                              radius: 29,
+                              backgroundColor: PpColors.forest,
+                              child: Icon(
+                                _isListening ? Icons.graphic_eq_rounded
+                                  : Icons.mic_none_rounded,
+                                color: Colors.white, size: 27,
+                              ),
+                            ),
+                            const SizedBox(width: 13),
+                            Expanded(child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Text(
+                                  _isListening ? 'Listening…'
+                                    : _initializingSpeech
+                                      ? 'Preparing voice input'
+                                      : 'Voice input ready',
+                                  style: const TextStyle(fontSize: 14,
+                                    fontWeight: FontWeight.w800,
+                                    color: PpColors.ink),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _isListening
+                                    ? 'Speak one purchase and its amount.'
+                                    : 'Tap the mic and speak naturally.',
+                                  style: const TextStyle(fontSize: 11,
+                                    color: PpColors.secondary, height: 1.35),
+                                ),
+                              ],
+                            )),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('Example: “Aaj 250 rupaye ki sabzi li.”',
+                            style: TextStyle(fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              color: PpColors.forest)),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _isSaving || _initializingSpeech
+                              ? null : _toggleListening,
+                            icon: Icon(_isListening
+                              ? Icons.stop_circle_outlined
+                              : Icons.mic_rounded),
+                            label: Text(
+                              _isListening ? 'Stop listening'
+                                : _initializingSpeech
+                                  ? 'Preparing microphone…'
+                                  : 'Start voice entry'),
+                          ),
+                        ),
+                        if (!_speechAvailable && !_initializingSpeech)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 7),
+                            child: Text(
+                              'Voice needs a compatible Android speech service. Manual entry is always available.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 10,
+                                color: PpColors.secondary, height: 1.35),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (_transcript.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 12),
+                  PpCard(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Row(children: <Widget>[
+                        const Expanded(child: Text('VOICE TRANSCRIPT',
+                          style: TextStyle(fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            color: PpColors.secondary))),
+                        TextButton(
+                          onPressed: () => setState(() => _entryMode = 'manual'),
+                          child: const Text('Review fields',
+                            style: TextStyle(fontSize: 10)),
+                        ),
+                      ]),
+                      const SizedBox(height: 3),
+                      Text('“$_transcript”',
+                        style: const TextStyle(fontSize: 12,
+                          fontWeight: FontWeight.w600, color: PpColors.ink)),
+                    ],
+                  )),
+                ],
+                const SizedBox(height: 16),
+                const Text('Review details',
+                  style: TextStyle(fontSize: 16,
+                    fontWeight: FontWeight.w800, color: PpColors.ink)),
+                const SizedBox(height: 4),
+                const Text('Check the item, category and amount before saving.',
+                  style: TextStyle(fontSize: 11,
+                    color: PpColors.secondary, height: 1.35)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _title,
+                  onChanged: (_) => setState(() => _error = null),
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    labelText: 'Item name',
+                    hintText: 'e.g. Vegetables',
+                    prefixIcon: Icon(Icons.shopping_bag_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Expanded(child: TextField(
+                      controller: _amount,
+                      onChanged: (_) => setState(() => _error = null),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Amount (₹)',
+                        prefixIcon: Icon(Icons.currency_rupee_rounded),
+                        hintText: 'e.g. 250',
+                      ),
+                    )),
+                    const SizedBox(width: 10),
+                    Expanded(child: DropdownButtonFormField<String>(
+                      initialValue: _category,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Category',
+                        prefixIcon: Icon(Icons.category_outlined),
+                      ),
+                      items: _categories.map((value) =>
+                        DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value, overflow: TextOverflow.ellipsis),
+                        )).toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _category = value);
+                        }
+                      },
+                    )),
+                  ],
+                ),
+                if (_error != null) ...<Widget>[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(11),
+                    decoration: BoxDecoration(
+                      color: PpColors.errorSoft,
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const Icon(Icons.error_outline, size: 17,
+                          color: PpColors.error),
+                        const SizedBox(width: 7),
+                        Expanded(child: Text(_error!,
+                          style: const TextStyle(color: PpColors.error,
+                            fontSize: 11, fontWeight: FontWeight.w600,
+                            height: 1.35))),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                const PpDemoNotice(
+                  message: 'Voice creates a draft only. Review the details above, then save the purchase.',
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          PpPrimaryButton(
+            _isSaving ? 'Saving…' : 'Save purchase',
+            icon: Icons.check_rounded,
+            onPressed: _isSaving ? null : _save,
+          ),
           const SizedBox(height: 4),
-          const Text('Example: “Aaj 250 rupaye ki sabzi li.”',
+          const Text(
+            'Your Daily Log and Insights use saved purchases.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: PpColors.secondary)),
-          const SizedBox(height: 12),
-          SizedBox(width: double.infinity, child: ElevatedButton.icon(
-            onPressed: _isSaving || _initializingSpeech ? null : _toggleListening,
-            icon: Icon(_isListening ? Icons.stop_circle_outlined : Icons.mic_rounded),
-            label: Text(_isListening ? 'Stop listening' :
-              _initializingSpeech ? 'Preparing microphone…' : 'Start voice entry'))),
-          if (!_speechAvailable && !_initializingSpeech)
-            const Padding(padding: EdgeInsets.only(top: 7),
-              child: Text('Voice needs a compatible Android speech service. Manual entry is always available.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 10, color: PpColors.secondary))),
-        ]),
+            style: TextStyle(fontSize: 10, color: PpColors.secondary),
+          ),
+        ],
       ),
-      if (_transcript.isNotEmpty) ...<Widget>[
-        const SizedBox(height: 12),
-        PpCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-          const Text('HEARD', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800,
-            color: PpColors.secondary)),
-          const SizedBox(height: 5),
-          Text(_transcript, style: const TextStyle(fontSize: 12)),
-        ])),
-      ],
-      const SizedBox(height: 17),
-      TextField(controller: _title, onChanged: (_) => setState(() => _error = null),
-        textCapitalization: TextCapitalization.sentences,
-        decoration: const InputDecoration(labelText: 'What did you buy?',
-          hintText: 'e.g. Vegetables', prefixIcon: Icon(Icons.shopping_bag_outlined))),
-      const SizedBox(height: 12),
-      TextField(controller: _amount, onChanged: (_) => setState(() => _error = null),
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        decoration: const InputDecoration(labelText: 'Amount paid',
-          prefixIcon: Icon(Icons.currency_rupee), hintText: 'e.g. 250')),
-      const SizedBox(height: 12),
-      DropdownButtonFormField<String>(
-        initialValue: _category,
-        decoration: const InputDecoration(labelText: 'Category',
-          prefixIcon: Icon(Icons.category_outlined)),
-        items: _categories.map((value) => DropdownMenuItem<String>(
-          value: value, child: Text(value))).toList(),
-        onChanged: (value) { if (value != null) setState(() => _category = value); },
-      ),
-      if (_error != null) ...<Widget>[
-        const SizedBox(height: 10),
-        Text(_error!, style: const TextStyle(color: PpColors.error,
-          fontSize: 11, fontWeight: FontWeight.w600)),
-      ],
-      const SizedBox(height: 18),
-      PpPrimaryButton(_isSaving ? 'Saving…' : 'Review and save entry',
-        icon: Icons.check_circle_outline, onPressed: _isSaving ? null : _save),
-      const SizedBox(height: 8),
-      const PpDemoNotice(message:
-        'Nothing is saved by voice alone. Review the draft first, then confirm the entry.'),
-    ]),
-  );
+    );
+  }
 }
 
 class BillsScreen extends StatefulWidget {
