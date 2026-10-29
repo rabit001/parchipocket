@@ -11,7 +11,7 @@ enum CloudProfileStatus { unknown, loading, loaded, missing, failed }
 
 extension UserRoleLabel on UserRole {
   String get label => switch (this) {
-        UserRole.customer => 'Customer',
+        UserRole.customer => 'Home & Family',
         UserRole.shopOwner => 'Shop Owner',
         UserRole.streetVendor => 'Street Vendor',
       };
@@ -87,6 +87,27 @@ class DemoExpense {
   final String category;
   final double amount;
   final DateTime createdAt;
+}
+
+class HouseholdExpense {
+  const HouseholdExpense({
+    this.id = '',
+    required this.title,
+    required this.category,
+    required this.amount,
+    required this.createdAt,
+    this.source = 'manual',
+  });
+
+  /// Stable Firestore document ID; empty only for local demo entries.
+  final String id;
+  final String title;
+  final String category;
+  final double amount;
+  final DateTime createdAt;
+  /// Either manual or voice. The field records how the entry was initiated,
+  /// not whether the user confirmed it.
+  final String source;
 }
 
 class AppState extends ChangeNotifier {
@@ -170,11 +191,13 @@ class AppState extends ChangeNotifier {
   final List<DemoBill> bills = <DemoBill>[];
   final List<ClaimedReceipt> claimedReceipts = <ClaimedReceipt>[];
   final List<DemoExpense> expenses = <DemoExpense>[];
+  final List<HouseholdExpense> householdExpenses = <HouseholdExpense>[];
   final Set<String> savedShops = <String>{};
   int _billSequence = 10500;
   int _vendorBillSequence = 2403;
   DemoBill? _retryableCloudBill;
   DemoExpense? _retryableCloudExpense;
+  HouseholdExpense? _retryableHouseholdExpense;
 
   void _initAuthListener() {
     final authInstance = auth;
@@ -323,6 +346,9 @@ class AppState extends ChangeNotifier {
       if (!isCurrentLoad()) return CloudProfileStatus.unknown;
       final cloudExpenses = await firestoreService.loadExpenses();
       if (!isCurrentLoad()) return CloudProfileStatus.unknown;
+      final cloudHouseholdExpenses =
+          await firestoreService.loadHouseholdExpenses();
+      if (!isCurrentLoad()) return CloudProfileStatus.unknown;
       final cloudSavedShops = await firestoreService.loadSavedShops();
       if (!isCurrentLoad()) return CloudProfileStatus.unknown;
       final cloudClaims = await firestoreService.loadClaimedReceipts();
@@ -337,6 +363,9 @@ class AppState extends ChangeNotifier {
       expenses
         ..clear()
         ..addAll(cloudExpenses);
+      householdExpenses
+        ..clear()
+        ..addAll(cloudHouseholdExpenses);
       savedShops
         ..clear()
         ..addAll(cloudSavedShops);
@@ -364,11 +393,10 @@ class AppState extends ChangeNotifier {
               'Your saved profile could not be verified. Retry before continuing.';
           break;
         }
-        page = switch (role) {
-          UserRole.customer => 'customerHome',
-          UserRole.shopOwner => 'shopHome',
-          UserRole.streetVendor => 'vendorHome',
-        };
+        // The current product scope is Home & Family daily spending. Existing
+        // seller roles remain stored for backward compatibility, but all
+        // authenticated profiles now enter the household experience.
+        page = 'customerHome';
       case CloudProfileStatus.missing:
         page = 'roleSelection';
       case CloudProfileStatus.failed:
@@ -529,6 +557,7 @@ class AppState extends ChangeNotifier {
   void _clearCloudAccountState() {
     _retryableCloudBill = null;
     _retryableCloudExpense = null;
+    _retryableHouseholdExpense = null;
     hasExistingCloudProfile = false;
     profileStatus = CloudProfileStatus.loading;
     customerName = '';
@@ -542,6 +571,7 @@ class AppState extends ChangeNotifier {
     bills.clear();
     claimedReceipts.clear();
     expenses.clear();
+    householdExpenses.clear();
     savedShops.clear();
     selectedBill = null;
     selectedClaimedReceipt = null;
@@ -558,6 +588,7 @@ class AppState extends ChangeNotifier {
   void _restoreDemoState() {
     _retryableCloudBill = null;
     _retryableCloudExpense = null;
+    _retryableHouseholdExpense = null;
     isDemoMode = true;
     isCloudLoading = false;
     hasExistingCloudProfile = false;
@@ -606,6 +637,25 @@ class AppState extends ChangeNotifier {
             category: 'Transport',
             amount: 150,
             createdAt: DateTime(2026, 10, 19, 9, 20)),
+      ]);
+    householdExpenses
+      ..clear()
+      ..addAll(<HouseholdExpense>[
+        HouseholdExpense(
+            title: 'Vegetables',
+            category: 'Vegetables',
+            amount: 250,
+            createdAt: DateTime.now().subtract(const Duration(hours: 2))),
+        HouseholdExpense(
+            title: 'Milk',
+            category: 'Dairy',
+            amount: 60,
+            createdAt: DateTime.now().subtract(const Duration(hours: 4))),
+        HouseholdExpense(
+            title: 'Bus fare',
+            category: 'Transport',
+            amount: 30,
+            createdAt: DateTime.now().subtract(const Duration(days: 1))),
       ]);
     savedShops
       ..clear()
@@ -700,11 +750,7 @@ class AppState extends ChangeNotifier {
       // Existing cloud profiles retain their stored role to satisfy Firestore security rules
       if (profileStatus == CloudProfileStatus.loaded &&
           hasExistingCloudProfile) {
-        page = switch (role) {
-          UserRole.customer => 'customerSetup',
-          UserRole.shopOwner => 'shopSetup',
-          UserRole.streetVendor => 'vendorSetup',
-        };
+        page = 'customerHome';
         lastNotice =
             'Role is locked for existing cloud profile (${role.label}).';
       } else if (profileStatus == CloudProfileStatus.failed) {
@@ -1091,6 +1137,96 @@ class AppState extends ChangeNotifier {
       }
       cloudError = e.toString();
       lastNotice = 'Failed to update settlement: $e';
+      return false;
+    } finally {
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        isCloudLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<bool> addHouseholdExpense({
+    required String title,
+    required String category,
+    required double amount,
+    String source = 'manual',
+  }) async {
+    if (isCloudLoading || isSigningOut) return false;
+    final normalizedTitle = title.trim();
+    final normalizedCategory = category.trim();
+    if (normalizedTitle.isEmpty ||
+        normalizedTitle.length > 100 ||
+        normalizedCategory.isEmpty ||
+        normalizedCategory.length > 50 ||
+        !amount.isFinite ||
+        amount <= 0 ||
+        amount > 10000000 ||
+        !const <String>{'manual', 'voice'}.contains(source)) {
+      const error = 'Enter a purchase, category and amount greater than ₹0.';
+      cloudError = error;
+      lastNotice = error;
+      notifyListeners();
+      return false;
+    }
+
+    final cloudWrite = !isDemoMode && isAuthenticated;
+    final pending = _retryableHouseholdExpense;
+    final isRetry = cloudWrite &&
+        pending != null &&
+        pending.title == normalizedTitle &&
+        pending.category == normalizedCategory &&
+        pending.amount == amount &&
+        pending.source == source;
+
+    final HouseholdExpense expense;
+    if (isRetry) {
+      expense = pending;
+    } else {
+      expense = HouseholdExpense(
+        id: cloudWrite ? firestoreService.newHouseholdExpenseId() : '',
+        title: normalizedTitle,
+        category: normalizedCategory,
+        amount: amount,
+        createdAt: DateTime.now(),
+        source: source,
+      );
+      if (cloudWrite) _retryableHouseholdExpense = expense;
+    }
+
+    if (!cloudWrite) {
+      householdExpenses.insert(0, expense);
+      lastNotice = 'Household expense recorded in demo mode.';
+      page = 'householdExpenses';
+      cloudError = null;
+      notifyListeners();
+      return true;
+    }
+
+    isCloudLoading = true;
+    cloudError = null;
+    notifyListeners();
+    final uid = auth?.currentUser?.uid;
+    final authGeneration = _authEventGeneration;
+    try {
+      await firestoreService.addHouseholdExpense(expense);
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
+      householdExpenses.insert(0, expense);
+      if (identical(_retryableHouseholdExpense, expense)) {
+        _retryableHouseholdExpense = null;
+      }
+      lastNotice = 'Household expense saved to cloud.';
+      page = 'householdExpenses';
+      cloudError = null;
+      return true;
+    } catch (error) {
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
+      cloudError = error.toString();
+      lastNotice = 'Household expense was not saved. Retry the same entry.';
       return false;
     } finally {
       if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
