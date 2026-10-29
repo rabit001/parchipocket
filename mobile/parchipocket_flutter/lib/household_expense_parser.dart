@@ -113,7 +113,7 @@ ParsedHouseholdExpense parseHouseholdExpense(String transcript) {
     }).toList();
     if (candidates.length == 1) {
       amountMatch = candidates.single;
-      amountText = amountMatch?.group(1);
+      amountText = candidates.single.group(1);
     }
   }
   final amount = amountText == null
