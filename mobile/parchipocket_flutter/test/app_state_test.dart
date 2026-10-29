@@ -1396,7 +1396,7 @@ void main() {
       state.role = UserRole.shopOwner;
       state.profileStatus = CloudProfileStatus.loaded;
       state.navigateAfterAuth();
-      expect(state.page, 'shopHome');
+      expect(state.page, 'customerHome');
 
       // Existing street vendor
       state.role = UserRole.streetVendor;
@@ -1408,7 +1408,7 @@ void main() {
       state.hasExistingCloudProfile = false;
       state.profileStatus = CloudProfileStatus.missing;
       state.navigateAfterAuth();
-      expect(state.page, 'roleSelection');
+      expect(state.page, 'customerSetup');
 
       state.dispose();
     });
