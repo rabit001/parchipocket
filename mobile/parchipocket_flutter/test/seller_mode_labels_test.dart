@@ -271,7 +271,8 @@ void main() {
           await tester.pumpAndSettle();
 
           expect(
-            find.text('Enter a valid customer mobile number or leave it blank.'),
+            find.text(
+                'Enter a valid customer mobile number or leave it blank.'),
             findsOneWidget,
           );
           expect(state.cloudError, isNull);

@@ -243,10 +243,10 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
               .showSnackBar(SnackBar(content: Text(message)));
         }
       }
-        } finally {
-          if (mounted) setState(() => _isSubmitting = false);
-        }
-      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
