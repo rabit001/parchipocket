@@ -254,10 +254,8 @@ void main() {
     final ownerClaim = (await claimRef.get()).data()!;
     expect(ownerClaim['status'], 'claimed');
     expect(ownerClaim['claimedBy'], _claimantAuth.currentUser!.uid);
-    final claimantClaim = await _claimantFirestore
-        .collection('receiptClaims')
-        .doc(digest)
-        .get();
+    final claimantClaim =
+        await _claimantFirestore.collection('receiptClaims').doc(digest).get();
     expect(claimantClaim.data()?['claimedBy'], _claimantAuth.currentUser!.uid);
 
     final ownerBills = await _service.loadBills();
@@ -430,7 +428,6 @@ void main() {
       expect(afterRemoval, contains('A_B'));
     },
   );
-
 }
 
 Future<void> _saveRoleProfile(FirestoreService service, UserRole role) =>
