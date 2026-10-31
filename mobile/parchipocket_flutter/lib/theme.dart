@@ -15,7 +15,9 @@ class PpColors {
 }
 
 ThemeData buildPpTheme() {
-  final scheme = ColorScheme.fromSeed(seedColor: PpColors.forest, brightness: Brightness.light).copyWith(
+  final scheme = ColorScheme.fromSeed(
+          seedColor: PpColors.forest, brightness: Brightness.light)
+      .copyWith(
     primary: PpColors.forest,
     onPrimary: Colors.white,
     surface: PpColors.card,
@@ -32,22 +34,31 @@ ThemeData buildPpTheme() {
       foregroundColor: PpColors.ink,
       elevation: 0,
       centerTitle: false,
-      titleTextStyle: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: PpColors.ink),
+      titleTextStyle: TextStyle(
+          fontSize: 19, fontWeight: FontWeight.w700, color: PpColors.ink),
     ),
     cardTheme: CardThemeData(
       color: PpColors.card,
       elevation: 0,
       margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: PpColors.border)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: PpColors.border)),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: Colors.white,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       hintStyle: const TextStyle(color: PpColors.secondary, fontSize: 13),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(11), borderSide: const BorderSide(color: PpColors.border)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(11), borderSide: const BorderSide(color: PpColors.border)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(11), borderSide: const BorderSide(color: PpColors.forest, width: 1.5)),
+      border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(11),
+          borderSide: const BorderSide(color: PpColors.border)),
+      enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(11),
+          borderSide: const BorderSide(color: PpColors.border)),
+      focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(11),
+          borderSide: const BorderSide(color: PpColors.forest, width: 1.5)),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
@@ -67,6 +78,7 @@ ThemeData buildPpTheme() {
         textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
       ),
     ),
-    dividerTheme: const DividerThemeData(color: PpColors.border, thickness: 1, space: 1),
+    dividerTheme:
+        const DividerThemeData(color: PpColors.border, thickness: 1, space: 1),
   );
 }

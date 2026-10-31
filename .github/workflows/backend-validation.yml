@@ -23,6 +23,39 @@ env:
   FIRESTORE_EMULATOR_PROJECT_ID: demo-parchipocket-phase4
 
 jobs:
+  android-debug-apk:
+    name: Build and upload Android debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Fetch dependencies
+        working-directory: mobile/parchipocket_flutter
+        run: flutter pub get
+      - name: Build debug APK
+        working-directory: mobile/parchipocket_flutter
+        run: flutter build apk --debug
+      - name: Verify APK exists
+        working-directory: mobile/parchipocket_flutter
+        run: test -f build/app/outputs/flutter-apk/app-debug.apk
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: parchipocket-debug-apk
+          path: mobile/parchipocket_flutter/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+
   flutter:
     name: Flutter tests and static analysis
     runs-on: ubuntu-latest
@@ -134,4 +167,4 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             set -eu
-            npx --yes firebase-tools@latest emulators:exec --only auth,firestore --project demo-parchipocket-phase4 "cd mobile/parchipocket_flutter && flutter pub get && flutter test integration_test/firestore_service_emulator_test.dart -d emulator-5554 --reporter compact"
+            npx --yes firebase-tools@latest emulators:exec --only auth,firestore --project demo-parchipocket-phase4 "cd mobile/parchipocket_flutter && flutter pub get && flutter test integration_test/firestore_service_emulator_test.dart -d emulator-5554 --reporter compact && flutter test integration_test/daily_log_pagination_emulator_test.dart -d emulator-5554 --reporter compact"

@@ -1,9 +1,9 @@
 # ParchiPocket
 
 **Owner and project author:** Rabit Mansuri (@rabit001)  
-**Project type:** Flutter mobile-first digital billing and receipt application
+**Project type:** Flutter mobile-first household spending tracker with voice-assisted purchase entry
 
-ParchiPocket is a Flutter app for customers, shop owners, and street vendors. It includes Firebase Authentication, Cloud Firestore persistence, UID-scoped security rules, and a receipt-claim flow. It is still a development project, not a production-ready billing or accounting service.
+ParchiPocket is currently focused on **Home & Family daily expense tracking**: users can record what they bought, the amount, and a spending category, then review daily entries and monthly category totals. The current work adds voice-assisted entry with a review-before-save flow. Firebase Authentication, Cloud Firestore persistence, UID-scoped security rules, and the existing receipt-claim flow remain part of the project. Shop Owner and Street Vendor screens remain in the repository for future work, but their role choices and navigation are paused in the current app experience. This is still a development project, not a production-ready accounting service.
 
 ## Current backend
 
@@ -21,25 +21,20 @@ ParchiPocket is a Flutter app for customers, shop owners, and street vendors. It
 - Splash and welcome screens.
 - Explicit local demo mode.
 - Phone / OTP authentication flow.
-- Customer, Shop Owner, and Street Vendor experiences.
+- Home & Family profile setup.
 - Profile and settings screens.
 
-### Customer
-- Home dashboard and bill history.
-- Receipt claim by QR/manual code.
-- Separate read-only claimed receipts.
-- Spending insights, saved shops, and profile screens.
+### Home & Family daily spending (current focus)
+- Daily and current-month spending totals.
+- Manual household purchase entry.
+- Voice-assisted single-purchase entry with transcript, editable fields, and explicit confirmation before saving.
+- Household daily log and category totals calculated from real saved entries.
+- Separate owner-scoped Firestore household expense collection.
+- Existing receipt QR/manual claim remains available as a secondary feature.
 
-### Shop owner
-- Create itemised bills, receipts, and bill history.
-- Expenses, udhaar, and settlement tracking.
-- Receipt claim-code generation.
-- Sales report/export previews and printer setup previews.
-
-### Street vendor
-- Quick billing and multi-item bills.
-- Receipt preview and sales history.
-- Vendor profile.
+### Paused for this iteration
+- Shop Owner and Street Vendor screens remain in the codebase for future development, but their role options and main navigation are hidden.
+- Existing seller bills, expenses, Udhaar, and claimed receipts are not deleted by this change.
 
 ## Technology
 
@@ -55,7 +50,10 @@ ParchiPocket is a Flutter app for customers, shop owners, and street vendors. It
 - Real SMS OTP delivery depends on Firebase project configuration and the applicable billing plan. Use configured Firebase test phone numbers for development.
 - The demo session uses in-memory sample data and resets when the app process restarts.
 - Receipt claim codes are bearer secrets. Firestore rules enforce a single durable claim and receipt integrity, but rules cannot prove that a client used cryptographically secure randomness or provide robust attempt throttling.
-- User-selected roles are app modes, not proof of a real-world business identity.
+- User-selected roles were previously app modes, not proof of a real-world business identity. Shop Owner and Street Vendor modes are currently paused in onboarding; their legacy screens and stored records remain for compatibility.
+- Voice-assisted entry uses platform speech recognition plus a conservative local phrase parser. It is not yet an LLM-based assistant and currently targets one household purchase per utterance.
+- Household entries are owner-scoped and immutable after saving in this initial version; an audited correction flow is still needed.
+- Speech recognition availability and Hindi/Hinglish accuracy vary by device and installed speech service. Review extracted text and amount before saving.
 - Firestore rules must be deployed separately; this repository does not prove which rules are active in Firebase Console.
 - PDF generation, thermal printer integration, nearby-shop discovery, push notifications, and robust offline sync/conflict resolution are not production-complete.
 - Do not treat this project as an accounting system until the release gates below are satisfied.

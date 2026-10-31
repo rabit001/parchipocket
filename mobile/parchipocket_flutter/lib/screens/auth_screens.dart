@@ -39,7 +39,8 @@ class ProfileLoadErrorScreen extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  const Icon(Icons.cloud_off_outlined, size: 42, color: PpColors.error),
+                  const Icon(Icons.cloud_off_outlined,
+                      size: 42, color: PpColors.error),
                   const SizedBox(height: 14),
                   const Text(
                     'Could not verify your account',
@@ -50,15 +51,19 @@ class ProfileLoadErrorScreen extends StatelessWidget {
                   Text(
                     state.cloudError ?? 'Check your connection and try again.',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 12, color: PpColors.secondary),
+                    style: const TextStyle(
+                        fontSize: 12, color: PpColors.secondary),
                   ),
                   const SizedBox(height: 20),
                   PpPrimaryButton(
                     'Retry',
-                    onPressed: state.isCloudLoading ? null : () => state.retryProfileLoad(),
+                    onPressed: state.isCloudLoading
+                        ? null
+                        : () => state.retryProfileLoad(),
                   ),
                   const SizedBox(height: 8),
-                  PpSecondaryButton('Log Out', onPressed: () => state.go('logout')),
+                  PpSecondaryButton('Log Out',
+                      onPressed: () => state.go('logout')),
                 ],
               ),
             ),
@@ -72,17 +77,46 @@ class SplashScreen extends StatelessWidget {
   final AppState state;
   @override
   Widget build(BuildContext context) => Scaffold(
-        body: SafeArea(child: Center(child: Padding(padding: const EdgeInsets.all(26), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: <Widget>[
-          Container(width: 76, height: 76, decoration: const BoxDecoration(color: PpColors.forest, shape: BoxShape.circle), child: const Center(child: Text('P', style: TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.w800)))),
-          const SizedBox(height: 16),
-          const Text('ParchiPocket', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: PpColors.ink)),
-          const SizedBox(height: 10),
-          const Text('Every small purchase, properly recorded.', textAlign: TextAlign.center, style: TextStyle(color: PpColors.secondary, fontSize: 14)),
-          const SizedBox(height: 8),
-          const Text('Bills for customers. Clear records for sellers.', textAlign: TextAlign.center, style: TextStyle(color: PpColors.secondary, fontSize: 12)),
-          const SizedBox(height: 42),
-          PpPrimaryButton('Get Started', onPressed: () => state.go('login')),
-        ])))),
+        body: SafeArea(
+            child: Center(
+                child: Padding(
+                    padding: const EdgeInsets.all(26),
+                    child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: <Widget>[
+                          Container(
+                              width: 76,
+                              height: 76,
+                              decoration: const BoxDecoration(
+                                  color: PpColors.forest,
+                                  shape: BoxShape.circle),
+                              child: const Center(
+                                  child: Text('P',
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 40,
+                                          fontWeight: FontWeight.w800)))),
+                          const SizedBox(height: 16),
+                          const Text('ParchiPocket',
+                              style: TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w800,
+                                  color: PpColors.ink)),
+                          const SizedBox(height: 10),
+                          const Text('Every small purchase, properly recorded.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  color: PpColors.secondary, fontSize: 14)),
+                          const SizedBox(height: 8),
+                          const Text(
+                              'Daily household spending, captured by voice or manually.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  color: PpColors.secondary, fontSize: 12)),
+                          const SizedBox(height: 42),
+                          PpPrimaryButton('Get Started',
+                              onPressed: () => state.go('login')),
+                        ])))),
       );
 }
 
@@ -91,16 +125,32 @@ class LoginScreen extends StatelessWidget {
   final AppState state;
   @override
   Widget build(BuildContext context) => PpScaffold(
-        state: state, title: 'Welcome to ParchiPocket', showBack: true, backTo: 'splash',
+        state: state,
+        title: 'Welcome to ParchiPocket',
+        showBack: true,
+        backTo: 'splash',
         body: ListView(children: <Widget>[
           const SizedBox(height: 28),
-          const Center(child: CircleAvatar(radius: 30, backgroundColor: PpColors.forest, child: Text('P', style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w800)))),
+          const Center(
+              child: CircleAvatar(
+                  radius: 30,
+                  backgroundColor: PpColors.forest,
+                  child: Text('P',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 30,
+                          fontWeight: FontWeight.w800)))),
           const SizedBox(height: 15),
-          const Text('Your everyday bills, in one place.', textAlign: TextAlign.center, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+          const Text('Your daily spending, in one place.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           const SizedBox(height: 28),
-          PpSecondaryButton('Continue with Google (Demo)', icon: Icons.account_circle_outlined, onPressed: () => unawaited(state.enterDemoMode())),
+          PpSecondaryButton('Continue with Google (Demo)',
+              icon: Icons.account_circle_outlined,
+              onPressed: () => unawaited(state.enterDemoMode())),
           const SizedBox(height: 12),
-          PpPrimaryButton('Continue with Phone Number', icon: Icons.phone_android, onPressed: () async {
+          PpPrimaryButton('Continue with Phone Number',
+              icon: Icons.phone_android, onPressed: () async {
             final messenger = ScaffoldMessenger.of(context);
             try {
               final started = await state.beginAuthentication();
@@ -109,19 +159,25 @@ class LoginScreen extends StatelessWidget {
                 state.go('phoneLogin');
               } else {
                 messenger.showSnackBar(SnackBar(
-                  content: Text(state.signOutError ?? 'Could not start sign-in. Please retry.'),
+                  content: Text(state.signOutError ??
+                      'Could not start sign-in. Please retry.'),
                 ));
               }
             } catch (error) {
               if (context.mounted) {
-                messenger.showSnackBar(SnackBar(content: Text('Could not start sign-in: $error')));
+                messenger.showSnackBar(
+                    SnackBar(content: Text('Could not start sign-in: $error')));
               }
             }
           }),
           const SizedBox(height: 16),
-          const PpDemoNotice(message: 'Phone authentication uses Firebase Authentication. Google sign-in is simulated for this prototype.'),
+          const PpDemoNotice(
+              message:
+                  'Phone authentication uses Firebase Authentication. Google sign-in is simulated for this prototype.'),
           const SizedBox(height: 22),
-          TextButton(onPressed: () => unawaited(state.enterDemoMode()), child: const Text('Skip sign-in and explore demo')),
+          TextButton(
+              onPressed: () => unawaited(state.enterDemoMode()),
+              child: const Text('Skip sign-in and explore demo')),
         ]),
       );
 }
@@ -176,7 +232,8 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
     final isLoading = widget.state.isPhoneAuthLoading;
     final errorMessage = widget.state.phoneAuthError;
     final cooldown = widget.state.otpCooldownSecondsRemaining;
-    final buttonText = cooldown > 0 ? 'Send OTP (Wait ${cooldown}s)' : 'Send OTP';
+    final buttonText =
+        cooldown > 0 ? 'Send OTP (Wait ${cooldown}s)' : 'Send OTP';
 
     return PpScaffold(
       state: widget.state,
@@ -186,7 +243,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
         children: <Widget>[
           const SizedBox(height: 8),
           const Text(
-            'Enter your mobile number to keep your bills safe and accessible.',
+            'Enter your mobile number to keep your household spending history safe and accessible.',
             style: TextStyle(fontSize: 13, color: PpColors.secondary),
           ),
           const SizedBox(height: 24),
@@ -297,7 +354,9 @@ class _OtpScreenState extends State<OtpScreen> {
         ? 'your mobile number'
         : widget.state.phoneNumber;
     final cooldown = widget.state.otpCooldownSecondsRemaining;
-    final resendText = cooldown > 0 ? 'Resend OTP (${cooldown}s)' : 'Didn\'t receive code? Resend OTP';
+    final resendText = cooldown > 0
+        ? 'Resend OTP (${cooldown}s)'
+        : 'Didn\'t receive code? Resend OTP';
 
     return PpScaffold(
       state: widget.state,
@@ -342,7 +401,8 @@ class _OtpScreenState extends State<OtpScreen> {
               ),
             )
           else ...<Widget>[
-            PpPrimaryButton('Verify & Continue', icon: Icons.check_circle_outline, onPressed: _verifyCode),
+            PpPrimaryButton('Verify & Continue',
+                icon: Icons.check_circle_outline, onPressed: _verifyCode),
             const SizedBox(height: 12),
             Center(
               child: TextButton(
@@ -360,35 +420,75 @@ class _OtpScreenState extends State<OtpScreen> {
 class RoleSelectionScreen extends StatelessWidget {
   const RoleSelectionScreen({super.key, required this.state});
   final AppState state;
+
   @override
-  Widget build(BuildContext context) => PpScaffold(state: state, title: 'Choose account type', backTo: 'login', body: ListView(children: <Widget>[
-        const SizedBox(height: 5),
-        const Text('How will you use ParchiPocket?', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 7),
-        const Text('Choose the experience that fits your everyday needs.', style: TextStyle(fontSize: 12, color: PpColors.secondary)),
-        const SizedBox(height: 22),
-        _RoleCard(title: 'Customer', detail: 'Save bills and track spending', icon: Icons.receipt_long_outlined, onTap: () => state.setRole(UserRole.customer)),
-        const SizedBox(height: 12),
-        _RoleCard(title: 'Shop Owner', detail: 'Create receipts, record expenses and manage udhaar', icon: Icons.storefront_outlined, onTap: () => state.setRole(UserRole.shopOwner)),
-        const SizedBox(height: 12),
-        _RoleCard(title: 'Street Vendor', detail: 'Quick billing with minimal setup', icon: Icons.shopping_basket_outlined, onTap: () => state.setRole(UserRole.streetVendor)),
-        const SizedBox(height: 14),
-        const PpDemoNotice(message: 'This role selection controls the local prototype. It does not create a real user account.'),
-      ]));
+  Widget build(BuildContext context) => PpScaffold(
+        state: state,
+        title: 'Home & Family',
+        backTo: 'login',
+        body: ListView(children: <Widget>[
+          const SizedBox(height: 5),
+          const Text(
+            'Track everyday spending',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'Record household purchases, by voice or manually, and see where your money goes.',
+            style: TextStyle(fontSize: 12, color: PpColors.secondary),
+          ),
+          const SizedBox(height: 22),
+          _RoleCard(
+            title: 'Home & Family',
+            detail: 'Daily purchases, spending history and monthly insights',
+            icon: Icons.wallet_outlined,
+            onTap: () => state.setRole(UserRole.customer),
+          ),
+        ]),
+      );
 }
 
 class _RoleCard extends StatelessWidget {
-  const _RoleCard({required this.title, required this.detail, required this.icon, required this.onTap});
+  const _RoleCard(
+      {required this.title,
+      required this.detail,
+      required this.icon,
+      required this.onTap});
   final String title, detail;
   final IconData icon;
   final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) => Card(child: InkWell(borderRadius: BorderRadius.circular(14), onTap: onTap, child: Padding(padding: const EdgeInsets.all(16), child: Row(children: <Widget>[
-        Container(width: 48, height: 48, decoration: BoxDecoration(color: PpColors.soft, borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: PpColors.forest, size: 24)),
-        const SizedBox(width: 13),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)), const SizedBox(height: 5), Text(detail, style: const TextStyle(fontSize: 11, color: PpColors.secondary, height: 1.35))])),
-        const Icon(Icons.chevron_right, color: PpColors.forest),
-      ]))));
+  Widget build(BuildContext context) => Card(
+      child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(children: <Widget>[
+                Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                        color: PpColors.soft,
+                        borderRadius: BorderRadius.circular(12)),
+                    child: Icon(icon, color: PpColors.forest, size: 24)),
+                const SizedBox(width: 13),
+                Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                      Text(title,
+                          style: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 5),
+                      Text(detail,
+                          style: const TextStyle(
+                              fontSize: 11,
+                              color: PpColors.secondary,
+                              height: 1.35))
+                    ])),
+                const Icon(Icons.chevron_right, color: PpColors.forest),
+              ]))));
 }
 
 class CustomerSetupScreen extends StatefulWidget {
@@ -397,13 +497,20 @@ class CustomerSetupScreen extends StatefulWidget {
   @override
   State<CustomerSetupScreen> createState() => _CustomerSetupScreenState();
 }
+
 class _CustomerSetupScreenState extends State<CustomerSetupScreen> {
-  late final TextEditingController name = TextEditingController(text: widget.state.customerName);
-  late final TextEditingController email = TextEditingController(text: widget.state.customerEmail);
+  late final TextEditingController name =
+      TextEditingController(text: widget.state.customerName);
+  late final TextEditingController email =
+      TextEditingController(text: widget.state.customerEmail);
   bool _isSubmitting = false;
 
   @override
-  void dispose() { name.dispose(); email.dispose(); super.dispose(); }
+  void dispose() {
+    name.dispose();
+    email.dispose();
+    super.dispose();
+  }
 
   Future<void> _saveProfile() async {
     if (_isSubmitting) return;
@@ -424,13 +531,16 @@ class _CustomerSetupScreenState extends State<CustomerSetupScreen> {
         messenger.showSnackBar(SnackBar(content: Text(message)));
         widget.state.go('customerHome');
       } else {
-        final error = widget.state.cloudError ?? 'Profile was not saved. Please retry.';
+        final error =
+            widget.state.cloudError ?? 'Profile was not saved. Please retry.';
         messenger.showSnackBar(SnackBar(content: Text(error)));
       }
     } catch (error) {
       if (mounted) {
         messenger.showSnackBar(
-          SnackBar(content: Text('Profile was not saved. Check your connection and retry. ($error)')),
+          SnackBar(
+              content: Text(
+                  'Profile was not saved. Check your connection and retry. ($error)')),
         );
       }
     } finally {
@@ -439,15 +549,36 @@ class _CustomerSetupScreenState extends State<CustomerSetupScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => PpScaffold(state: widget.state, title: 'Set up your profile', backTo: 'roleSelection', body: ListView(children: <Widget>[
+  Widget build(BuildContext context) => PpScaffold(
+      state: widget.state,
+      title: 'Set up your profile',
+      backTo: 'login',
+      body: ListView(children: <Widget>[
         const SizedBox(height: 10),
-        const Center(child: CircleAvatar(radius: 34, backgroundColor: PpColors.soft, child: Text('RM', style: TextStyle(fontWeight: FontWeight.w800, color: PpColors.forest, fontSize: 20)))),
+        const Center(
+            child: CircleAvatar(
+                radius: 34,
+                backgroundColor: PpColors.soft,
+                child: Text('RM',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: PpColors.forest,
+                        fontSize: 20)))),
         const SizedBox(height: 12),
-        const Text('Add a profile photo (optional)', textAlign: TextAlign.center, style: TextStyle(color: PpColors.forest, fontWeight: FontWeight.w700, fontSize: 11)),
+        const Text('Add a profile photo (optional)',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                color: PpColors.forest,
+                fontWeight: FontWeight.w700,
+                fontSize: 11)),
         const SizedBox(height: 25),
         PpField(label: 'Full name', controller: name, hint: 'Enter your name'),
         const SizedBox(height: 15),
-        const Text('Verified phone number', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: PpColors.secondary)),
+        const Text('Verified phone number',
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: PpColors.secondary)),
         const SizedBox(height: 7),
         TextField(
           readOnly: true,
@@ -458,9 +589,15 @@ class _CustomerSetupScreenState extends State<CustomerSetupScreen> {
           ),
         ),
         const SizedBox(height: 15),
-        PpField(label: 'Email (optional)', controller: email, hint: 'name@example.com', keyboardType: TextInputType.emailAddress),
+        PpField(
+            label: 'Email (optional)',
+            controller: email,
+            hint: 'name@example.com',
+            keyboardType: TextInputType.emailAddress),
         const SizedBox(height: 18),
-        const PpDemoNotice(message: 'A seller should link a receipt to your account only with verified details and your permission.'),
+        const PpDemoNotice(
+            message:
+                'Your household spending is saved under your own account. Review each entry before saving it.'),
         const SizedBox(height: 20),
         PpPrimaryButton(
           _isSubmitting ? 'Saving…' : 'Save & Continue',
@@ -475,21 +612,31 @@ class ShopSetupScreen extends StatefulWidget {
   @override
   State<ShopSetupScreen> createState() => _ShopSetupScreenState();
 }
+
 class _ShopSetupScreenState extends State<ShopSetupScreen> {
-  late final TextEditingController contactName = TextEditingController(text: widget.state.customerName);
-  late final TextEditingController name = TextEditingController(text: widget.state.shopName);
-  late final TextEditingController address = TextEditingController(text: widget.state.shopAddress);
+  late final TextEditingController contactName =
+      TextEditingController(text: widget.state.customerName);
+  late final TextEditingController name =
+      TextEditingController(text: widget.state.shopName);
+  late final TextEditingController address =
+      TextEditingController(text: widget.state.shopAddress);
   String category = 'Kirana';
   String? _contactNameError;
   bool _isSubmitting = false;
 
   @override
-  void dispose() { contactName.dispose(); name.dispose(); address.dispose(); super.dispose(); }
+  void dispose() {
+    contactName.dispose();
+    name.dispose();
+    address.dispose();
+    super.dispose();
+  }
 
   Future<void> _saveShop() async {
     if (_isSubmitting) return;
     if (contactName.text.trim().isEmpty) {
-      setState(() => _contactNameError = 'Enter the owner/contact full name to continue.');
+      setState(() =>
+          _contactNameError = 'Enter the owner/contact full name to continue.');
       return;
     }
     final messenger = ScaffoldMessenger.of(context);
@@ -512,13 +659,16 @@ class _ShopSetupScreenState extends State<ShopSetupScreen> {
         messenger.showSnackBar(SnackBar(content: Text(message)));
         widget.state.go('shopHome');
       } else {
-        final error = widget.state.cloudError ?? 'Shop profile was not saved. Please retry.';
+        final error = widget.state.cloudError ??
+            'Shop profile was not saved. Please retry.';
         messenger.showSnackBar(SnackBar(content: Text(error)));
       }
     } catch (error) {
       if (mounted) {
         messenger.showSnackBar(
-          SnackBar(content: Text('Shop profile was not saved. Check your connection and retry. ($error)')),
+          SnackBar(
+              content: Text(
+                  'Shop profile was not saved. Check your connection and retry. ($error)')),
         );
       }
     } finally {
@@ -527,10 +677,19 @@ class _ShopSetupScreenState extends State<ShopSetupScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => PpScaffold(state: widget.state, title: 'Register your shop', backTo: 'roleSelection', body: ListView(children: <Widget>[
-        const Text('Set up billing for your business.', style: TextStyle(fontSize: 13, color: PpColors.secondary)),
+  Widget build(BuildContext context) => PpScaffold(
+      state: widget.state,
+      title: 'Register your shop',
+      backTo: 'roleSelection',
+      body: ListView(children: <Widget>[
+        const Text('Set up billing for your business.',
+            style: TextStyle(fontSize: 13, color: PpColors.secondary)),
         const SizedBox(height: 20),
-        const Text('Owner/contact full name', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: PpColors.secondary)),
+        const Text('Owner/contact full name',
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: PpColors.secondary)),
         const SizedBox(height: 7),
         TextField(
           controller: contactName,
@@ -544,18 +703,36 @@ class _ShopSetupScreenState extends State<ShopSetupScreen> {
         ),
         if (_contactNameError != null) ...<Widget>[
           const SizedBox(height: 6),
-          Text(_contactNameError!, style: const TextStyle(color: PpColors.error, fontSize: 12)),
+          Text(_contactNameError!,
+              style: const TextStyle(color: PpColors.error, fontSize: 12)),
         ],
         const SizedBox(height: 15),
-        PpField(label: 'Shop name', controller: name, hint: 'e.g. Sharma Kirana Store'),
+        PpField(
+            label: 'Shop name',
+            controller: name,
+            hint: 'e.g. Sharma Kirana Store'),
         const SizedBox(height: 15),
-        const Text('Shop category', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: PpColors.secondary)),
+        const Text('Shop category',
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: PpColors.secondary)),
         const SizedBox(height: 8),
-        DropdownButtonFormField<String>(initialValue: category, items: const <String>['Kirana', 'General', 'Food', 'Other'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => category = v ?? 'Kirana')),
+        DropdownButtonFormField<String>(
+            initialValue: category,
+            items: const <String>['Kirana', 'General', 'Food', 'Other']
+                .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                .toList(),
+            onChanged: (v) => setState(() => category = v ?? 'Kirana')),
         const SizedBox(height: 15),
-        PpField(label: 'Shop address', controller: address, hint: 'Street, area, city'),
+        PpField(
+            label: 'Shop address',
+            controller: address,
+            hint: 'Street, area, city'),
         const SizedBox(height: 17),
-        const PpDemoNotice(message: 'GSTIN and Bluetooth printer setup can be added later. This screen does not register a legal business.'),
+        const PpDemoNotice(
+            message:
+                'GSTIN and Bluetooth printer setup can be added later. This screen does not register a legal business.'),
         const SizedBox(height: 20),
         PpPrimaryButton(
           _isSubmitting ? 'Saving…' : 'Create Shop Profile',
@@ -570,20 +747,28 @@ class VendorSetupScreen extends StatefulWidget {
   @override
   State<VendorSetupScreen> createState() => _VendorSetupScreenState();
 }
+
 class _VendorSetupScreenState extends State<VendorSetupScreen> {
-  late final TextEditingController contactName = TextEditingController(text: widget.state.customerName);
-  late final TextEditingController name = TextEditingController(text: widget.state.vendorName);
+  late final TextEditingController contactName =
+      TextEditingController(text: widget.state.customerName);
+  late final TextEditingController name =
+      TextEditingController(text: widget.state.vendorName);
   String category = 'Tea / Snacks';
   String? _contactNameError;
   bool _isSubmitting = false;
 
   @override
-  void dispose() { contactName.dispose(); name.dispose(); super.dispose(); }
+  void dispose() {
+    contactName.dispose();
+    name.dispose();
+    super.dispose();
+  }
 
   Future<void> _saveVendor() async {
     if (_isSubmitting) return;
     if (contactName.text.trim().isEmpty) {
-      setState(() => _contactNameError = 'Enter the owner/contact full name to continue.');
+      setState(() =>
+          _contactNameError = 'Enter the owner/contact full name to continue.');
       return;
     }
     final messenger = ScaffoldMessenger.of(context);
@@ -605,13 +790,16 @@ class _VendorSetupScreenState extends State<VendorSetupScreen> {
         messenger.showSnackBar(SnackBar(content: Text(message)));
         widget.state.go('vendorHome');
       } else {
-        final error = widget.state.cloudError ?? 'Vendor profile was not saved. Please retry.';
+        final error = widget.state.cloudError ??
+            'Vendor profile was not saved. Please retry.';
         messenger.showSnackBar(SnackBar(content: Text(error)));
       }
     } catch (error) {
       if (mounted) {
         messenger.showSnackBar(
-          SnackBar(content: Text('Vendor profile was not saved. Check your connection and retry. ($error)')),
+          SnackBar(
+              content: Text(
+                  'Vendor profile was not saved. Check your connection and retry. ($error)')),
         );
       }
     } finally {
@@ -620,10 +808,19 @@ class _VendorSetupScreenState extends State<VendorSetupScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => PpScaffold(state: widget.state, title: 'Quick setup', backTo: 'roleSelection', body: ListView(children: <Widget>[
-        const Text('Start billing without creating a product catalogue.', style: TextStyle(fontSize: 13, color: PpColors.secondary)),
+  Widget build(BuildContext context) => PpScaffold(
+      state: widget.state,
+      title: 'Quick setup',
+      backTo: 'roleSelection',
+      body: ListView(children: <Widget>[
+        const Text('Start billing without creating a product catalogue.',
+            style: TextStyle(fontSize: 13, color: PpColors.secondary)),
         const SizedBox(height: 22),
-        const Text('Owner/contact full name', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: PpColors.secondary)),
+        const Text('Owner/contact full name',
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: PpColors.secondary)),
         const SizedBox(height: 7),
         TextField(
           controller: contactName,
@@ -637,22 +834,41 @@ class _VendorSetupScreenState extends State<VendorSetupScreen> {
         ),
         if (_contactNameError != null) ...<Widget>[
           const SizedBox(height: 6),
-          Text(_contactNameError!, style: const TextStyle(color: PpColors.error, fontSize: 12)),
+          Text(_contactNameError!,
+              style: const TextStyle(color: PpColors.error, fontSize: 12)),
         ],
         const SizedBox(height: 15),
-        PpField(label: 'Vendor or stall name', controller: name, hint: 'e.g. Raju Tea Stall'),
+        PpField(
+            label: 'Vendor or stall name',
+            controller: name,
+            hint: 'e.g. Raju Tea Stall'),
         const SizedBox(height: 15),
-        const Text('What do you usually sell?', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: PpColors.secondary)),
+        const Text('What do you usually sell?',
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: PpColors.secondary)),
         const SizedBox(height: 7),
-        DropdownButtonFormField<String>(initialValue: category, items: const <String>['Tea / Snacks', 'Vegetables', 'Street food', 'Other'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => category = v ?? 'Other')),
+        DropdownButtonFormField<String>(
+            initialValue: category,
+            items: const <String>[
+              'Tea / Snacks',
+              'Vegetables',
+              'Street food',
+              'Other'
+            ].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+            onChanged: (v) => setState(() => category = v ?? 'Other')),
         const SizedBox(height: 20),
-        const PpDemoNotice(message: 'Quick mode keeps setup minimal. Item entry, saving and receipt generation are local demo flows.'),
+        const PpDemoNotice(
+            message:
+                'Quick mode keeps setup minimal. Item entry, saving and receipt generation are local demo flows.'),
         const SizedBox(height: 20),
         PpPrimaryButton(
           _isSubmitting ? 'Saving…' : 'Start Quick Billing',
           onPressed: _isSubmitting ? null : _saveVendor,
         ),
         const SizedBox(height: 10),
-        PpSecondaryButton('Skip for now', onPressed: () => widget.state.go('vendorHome')),
+        PpSecondaryButton('Skip for now',
+            onPressed: () => widget.state.go('vendorHome')),
       ]));
 }

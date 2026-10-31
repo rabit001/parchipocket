@@ -61,7 +61,7 @@ class _ReceiptClaimIssueScreenState extends State<ReceiptClaimIssueScreen> {
               message: 'Open a bill before issuing a claim code.')
           : ListView(children: <Widget>[
               Text(
-                'Create a one-time claim code for ${bill.displayNumber}. The code expires within 24 hours and can be used by one customer account.',
+                  'Create a one-time claim code for ${bill.displayNumber}. The code expires within 24 hours and can be used by one customer account.',
                   style: const TextStyle(
                       fontSize: 12, color: PpColors.secondary, height: 1.5)),
               const SizedBox(height: 20),
@@ -95,7 +95,9 @@ class _ReceiptClaimIssueScreenState extends State<ReceiptClaimIssueScreen> {
                         color: PpColors.forest, size: 72)),
                 const SizedBox(height: 8),
                 if (_issueError != null) ...<Widget>[
-                  Text(_issueError!, style: const TextStyle(color: PpColors.error, fontSize: 12)),
+                  Text(_issueError!,
+                      style:
+                          const TextStyle(color: PpColors.error, fontSize: 12)),
                   const SizedBox(height: 8),
                 ],
                 PpPrimaryButton(
@@ -104,7 +106,14 @@ class _ReceiptClaimIssueScreenState extends State<ReceiptClaimIssueScreen> {
                     onPressed: _submitting ? null : _issue),
                 if (_issueError != null) ...<Widget>[
                   const SizedBox(height: 8),
-                  PpSecondaryButton('Generate a fresh code', icon: Icons.refresh, onPressed: _submitting ? null : () => setState(() { _code = widget.state.newReceiptClaimCode(); _issueError = null; })),
+                  PpSecondaryButton('Generate a fresh code',
+                      icon: Icons.refresh,
+                      onPressed: _submitting
+                          ? null
+                          : () => setState(() {
+                                _code = widget.state.newReceiptClaimCode();
+                                _issueError = null;
+                              })),
                 ],
                 const SizedBox(height: 10),
                 const PpDemoNotice(

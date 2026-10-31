@@ -35,7 +35,7 @@ class ControlledFirebaseAuth extends MockFirebaseAuth {
   }
 
   final StreamController<User?> events =
-    StreamController<User?>.broadcast(sync: true);
+      StreamController<User?>.broadcast(sync: true);
 
   @override
   Stream<User?> authStateChanges() => events.stream;
@@ -86,6 +86,18 @@ class CountingFirestoreService extends FirestoreService {
     expenseReads++;
     return <DemoExpense>[];
   }
+
+  @override
+  String newHouseholdExpenseId() => 'test-household-expense';
+
+  @override
+  Future<void> addHouseholdExpense(HouseholdExpense expense) async {
+    writes++;
+  }
+
+  @override
+  Future<List<HouseholdExpense>> loadHouseholdExpenses() async =>
+      <HouseholdExpense>[];
 
   @override
   Future<Set<String>> loadSavedShops() async {
@@ -187,6 +199,10 @@ class ProfileFirestoreService extends FirestoreService {
   Future<List<DemoExpense>> loadExpenses() async => loadedExpenses;
 
   @override
+  Future<List<HouseholdExpense>> loadHouseholdExpenses() async =>
+      <HouseholdExpense>[];
+
+  @override
   Future<Set<String>> loadSavedShops() async => loadedSavedShops;
 
   @override
@@ -219,6 +235,7 @@ class BlockingExpenseFirestoreService extends FirestoreService {
   @override
   Future<void> addExpense(DemoExpense expense) => expenseWrite.future;
 }
+
 class InMemoryBillFirestoreService extends FirestoreService {
   int _nextId = 0;
   String? firstId;
@@ -351,7 +368,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(state.isDemoMode, isTrue);
-      expect(state.page, 'roleSelection');
+      expect(state.page, 'customerSetup');
       expect(state.cloudError, isNull);
       expect(state.isCloudLoading, isFalse);
       expect(service.profileReads, 0);
@@ -391,7 +408,8 @@ void main() {
       state.dispose();
     });
 
-    test('late expense failure from a previous session cannot contaminate demo mode',
+    test(
+        'late expense failure from a previous session cannot contaminate demo mode',
         () async {
       final auth = MockFirebaseAuth();
       final service = BlockingExpenseFirestoreService();
@@ -437,7 +455,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(state.isDemoMode, isTrue);
-      expect(state.page, 'roleSelection');
+      expect(state.page, 'customerSetup');
       expect(state.cloudError, isNull);
       expect(service.billReads, 0);
       expect(service.claimedReceiptReads, 0);
@@ -550,73 +568,19 @@ void main() {
   });
 
   group('AppState local demo workflows & serialization', () {
-  test('createBill rejects non-finite prices', () async {
-    final state = AppState();
-    final initialBillCount = state.bills.length;
-
-    await expectLater(
-      state.createBill(
-        items: <BillLine>[
-          BillLine(
-            name: 'Milk',
-            quantity: 1,
-            unitPrice: double.infinity,
-          ),
-        ],
-        paymentMode: 'Cash',
-        vendorMode: false,
-      ),
-      throwsA(isA<ArgumentError>()),
-    );
-
-    expect(state.bills, hasLength(initialBillCount));
-    expect(state.selectedBill, isNull);
-    state.dispose();
-  });
-
-  test('addExpense rejects invalid amounts', () async {
-    final state = AppState();
-    final initialExpenseCount = state.expenses.length;
-
-    for (final amount in <double>[
-      0,
-      -1,
-      double.nan,
-      double.infinity,
-    ]) {
-      expect(
-        await state.addExpense(
-          title: 'Invalid expense',
-          category: 'Other',
-          amount: amount,
-        ),
-        isFalse,
-      );
-    }
-
-    expect(state.expenses, hasLength(initialExpenseCount));
-    state.dispose();
-  });
-  test('createBill rejects invalid quantity, empty name and overflow', () async {
-    final invalidItems = <List<BillLine>>[
-      <BillLine>[
-        BillLine(name: 'Milk', quantity: 0, unitPrice: 10),
-      ],
-      <BillLine>[
-        BillLine(name: '   ', quantity: 1, unitPrice: 10),
-      ],
-      <BillLine>[
-        BillLine(name: 'Milk', quantity: 2, unitPrice: double.maxFinite),
-      ],
-    ];
-
-    for (final items in invalidItems) {
+    test('createBill rejects non-finite prices', () async {
       final state = AppState();
       final initialBillCount = state.bills.length;
 
       await expectLater(
-          state.createBill(
-          items: items,
+        state.createBill(
+          items: <BillLine>[
+            BillLine(
+              name: 'Milk',
+              quantity: 1,
+              unitPrice: double.infinity,
+            ),
+          ],
           paymentMode: 'Cash',
           vendorMode: false,
         ),
@@ -626,8 +590,63 @@ void main() {
       expect(state.bills, hasLength(initialBillCount));
       expect(state.selectedBill, isNull);
       state.dispose();
-    }
-  });
+    });
+
+    test('addExpense rejects invalid amounts', () async {
+      final state = AppState();
+      final initialExpenseCount = state.expenses.length;
+
+      for (final amount in <double>[
+        0,
+        -1,
+        double.nan,
+        double.infinity,
+      ]) {
+        expect(
+          await state.addExpense(
+            title: 'Invalid expense',
+            category: 'Other',
+            amount: amount,
+          ),
+          isFalse,
+        );
+      }
+
+      expect(state.expenses, hasLength(initialExpenseCount));
+      state.dispose();
+    });
+    test('createBill rejects invalid quantity, empty name and overflow',
+        () async {
+      final invalidItems = <List<BillLine>>[
+        <BillLine>[
+          BillLine(name: 'Milk', quantity: 0, unitPrice: 10),
+        ],
+        <BillLine>[
+          BillLine(name: '   ', quantity: 1, unitPrice: 10),
+        ],
+        <BillLine>[
+          BillLine(name: 'Milk', quantity: 2, unitPrice: double.maxFinite),
+        ],
+      ];
+
+      for (final items in invalidItems) {
+        final state = AppState();
+        final initialBillCount = state.bills.length;
+
+        await expectLater(
+          state.createBill(
+            items: items,
+            paymentMode: 'Cash',
+            vendorMode: false,
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+
+        expect(state.bills, hasLength(initialBillCount));
+        expect(state.selectedBill, isNull);
+        state.dispose();
+      }
+    });
     test('creates a bill and calculates its total', () async {
       final state = AppState();
       final bill = await state.createBill(
@@ -990,8 +1009,7 @@ void main() {
       state.dispose();
     });
 
-    test(
-        'signOut completes when Firebase emits auth change synchronously',
+    test('signOut completes when Firebase emits auth change synchronously',
         () async {
       final auth = ControlledFirebaseAuth()..user = MockUser();
       final state = AppState(auth: auth)
@@ -1092,10 +1110,11 @@ void main() {
 
       expect(missingResult, CloudProfileStatus.missing);
       expect(missingState.profileStatus, CloudProfileStatus.missing);
-      expect(missingState.page, 'roleSelection');
+      expect(missingState.page, 'customerSetup');
       expect(missingState.role, UserRole.streetVendor);
       missingState.setRole(UserRole.shopOwner);
-      expect(missingState.role, UserRole.shopOwner);
+      expect(missingState.role, UserRole.customer);
+      expect(missingState.page, 'customerSetup');
       missingState.dispose();
     });
 
@@ -1287,6 +1306,59 @@ void main() {
     });
 
     test(
+        'household expenses validate amounts and stay separate from business expenses',
+        () async {
+      final state = AppState();
+      final initialLength = state.householdExpenses.length;
+
+      final rejected = await state.addHouseholdExpense(
+        title: 'Milk',
+        category: 'Dairy',
+        amount: 0,
+      );
+      expect(rejected, isFalse);
+      expect(state.householdExpenses.length, initialLength);
+
+      final saved = await state.addHouseholdExpense(
+        title: 'Milk',
+        category: 'Dairy',
+        amount: 60,
+        source: 'voice',
+      );
+      expect(saved, isTrue);
+      expect(state.householdExpenses.first.title, 'Milk');
+      expect(state.householdExpenses.first.category, 'Dairy');
+      expect(state.householdExpenses.first.amount, 60);
+      expect(state.householdExpenses.first.source, 'voice');
+      expect(state.page, 'householdExpenses');
+      state.dispose();
+    });
+
+    test('cloud household expense uses its own owner-scoped write', () async {
+      final service = CountingFirestoreService();
+      final state = AppState()
+        ..isDemoMode = false
+        ..auth = MockFirebaseAuth()
+        ..firestoreService = service;
+      state.householdExpenses.clear();
+
+      final saved = await state.addHouseholdExpense(
+        title: 'Vegetables',
+        category: 'Vegetables',
+        amount: 250,
+        source: 'manual',
+      );
+
+      expect(saved, isTrue);
+      expect(service.writes, 1);
+      expect(state.householdExpenses.single.id, 'test-household-expense');
+      expect(state.householdExpenses.single.title, 'Vegetables');
+      expect(state.page, 'householdExpenses');
+      expect(state.isCloudLoading, isFalse);
+      state.dispose();
+    });
+
+    test(
         'role consistency: new user sets initial role, existing cloud user preserves role',
         () {
       final state = AppState();
@@ -1295,20 +1367,23 @@ void main() {
       state.profileStatus = CloudProfileStatus.missing;
 
       state.setRole(UserRole.shopOwner);
-      expect(state.role, UserRole.shopOwner);
-      expect(state.page, 'shopSetup');
+      expect(state.role, UserRole.customer);
+      expect(state.page, 'customerSetup');
 
+      // Existing stored seller roles remain intact; only the active experience
+      // is redirected while these modes are paused.
+      state.role = UserRole.shopOwner;
       state.hasExistingCloudProfile = true;
       state.profileStatus = CloudProfileStatus.loaded;
       state.setRole(UserRole.customer);
       expect(state.role,
-          UserRole.shopOwner); // Role is preserved for existing cloud user
+          UserRole.shopOwner); // Stored profile role is not rewritten
       expect(state.lastNotice, contains('locked'));
       state.dispose();
     });
 
     test(
-        'navigateAfterAuth routes existing user to home and new user to roleSelection',
+        'navigateAfterAuth routes profiles to household home and new users to setup',
         () {
       final state = AppState();
       state.isDemoMode = false;
@@ -1324,19 +1399,19 @@ void main() {
       state.role = UserRole.shopOwner;
       state.profileStatus = CloudProfileStatus.loaded;
       state.navigateAfterAuth();
-      expect(state.page, 'shopHome');
+      expect(state.page, 'customerHome');
 
       // Existing street vendor
       state.role = UserRole.streetVendor;
       state.profileStatus = CloudProfileStatus.loaded;
       state.navigateAfterAuth();
-      expect(state.page, 'vendorHome');
+      expect(state.page, 'customerHome');
 
       // New user without profile
       state.hasExistingCloudProfile = false;
       state.profileStatus = CloudProfileStatus.missing;
       state.navigateAfterAuth();
-      expect(state.page, 'roleSelection');
+      expect(state.page, 'customerSetup');
 
       state.dispose();
     });

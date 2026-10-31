@@ -178,6 +178,17 @@ service cloud.firestore {
              data.createdAt is timestamp;
     }
 
+    function isValidHouseholdExpense(data) {
+      return data.keys().hasAll(['id', 'title', 'category', 'amount', 'createdAt', 'source']) &&
+             data.keys().hasOnly(['id', 'title', 'category', 'amount', 'createdAt', 'source']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 100 &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 100 &&
+             data.category is string && data.category.size() > 0 && data.category.size() <= 50 &&
+             data.amount is number && data.amount > 0 && data.amount <= 10000000 &&
+             data.createdAt is timestamp &&
+             data.source in ['manual', 'voice'];
+    }
+
     function isValidSavedShop(data) {
       return data.keys().hasAll(['shopName']) &&
              data.keys().hasOnly(['shopName', 'updatedAt']) &&
@@ -208,6 +219,16 @@ service cloud.firestore {
         allow update: if false;
         // Financial expense deletion policy: DISALLOWED to preserve financial audit trail.
         allow delete: if false;
+      }
+
+      match /householdExpenses/{expenseId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          expenseId == request.resource.data.id &&
+          isValidHouseholdExpense(request.resource.data);
+        // Keep saved household entries immutable until a reviewed correction
+        // and audit-history flow is implemented.
+        allow update, delete: if false;
       }
 
       match /savedShops/{shopId} {
