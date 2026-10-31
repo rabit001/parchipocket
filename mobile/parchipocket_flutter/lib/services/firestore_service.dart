@@ -34,6 +34,18 @@ class ReceiptClaimException implements Exception {
   String toString() => message;
 }
 
+class HouseholdExpensePage {
+  const HouseholdExpensePage({
+    required this.items,
+    this.lastDocument,
+    required this.hasMore,
+  });
+
+  final List<HouseholdExpense> items;
+  final DocumentSnapshot<Map<String, dynamic>>? lastDocument;
+  final bool hasMore;
+}
+
 class FirestoreService {
   FirestoreService({FirebaseFirestore? firestore, FirebaseAuth? auth})
       : _firestore = firestore,
@@ -376,28 +388,56 @@ class FirestoreService {
     final user = _userDoc;
     if (user == null) return <ClaimedReceipt>[];
     final index = await user.collection('claimedReceiptsIndex').get();
+    if (index.docs.isEmpty) return <ClaimedReceipt>[];
+
     final results = <ClaimedReceipt>[];
-    for (final entry in index.docs) {
-      final data = entry.data();
-      final ownerUid = data['ownerUid'];
-      final billId = data['sourceBillId'];
-      if (ownerUid is! String || billId is! String) continue;
-      final copy = await user
-          .collection('claimedReceipts')
-          .doc(ownerUid)
-          .collection('bills')
-          .doc(billId)
-          .get();
-      if (!copy.exists) {
-        throw const ReceiptClaimException(
-            'A saved receipt copy is missing. Contact support before retrying this claim.');
+    final docs = index.docs;
+    const effectiveBatchSize = 10;
+
+    for (var i = 0; i < docs.length; i += effectiveBatchSize) {
+      final chunk = docs.sublist(i, min(i + effectiveBatchSize, docs.length));
+      final chunkResults = await Future.wait(
+        chunk.map((entry) async {
+          final data = entry.data();
+          final ownerUid = data['ownerUid'];
+          final billId = data['sourceBillId'];
+          if (ownerUid is! String || billId is! String) return null;
+          final copy = await user
+              .collection('claimedReceipts')
+              .doc(ownerUid)
+              .collection('bills')
+              .doc(billId)
+              .get();
+          if (!copy.exists) {
+            throw const ReceiptClaimException(
+                'A saved receipt copy is missing. Contact support before retrying this claim.');
+          }
+          final copyData = copy.data();
+          if (copyData == null) {
+            throw const ReceiptClaimException(
+                'A saved receipt copy is missing. Contact support before retrying this claim.');
+          }
+          final receiptMap = copyData['receipt'];
+          final claimedAtTs = copyData['claimedAt'];
+          if (receiptMap is! Map<String, dynamic> || claimedAtTs is! Timestamp) {
+            throw const ReceiptClaimException(
+                'Saved receipt copy has invalid or corrupted data.');
+          }
+          return _claimedReceipt(
+            ownerUid,
+            billId,
+            receiptMap,
+            claimedAtTs,
+          );
+        }),
+      );
+      for (final r in chunkResults) {
+        if (r != null) {
+          results.add(r);
+        }
       }
-      results.add(_claimedReceipt(
-          ownerUid,
-          billId,
-          copy.data()!['receipt'] as Map<String, dynamic>,
-          copy.data()!['claimedAt'] as Timestamp));
     }
+
     results.sort((a, b) => b.claimedAt.compareTo(a.claimedAt));
     return results;
   }
@@ -696,9 +736,70 @@ class FirestoreService {
         existingDate.nanoseconds == requestedDate.nanoseconds;
   }
 
+  Future<HouseholdExpensePage> loadHouseholdExpensesPage({
+    DocumentSnapshot<Map<String, dynamic>>? startAfter,
+    int limit = 50,
+  }) async {
+    try {
+      final doc = _userDoc;
+      if (doc == null) {
+        final fallbackItems = await loadHouseholdExpenses();
+        return HouseholdExpensePage(
+          items: fallbackItems,
+          hasMore: false,
+        );
+      }
+      Query<Map<String, dynamic>> query = doc
+          .collection('householdExpenses')
+          .orderBy('createdAt', descending: true);
+      if (startAfter != null) {
+        query = query.startAfterDocument(startAfter);
+      }
+      query = query.limit(limit);
+      final snapshot = await query.get();
+      final items = snapshot.docs.map((docSnap) {
+        final data = docSnap.data();
+        final createdAtValue = data['createdAt'];
+        DateTime createdAt = DateTime.now();
+        if (createdAtValue is Timestamp) {
+          createdAt = createdAtValue.toDate();
+        } else if (createdAtValue is String) {
+          createdAt = DateTime.tryParse(createdAtValue) ?? DateTime.now();
+        }
+        return HouseholdExpense(
+          id: docSnap.id,
+          title: data['title'] as String? ?? '',
+          category: data['category'] as String? ?? 'Other',
+          amount: (data['amount'] as num?)?.toDouble() ?? 0,
+          createdAt: createdAt,
+          source: data['source'] as String? ?? 'manual',
+        );
+      }).toList();
+
+      final lastDoc = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
+      final hasMore = snapshot.docs.length == limit;
+
+      return HouseholdExpensePage(
+        items: items,
+        lastDocument: lastDoc,
+        hasMore: hasMore,
+      );
+    } catch (e) {
+      if ((e is FirebaseException && e.code == 'no-app') ||
+          e.toString().contains('no-app')) {
+        final fallbackItems = await loadHouseholdExpenses();
+        return HouseholdExpensePage(
+          items: fallbackItems,
+          hasMore: false,
+        );
+      }
+      rethrow;
+    }
+  }
+
   Future<List<HouseholdExpense>> loadHouseholdExpenses() async {
     final doc = _userDoc;
-    if (doc == null) return [];
+    if (doc == null) return <HouseholdExpense>[];
     final snapshot = await doc
         .collection('householdExpenses')
         .orderBy('createdAt', descending: true)

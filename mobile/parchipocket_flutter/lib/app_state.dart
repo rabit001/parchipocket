@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart' show DocumentSnapshot;
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -193,6 +194,9 @@ class AppState extends ChangeNotifier {
   final List<ClaimedReceipt> claimedReceipts = <ClaimedReceipt>[];
   final List<DemoExpense> expenses = <DemoExpense>[];
   final List<HouseholdExpense> householdExpenses = <HouseholdExpense>[];
+  bool hasMoreHouseholdExpenses = false;
+  bool isLoadingMoreHouseholdExpenses = false;
+  DocumentSnapshot<Map<String, dynamic>>? _lastHouseholdExpenseDoc;
   final Set<String> savedShops = <String>{};
   int _billSequence = 10500;
   int _vendorBillSequence = 2403;
@@ -347,9 +351,35 @@ class AppState extends ChangeNotifier {
       if (!isCurrentLoad()) return CloudProfileStatus.unknown;
       final cloudExpenses = await firestoreService.loadExpenses();
       if (!isCurrentLoad()) return CloudProfileStatus.unknown;
-      final cloudHouseholdExpenses =
-          await firestoreService.loadHouseholdExpenses();
+      final now = DateTime.now();
+      final startOfMonth = DateTime(now.year, now.month, 1);
+      final initialExpensePage =
+          await firestoreService.loadHouseholdExpensesPage(limit: 50);
       if (!isCurrentLoad()) return CloudProfileStatus.unknown;
+
+      final cloudHouseholdExpenses =
+          <HouseholdExpense>[...initialExpensePage.items];
+      var lastDoc = initialExpensePage.lastDocument;
+      var hasMore = initialExpensePage.hasMore;
+
+      while (hasMore && lastDoc != null && cloudHouseholdExpenses.isNotEmpty) {
+        final oldestLoaded = cloudHouseholdExpenses.last.createdAt;
+        if (oldestLoaded.isBefore(startOfMonth)) {
+          break;
+        }
+        final nextPage = await firestoreService.loadHouseholdExpensesPage(
+          startAfter: lastDoc,
+          limit: 50,
+        );
+        if (!isCurrentLoad()) return CloudProfileStatus.unknown;
+        if (nextPage.items.isEmpty) {
+          hasMore = false;
+          break;
+        }
+        cloudHouseholdExpenses.addAll(nextPage.items);
+        lastDoc = nextPage.lastDocument;
+        hasMore = nextPage.hasMore;
+      }
       final cloudSavedShops = await firestoreService.loadSavedShops();
       if (!isCurrentLoad()) return CloudProfileStatus.unknown;
       final cloudClaims = await firestoreService.loadClaimedReceipts();
@@ -367,6 +397,8 @@ class AppState extends ChangeNotifier {
       householdExpenses
         ..clear()
         ..addAll(cloudHouseholdExpenses);
+      _lastHouseholdExpenseDoc = lastDoc;
+      hasMoreHouseholdExpenses = hasMore;
       savedShops
         ..clear()
         ..addAll(cloudSavedShops);
@@ -576,6 +608,9 @@ class AppState extends ChangeNotifier {
     savedShops.clear();
     selectedBill = null;
     selectedClaimedReceipt = null;
+    hasMoreHouseholdExpenses = false;
+    isLoadingMoreHouseholdExpenses = false;
+    _lastHouseholdExpenseDoc = null;
   }
 
   bool _isCurrentAuthenticatedSession(String uid, int generation) =>
@@ -614,6 +649,9 @@ class AppState extends ChangeNotifier {
     selectedBill = null;
     selectedClaimedReceipt = null;
     claimedReceipts.clear();
+    hasMoreHouseholdExpenses = false;
+    isLoadingMoreHouseholdExpenses = false;
+    _lastHouseholdExpenseDoc = null;
     lastNotice = '';
     supportReference = 'PP-SUP-1042';
     language = 'English';
@@ -1235,6 +1273,46 @@ class AppState extends ChangeNotifier {
         isCloudLoading = false;
         notifyListeners();
       }
+    }
+  }
+
+  Future<bool> loadMoreHouseholdExpenses({int pageSize = 50}) async {
+    if (isDemoMode) {
+      hasMoreHouseholdExpenses = false;
+      return false;
+    }
+    if (isLoadingMoreHouseholdExpenses || !hasMoreHouseholdExpenses) return false;
+    final lastDoc = _lastHouseholdExpenseDoc;
+    if (lastDoc == null) {
+      hasMoreHouseholdExpenses = false;
+      return false;
+    }
+
+    isLoadingMoreHouseholdExpenses = true;
+    notifyListeners();
+
+    try {
+      final page = await firestoreService.loadHouseholdExpensesPage(
+        startAfter: lastDoc,
+        limit: pageSize,
+      );
+      if (_disposed || isDemoMode) return false;
+
+      final existingIds = householdExpenses.map((e) => e.id).toSet();
+      for (final item in page.items) {
+        if (!existingIds.contains(item.id)) {
+          householdExpenses.add(item);
+          existingIds.add(item.id);
+        }
+      }
+      _lastHouseholdExpenseDoc = page.lastDocument;
+      hasMoreHouseholdExpenses = page.hasMore;
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      isLoadingMoreHouseholdExpenses = false;
+      notifyListeners();
     }
   }
 

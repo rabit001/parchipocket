@@ -423,6 +423,25 @@ class HouseholdExpensesScreen extends StatelessWidget {
                 ),
               ),
             ),
+          if (state.hasMoreHouseholdExpenses) ...<Widget>[
+            const SizedBox(height: 12),
+            Center(
+              child: state.isLoadingMoreHouseholdExpenses
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : TextButton.icon(
+                      onPressed: () => state.loadMoreHouseholdExpenses(),
+                      icon: const Icon(Icons.expand_more, size: 18),
+                      label: const Text('Load older purchases'),
+                    ),
+            ),
+          ],
       ]),
     );
   }
