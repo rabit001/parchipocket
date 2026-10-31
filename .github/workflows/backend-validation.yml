@@ -167,4 +167,4 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
             set -eu
-            npx --yes firebase-tools@latest emulators:exec --only auth,firestore --project demo-parchipocket-phase4 "cd mobile/parchipocket_flutter && flutter pub get && flutter test integration_test/firestore_service_emulator_test.dart -d emulator-5554 --reporter compact"
+            npx --yes firebase-tools@latest emulators:exec --only auth,firestore --project demo-parchipocket-phase4 "cd mobile/parchipocket_flutter && flutter pub get && flutter test integration_test/firestore_service_emulator_test.dart -d emulator-5554 --reporter compact && flutter test integration_test/daily_log_pagination_emulator_test.dart -d emulator-5554 --reporter compact"
