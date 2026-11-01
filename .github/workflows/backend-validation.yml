@@ -192,7 +192,7 @@ jobs:
         id: release-meta
         shell: bash
         run: |
-          version="$(awk '/^version:/ { split($2, parts, "+"); print parts[1]; exit }' mobile/parchipocket_flutter/pubspec.yaml)"
+          version="$(awk '/^version:/ { value=$2; sub(/\\+.*/, "", value); print value; exit }' mobile/parchipocket_flutter/pubspec.yaml)"
           if [[ -z "$version" ]]; then
             echo "Could not read the Flutter app version from pubspec.yaml." >&2
             exit 1
