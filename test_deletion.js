@@ -275,9 +275,9 @@ async function runAllTests() {
     leaseExpiresAt: new Date(Date.now() - 1000),
   });
 
-  const lease2 = await session2.acquireLease();
+  const takeoverLease = await session2.acquireLease();
   assert(
-    lease2.acquired === true && session2.generation === 2,
+    takeoverLease.acquired === true && session2.generation === 2,
     '3.8 Worker 2 acquires generation 2 after Worker 1 lease expires'
   );
 
