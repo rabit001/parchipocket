@@ -111,7 +111,7 @@ class PrivacyScreen extends StatelessWidget {
                           fontWeight: FontWeight.w800)),
                   const SizedBox(height: 6),
                   const Text(
-                      'Permanent action in the live app. Identity re-verification and a final confirmation should be required.',
+                      'Permanent action. SMS re-verification and a final confirmation are required.',
                       style: TextStyle(fontSize: 10, color: PpColors.ink)),
                   const SizedBox(height: 8),
                   OutlinedButton(
@@ -121,9 +121,10 @@ class PrivacyScreen extends StatelessWidget {
         const SizedBox(height: 14),
         PpSecondaryButton('Log Out', onPressed: () => state.go('logout')),
         const SizedBox(height: 10),
-        const PpDemoNotice(
-            message:
-                'This screen previews privacy options. No personal data is deleted and no remote privacy service is connected.'),
+        if (state.isDemoMode)
+          const PpDemoNotice(
+              message:
+                  'In demo mode, no server-side account or personal data is deleted.'),
       ]));
 }
 
