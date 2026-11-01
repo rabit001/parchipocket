@@ -93,7 +93,7 @@ The account-deletion callable is configured with `enforceAppCheck: true`. Do not
 
 ### Web account-deletion portal
 
-The deletion page is a separate Firebase Web app client. Register a Web app in the same Firebase project and register App Check for it with the reCAPTCHA v3 provider (or an approved reCAPTCHA Enterprise provider if the project uses that flow).
+The deletion page is a separate Firebase Web app client. Register a Web app in the same Firebase project and register App Check for it with the reCAPTCHA v3 provider. The current portal uses the reCAPTCHA v3 compat activation API and does not support a reCAPTCHA Enterprise site key.
 
 In `public/delete-account/index.html`, replace these public configuration placeholders with values from the registered Firebase Web app and its App Check registration:
 
