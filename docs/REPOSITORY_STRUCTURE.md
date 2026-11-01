@@ -1,18 +1,19 @@
 # Repository Structure
 
-ParchiPocket is a Flutter Android application backed by Firebase. This guide describes the current repository layout and where new code belongs.
+ParchiPocket is a Flutter Android application backed by Firebase. This map reflects the current `main` branch.
 
 ## Repository root
 
-- `.github/workflows/`: continuous integration and validation.
-- `.agents/skills/`: repository-specific audit and fix guidance.
-- `docs/`: project overview, architecture, setup, operations, and release guidance.
+- `.github/workflows/`: CI validation and debug APK release automation.
+- `.agents/skills/`: repository-specific audit/fix guidance for coding agents.
+- `docs/`: architecture, setup, backend operations, feature status, roadmap, and release guides.
 - `functions/`: Firebase Cloud Functions Node.js package.
 - `mobile/parchipocket_flutter/`: Flutter application, Android project, and Dart tests.
-- `public/delete-account/`: public account-deletion page source.
-- `scripts/`: local verification and Firebase rules helper scripts.
-- `firebase.json`, `firestore.rules`: Firebase emulator/deployment configuration and authorization rules.
-- `test_deletion.js`, `test_rules.js`: root-level backend/security emulator test entry points.
+- `public/delete-account/`: public account-deletion page.
+- `scripts/`: local backend validation, Firestore deployment, and Android artifact packaging.
+- `firebase.json`: Firebase CLI configuration for rules, Functions, Hosting, and local emulators.
+- `firestore.rules`: Firestore authorization rules.
+- `test_rules.js`, `test_deletion.js`: root-level security/emulator test entry points.
 
 ## Flutter application
 
@@ -20,69 +21,55 @@ ParchiPocket is a Flutter Android application backed by Firebase. This guide des
 lib/
 ├── core/
 │   ├── data/                 # Firestore persistence and data access
-│   ├── monitoring/           # Crashlytics and Performance isolation
+│   ├── monitoring/           # Telemetry sanitization and reporting
 │   └── state/
-│       ├── app_state.dart    # application/session state coordinator
-│       └── models/           # app types and household expense models
+│       ├── app_state.dart    # Application/session state coordinator
+│       └── models/           # Shared app and household-expense models
 ├── features/
 │   ├── account_deletion/data/
-│   ├── auth/presentation/
-│   │   └── auth_screens/     # session, sign-in/OTP, onboarding
-│   ├── customer/presentation/
-│   │   └── customer_screens/ # home, expenses, bills, insights, shops, profile
-│   ├── expenses/domain/
+│   ├── auth/presentation/    # Session, sign-in/OTP, onboarding
+│   ├── customer/presentation/# Current Home & Family experience
+│   ├── expenses/domain/     # Household expense parsing
 │   ├── receipts/presentation/
 │   ├── settings/presentation/
-│   │   └── common_screens/   # settings, support, receipt sharing, account, misc
-│   ├── shop_owner/presentation/
-│   │   └── shop_screens/     # home, billing, history, expenses, udhaar, reports, printer
-│   └── street_vendor/presentation/
-│       └── vendor_screens/   # home, sales, profile
+│   ├── shop_owner/presentation/ # Retained; paused in current navigation
+│   └── street_vendor/presentation/ # Retained; paused in current navigation
 └── shared/
     ├── theme/
     └── widgets/
 ```
 
-Large screen libraries use Dart `part` files to group related screen classes while keeping one public library per feature. This preserves private helper visibility within the feature and keeps existing route imports simple.
-
-The old `lib/app_state.dart`, `lib/screens/*`, `lib/services/*`, `lib/theme.dart`, `lib/telemetry.dart`, `lib/widgets/ui.dart`, and `lib/household_expense_parser.dart` paths are small compatibility exports. New app code should import from `core/`, `features/`, and `shared/`.
+Large feature screens use Dart `part` files. Keep feature-private helpers inside their feature library unless there is a clear reason to promote them into shared code.
 
 ## Flutter tests
 
-- `test/core/`: state, security, and telemetry.
-- `test/features/account_deletion/`: account deletion client.
+- `test/core/`: app state, security/App Check, and telemetry.
+- `test/features/account_deletion/`: account-deletion client behaviour.
 - `test/features/expenses/`: expense state, model, parser, query, pagination, and UI.
-- `test/features/receipts/`: receipt claim/query.
-- `test/features/shop_owner/`: shop-owner mode.
+- `test/features/receipts/`: receipt-claim/query behaviour.
+- `test/features/shop_owner/`: retained seller-mode behaviour.
 - `test/shared/`: shared theme/UI.
+- `integration_test/`: Firebase emulator integration and Daily Log pagination scenarios.
 
-The Flutter test runner discovers `*_test.dart` files recursively under `test/`.
+Flutter recursively discovers `*_test.dart` files under `test/`.
+
+## Firebase configuration files
+
+These similarly named files serve different tools and must not be merged or deleted as duplicates:
+
+- Repository-root `firebase.json`: Firebase CLI configuration for emulators, Firestore rules, Functions, and Hosting.
+- `mobile/parchipocket_flutter/firebase.json`: FlutterFire CLI mapping for this Flutter app.
+- `mobile/parchipocket_flutter/android/app/google-services.json`: Android Firebase app configuration.
+- `mobile/parchipocket/lib/firebase_options.dart`: generated Dart Firebase options.
+
+## Compatibility export shims
+
+The old paths `lib/app_state.dart`, `lib/screens/*`, `lib/services/*`, `lib/theme.dart`, `lib/telemetry.dart`, `lib/widgets/ui.dart`, and `lib/household_expense_parser.dart` are intentionally small export shims. They preserve older import paths while the implementation lives under `core/`, `features/`, and `shared/`. Keep them until all external/older imports have been migrated and tests prove they can be removed.
 
 ## Firebase Functions
 
-`functions/index.js` is intentionally retained as the configured package entry point. It forwards to `functions/src/account_deletion/index.js`. This preserves the Firebase package contract while locating implementation code under `src/`.
+`functions/index.js` is intentionally retained as the configured package entry point. It forwards to the implementation under `functions/src/account_deletion/index.js`.
 
-## Validation
+## Build and release outputs
 
-From repository root, install the Functions dependencies once:
-
-```powershell
-npm --prefix functions ci
-```
-
-Run the deletion and rules harnesses inside isolated local Auth and Firestore emulators:
-
-```powershell
-npx --yes firebase-tools@latest emulators:exec --only auth,firestore --project demo-parchipocket-phase4 "node test_deletion.js"
-npx --yes firebase-tools@latest emulators:exec --only auth,firestore --project demo-parchipocket-phase4 "node test_rules.js"
-```
-
-From `mobile/parchipocket_flutter/`:
-
-```powershell
-flutter test
-flutter analyze
-flutter build apk --debug
-```
-
-Use only documented `demo-*` Firebase project IDs for emulator tests. Pushing a branch or updating a pull request does not deploy Firebase services.
+Flutter/Gradle build directories are ignored by Git. Local packaged APK/AAB files belong under the root `release-assets/android/` directory (also ignored). Public test APKs are distributed through GitHub Releases, not committed as source files.
