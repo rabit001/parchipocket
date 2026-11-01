@@ -18,7 +18,7 @@ This table describes the code currently on `main`. A passing CI run proves the a
 | Claimed receipt copies | Implemented | Read-only recipient copy and index are validated by Firestore rules |
 | Account deletion | Implemented in source | Cloud Functions flow and recovery logic exist; production deployment must be verified separately |
 | Firestore Security Rules | Checked in and CI-tested | Emulator harness passes; GitHub pushes do not deploy rules |
-| Firebase App Check | Client configured | Firebase Console enforcement and production debug-token settings must be checked separately |
+| Firebase App Check | Account-deletion callable enforced in source | Android Play Integrity/debug provider and Web reCAPTCHA v3 must be registered in Firebase Console before deploying the function; broader Firestore/Auth enforcement remains separate |
 | Nearby shop discovery | Placeholder | No live nearby-shop service |
 | PDF receipt export | Preview/planned | Not production-complete |
 | Thermal printer | Preview/planned | Not validated against target printer hardware |

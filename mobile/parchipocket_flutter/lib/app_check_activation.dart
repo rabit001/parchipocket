@@ -39,3 +39,24 @@ Future<bool> activateAppCheckSafely({
     return false;
   }
 }
+
+
+/// Returns a non-empty App Check token or fails closed.
+///
+/// High-risk backend operations must never silently downgrade to an
+/// unauthenticated-by-App-Check request when attestation is unavailable.
+Future<String> requireAppCheckToken({
+  required Future<String?> Function() getToken,
+}) async {
+  try {
+    final token = await getToken();
+    if (token == null || token.trim().isEmpty) {
+      throw StateError('App Check token is empty.');
+    }
+    return token;
+  } catch (_) {
+    throw StateError(
+      'App verification is unavailable. Update or restart the app and try again.',
+    );
+  }
+}

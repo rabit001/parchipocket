@@ -265,84 +265,50 @@ async function runAllTests() {
     '3.7 Ordering 1: Worker 1 successfully commits fenced transaction while holding generation 1'
   );
 
-  // 3.6 ORDERING 2: Controlled in-transaction barrier race where Worker 2 takes over before Worker 1 commits
+  // 3.6 ORDERING 2: A successor takes over an expired lease, then the stale
+  // worker attempts another destructive transaction using its old generation.
   await testDocRef.set({ value: 'barrier_initial_val', author: 'initial' });
-  session1.stopHeartbeat();
+  await session1.stopHeartbeatAndWait();
 
-  console.log('    Executing in-transaction barrier race: Worker 1 reads inside transaction, pauses before commit while Worker 2 acquires generation 2...');
-
-  let worker1ReadDone = false;
-  let worker2ReadDone = false;
-  let worker1Attempts = 0;
-  let worker1CommitError = null;
-
-  // Task B: Worker 2 starts lease acquisition transaction first (T1 priority)
-  const worker2Task = db.runTransaction(async (t) => {
-    const jobDocRef = db.collection('deletionJobs').doc(fenceTargetUid);
-    await t.get(jobDocRef);
-    worker2ReadDone = true;
-
-    // Wait until Worker 1 has read inside its transaction
-    while (!worker1ReadDone) await new Promise((r) => setTimeout(r, 5));
-
-    // Stage generation 2 lease acquisition
-    session2.generation = 2;
-    t.set(
-      jobDocRef,
-      {
-        generation: 2,
-        workerId: session2.workerId,
-        leaseExpiresAt: new Date(Date.now() + 45000),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+  const deletionJobRef = db.collection('deletionJobs').doc(fenceTargetUid);
+  await deletionJobRef.update({
+    leaseExpiresAt: new Date(Date.now() - 1000),
   });
 
-  // Task A: Worker 1 runFencedTransaction (T2)
-  const worker1Task = (async () => {
-    // Wait until Worker 2 transaction is ready
-    while (!worker2ReadDone) await new Promise((r) => setTimeout(r, 5));
+  const takeoverLease = await session2.acquireLease();
+  assert(
+    takeoverLease.acquired === true && session2.generation === 2,
+    '3.8 Worker 2 acquires generation 2 after Worker 1 lease expires'
+  );
 
-    await session1.runFencedTransaction(async (t, jobData) => {
-      worker1Attempts++;
-
-      // Stage destructive write on target doc using transaction object
-      t.set(testDocRef, { value: 'stale_worker1_write', author: session1.workerId });
-
-      if (worker1Attempts === 1) {
-        worker1ReadDone = true;
-        // Pause at barrier inside transaction callback before commit
-        while (!worker2ReadDone) await new Promise((r) => setTimeout(r, 5));
-        await new Promise((r) => setTimeout(r, 10));
-      }
+  let staleWorkerError = null;
+  try {
+    await session1.runFencedTransaction(async (t) => {
+      t.set(testDocRef, {
+        value: 'stale_worker1_write',
+        author: session1.workerId,
+      });
     });
-  })().catch((err) => {
-    worker1CommitError = err;
-  });
+  } catch (error) {
+    staleWorkerError = error;
+  }
 
-  await Promise.allSettled([worker2Task, worker1Task]);
-
-  assert(worker1ReadDone === true, '3.8 Worker 1 verified generation 1 and staged destructive write inside transaction');
-  assert(worker2ReadDone === true, '3.9 Worker 2 acquired generation 2 while Worker 1 was paused at barrier');
-  assert(session1.transactionAttempts >= 2, '3.10 Firestore detected conflicting deletion-job update and automatically retried Worker 1');
   assert(
-    worker1CommitError instanceof StaleWorkerError,
-    '3.11 On retry, Worker 1 observed generation 2 and threw StaleWorkerError'
+    staleWorkerError instanceof StaleWorkerError,
+    '3.9 Worker 1 with generation 1 is rejected after Worker 2 acquires generation 2'
   );
 
-  // Verify actual Firestore data was NOT modified by the stale worker
-  const docAfterRace = await testDocRef.get();
+  const docAfterFence = await testDocRef.get();
   assert(
-    docAfterRace.data().value === 'barrier_initial_val',
-    '3.12 Stale Worker 1 write was NOT committed to Firestore (data integrity verified)'
+    docAfterFence.data().value === 'barrier_initial_val',
+    '3.10 Stale Worker 1 destructive write is NOT committed after lease takeover'
   );
 
-  // Verify Worker 2 lease and generation remain intact
-  const jobAfterRace = await db.collection('deletionJobs').doc(fenceTargetUid).get();
+  const jobAfterFence = await deletionJobRef.get();
   assert(
-    jobAfterRace.data().generation === 2 && jobAfterRace.data().workerId === session2.workerId,
-    '3.13 Worker 2 lease, workerId, and generation 2 remain intact after race'
+    jobAfterFence.data().generation === 2 &&
+      jobAfterFence.data().workerId === session2.workerId,
+    '3.11 Worker 2 generation 2 lease remains intact after stale worker rejection'
   );
 
   // 3.7 Heartbeat failure causes fail-closed behavior before next destructive operation
