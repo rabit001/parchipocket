@@ -45,6 +45,40 @@ class PaginatedMockFirestoreService extends FirestoreService {
   Future<List<ClaimedReceipt>> loadClaimedReceipts() async => <ClaimedReceipt>[];
 
   @override
+  Future<List<HouseholdExpense>> loadHouseholdExpenses() async => allExpenses;
+
+  @override
+  Future<List<HouseholdExpense>> loadHouseholdExpensesForDateRange(
+    DateTime startDate,
+    DateTime endDate, {
+    int batchSize = 500,
+    int? limit,
+  }) async {
+    return allExpenses.where((e) {
+      if (e.isVoided) return false;
+      final effective = e.effectiveDate;
+      return !effective.isBefore(startDate) && effective.isBefore(endDate);
+    }).toList()
+      ..sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+  }
+
+  @override
+  Future<List<HouseholdExpense>> loadHouseholdExpensesForMonth(
+    int year,
+    int month, {
+    int batchSize = 500,
+    int? limit,
+  }) async {
+    final startDate = DateTime(year, month, 1);
+    final endDate = DateTime(year, month + 1, 1);
+    return loadHouseholdExpensesForDateRange(
+      startDate,
+      endDate,
+      batchSize: limit ?? batchSize,
+    );
+  }
+
+  @override
   Future<HouseholdExpensePage> loadHouseholdExpensesPage({
     DocumentSnapshot<Map<String, dynamic>>? startAfter,
     int limit = 50,

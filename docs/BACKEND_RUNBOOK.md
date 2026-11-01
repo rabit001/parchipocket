@@ -4,7 +4,7 @@ This guide describes the Firebase backend currently implemented in ParchiPocket.
 
 ## Backend scope
 
-The backend is Firebase Authentication plus Cloud Firestore and Security Rules. No separate server/API or Cloud Functions service is included. This is compatible with a Spark-oriented setup, but client-only receipt claims cannot have server-attested token entropy or robust per-user/IP throttling.
+The backend comprises Firebase Authentication, Cloud Firestore, Firestore Security Rules, and a Node.js 22 Cloud Functions service. Account deletion is implemented through authenticated callable functions with Auth-trigger and scheduled recovery. Receipt claiming continues to use the documented Firestore claim/copy/index flow; do not infer that every receipt operation has moved to trusted server code. Cloud Functions deployment requires an appropriately billed Google Cloud/Firebase project. Local emulator tests do not require production deployment. Client-side receipt claim issuance still cannot provide server-attested token entropy or robust per-user/IP throttling.
 
 ## Data schema
 
@@ -17,8 +17,13 @@ The backend is Firebase Authentication plus Cloud Firestore and Security Rules. 
 | `receiptClaims/{sha256(code)}` | Bearer claim and minimized receipt snapshot | Authenticated exact lookup; expiry and single-use state transition rules |
 | `users/{uid}/claimedReceipts/{ownerUid}/bills/{billId}` | Claimed read-only receipt copy | Recipient only; atomically tied to claim consumption |
 | `users/{uid}/claimedReceiptsIndex/{ownerUid~billId}` | Recipient index | Recipient only; atomically tied to copy creation and claim consumption |
+| `deletionJobs/{uid}` | Server-owned account-deletion checkpoint, worker lease, stage, and terminal TTL | All client reads/writes denied; Admin SDK only |
 
 Raw claim codes are not persisted. The official client generates 128 bits with `Random.secure()`; only the SHA-256 digest is stored. Shared snapshots omit phone number and settlement/account flags.
+
+## Account deletion lifecycle
+
+The `deleteUserAccount` callable derives the target UID from authenticated callable context and requires recent authentication. The worker creates a server-only `deletionJobs/{uid}` checkpoint, locks the user profile, pseudonymizes retained customer receipt references, deletes the user's owned data, and finally deletes the Firebase Auth account. The Auth deletion trigger and scheduled reconciliation worker recover interrupted jobs. Incomplete jobs must not receive a TTL; only completed jobs receive the 24-hour expiry. See `functions/src/account_deletion/index.js` and the emulator test harness `test_deletion.js`.
 
 ## Security boundaries
 

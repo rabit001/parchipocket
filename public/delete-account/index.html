@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ParchiPocket — Account & Data Deletion</title>
+  <style>
+    :root {
+      --primary: #2E7D32;
+      --primary-dark: #1B5E20;
+      --error: #D32F2F;
+      --surface: #FFFFFF;
+      --bg: #F5F7FA;
+      --text: #212121;
+      --muted: #616161;
+      --border: #E0E0E0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+    .card { background: var(--surface); max-width: 540px; width: 100%; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); padding: 32px; border: 1px solid var(--border); }
+    .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+    .logo-icon { width: 40px; height: 40px; background: var(--primary); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 20px; }
+    h1 { font-size: 22px; font-weight: 700; color: var(--text); }
+    p.lead { font-size: 14px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+    .warning-box { background: #FFEBEE; border-left: 4px solid var(--error); padding: 14px; border-radius: 4px; margin-bottom: 24px; }
+    .warning-box h3 { color: var(--error); font-size: 14px; margin-bottom: 6px; }
+    .warning-box ul { list-style: square; margin-left: 20px; font-size: 12px; color: #5F2120; line-height: 1.4; }
+    .step { margin-bottom: 20px; }
+    label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+    input[type="tel"], input[type="text"] { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 15px; margin-bottom: 12px; }
+    input:focus { outline: none; border-color: var(--primary); }
+    button { width: 100%; padding: 12px; border-radius: 6px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+    .btn-primary { background: var(--primary); color: white; margin-bottom: 10px; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-danger { background: var(--error); color: white; }
+    .btn-danger:hover { background: #B71C1C; }
+    .btn-disabled { opacity: 0.6; cursor: not-allowed; }
+    .status-msg { margin-top: 16px; padding: 12px; border-radius: 6px; font-size: 13px; text-align: center; }
+    .status-success { background: #E8F5E9; color: #2E7D32; border: 1px solid #A5D6A7; }
+    .status-error { background: #FFEBEE; color: #C62828; border: 1px solid #EF9A9A; }
+    .hidden { display: none !important; }
+    #recaptcha-container { margin: 12px 0; }
+  </style>
+  <!-- Firebase App & Auth SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-functions-compat.js"></script>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <div class="logo-icon">P</div>
+      <div>
+        <h1>ParchiPocket</h1>
+        <div style="font-size: 12px; color: var(--muted);">Account & Data Deletion Portal</div>
+      </div>
+    </div>
+
+    <p class="lead">
+      Under Google Play and data privacy regulations, you may request permanent deletion of your ParchiPocket account and all associated personal data without reinstalling the mobile application.
+    </p>
+
+    <div class="warning-box">
+      <h3>Irreversible Action</h3>
+      <ul>
+        <li>Your profile, login identity, business records, and household expenses will be permanently deleted.</li>
+        <li><strong>Merchant Receipts:</strong> If you are a seller, copies of receipts claimed by customers are preserved in customer accounts as their purchase proof.</li>
+        <li>Deletion cannot be reversed once processed.</li>
+      </ul>
+    </div>
+
+    <!-- Step 1: Enter Phone Number -->
+    <div id="step-phone" class="step">
+      <label for="phone-input">Registered Mobile Phone Number (with Country Code):</label>
+      <input type="tel" id="phone-input" placeholder="+91 98765 43210" required>
+      <div id="recaptcha-container"></div>
+      <button id="send-otp-btn" class="btn-primary">Send Verification SMS OTP</button>
+    </div>
+
+    <!-- Step 2: Enter SMS OTP -->
+    <div id="step-otp" class="step hidden">
+      <label for="otp-input">6-Digit Verification Code (OTP):</label>
+      <input type="text" id="otp-input" placeholder="123456" maxlength="6" required>
+      <button id="verify-otp-btn" class="btn-primary">Verify & Confirm Identity</button>
+    </div>
+
+    <!-- Step 3: Final Irreversible Deletion Confirmation -->
+    <div id="step-confirm" class="step hidden">
+      <p style="font-size: 13px; color: var(--error); margin-bottom: 14px; font-weight: 600;">
+        Identity verified. Click below to permanently delete your ParchiPocket account and data.
+      </p>
+      <button id="delete-btn" class="btn-danger">Permanently Delete My Account & Data</button>
+    </div>
+
+    <div id="status-box" class="status-msg hidden"></div>
+  </div>
+
+  <script>
+    // Configuration & Emulator Detection
+    const firebaseConfig = {
+      apiKey: "AIzaSyBb0yu_-oy8ukeEjGsWyIx69iZqA2sPOIo",
+      authDomain: "parchipocket.firebaseapp.com",
+      projectId: "parchipocket",
+      storageBucket: "parchipocket.firebasestorage.app",
+      messagingSenderId: "1090179494873",
+      appId: "1:1090179494873:android:25e358bbb0b9a5a1c19fc8"
+    };
+
+    const app = firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const functions = firebase.functions();
+
+    // Connect to local emulators when testing locally
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      auth.useEmulator('http://127.0.0.1:9099');
+      functions.useEmulator('127.0.0.1', 5001);
+    }
+
+    let confirmationResult = null;
+    let recaptchaVerifier = null;
+
+    const phoneInput = document.getElementById('phone-input');
+    const otpInput = document.getElementById('otp-input');
+    const sendOtpBtn = document.getElementById('send-otp-btn');
+    const verifyOtpBtn = document.getElementById('verify-otp-btn');
+    const deleteBtn = document.getElementById('delete-btn');
+    const statusBox = document.getElementById('status-box');
+
+    function showStatus(text, isError) {
+      statusBox.textContent = text;
+      statusBox.className = 'status-msg ' + (isError ? 'status-error' : 'status-success');
+      statusBox.classList.remove('hidden');
+    }
+
+    // Initialize reCAPTCHA
+    window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
+      size: 'normal',
+      callback: () => {
+        sendOtpBtn.classList.remove('btn-disabled');
+      }
+    });
+    window.recaptchaVerifier.render();
+
+    // Send OTP
+    sendOtpBtn.addEventListener('click', async () => {
+      const phoneNumber = phoneInput.value.trim();
+      if (!phoneNumber.startsWith('+') || phoneNumber.length < 10) {
+        showStatus('Please enter a valid phone number including country code (e.g. +91 9876543210).', true);
+        return;
+      }
+      sendOtpBtn.disabled = true;
+      sendOtpBtn.textContent = 'Sending SMS...';
+
+      try {
+        confirmationResult = await auth.signInWithPhoneNumber(phoneNumber, window.recaptchaVerifier);
+        document.getElementById('step-phone').classList.add('hidden');
+        document.getElementById('step-otp').classList.remove('hidden');
+        showStatus('Verification code sent! Please check your mobile messages.', false);
+      } catch (err) {
+        sendOtpBtn.disabled = false;
+        sendOtpBtn.textContent = 'Send Verification SMS OTP';
+        showStatus('Failed to send verification SMS: ' + (err.message || err), true);
+      }
+    });
+
+    // Verify OTP
+    verifyOtpBtn.addEventListener('click', async () => {
+      const code = otpInput.value.trim();
+      if (code.length !== 6) {
+        showStatus('Please enter the complete 6-digit OTP code.', true);
+        return;
+      }
+      verifyOtpBtn.disabled = true;
+      verifyOtpBtn.textContent = 'Verifying...';
+
+      try {
+        await confirmationResult.confirm(code);
+        document.getElementById('step-otp').classList.add('hidden');
+        document.getElementById('step-confirm').classList.remove('hidden');
+        showStatus('Identity verified. Please confirm permanent account deletion.', false);
+      } catch (err) {
+        verifyOtpBtn.disabled = false;
+        verifyOtpBtn.textContent = 'Verify & Confirm Identity';
+        showStatus('Invalid or expired OTP: ' + (err.message || err), true);
+      }
+    });
+
+    // Invoke Backend Deletion
+    deleteBtn.addEventListener('click', async () => {
+      if (!confirm('Are you absolutely certain? This action cannot be undone.')) {
+        return;
+      }
+      deleteBtn.disabled = true;
+      deleteBtn.textContent = 'Deleting Account & Data...';
+
+      try {
+        const deleteUserAccountFn = functions.httpsCallable('deleteUserAccount');
+        const result = await deleteUserAccountFn();
+        document.getElementById('step-confirm').classList.add('hidden');
+        showStatus('Account deletion complete. All associated personal records and credentials have been permanently removed.', false);
+        await auth.signOut();
+      } catch (err) {
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = 'Permanently Delete My Account & Data';
+        showStatus('Deletion failed: ' + (err.message || err), true);
+      }
+    });
+  </script>
+</body>
+</html>

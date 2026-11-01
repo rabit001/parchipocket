@@ -10,6 +10,14 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function isUserActive(userId) {
+      let userPath = /databases/$(database)/documents/users/$(userId);
+      return exists(userPath) && (
+        !get(userPath).data.keys().hasAny(['status']) ||
+        get(userPath).data.status != 'deleting'
+      );
+    }
+
     function hasRole(userId, role) {
       return isOwner(userId) &&
         get(/databases/$(database)/documents/users/$(userId)).data.role == role;
@@ -87,9 +95,9 @@ service cloud.firestore {
     }
 
     function isProfileUpdateAllowed(existingData, newData) {
-      // Preserve existing role and prevent unauthorized injection of privileged system/admin fields
+      // Preserve existing role and prevent unauthorized injection of privileged system/admin/status fields
       return newData.role == existingData.role &&
-             !newData.keys().hasAny(['admin', 'balance', 'plan', 'creditLimit']) &&
+             !newData.keys().hasAny(['admin', 'balance', 'plan', 'creditLimit', 'status', 'deletionStartedAt', 'deletedAt']) &&
              isValidProfile(newData);
     }
 
@@ -180,13 +188,109 @@ service cloud.firestore {
 
     function isValidHouseholdExpense(data) {
       return data.keys().hasAll(['id', 'title', 'category', 'amount', 'createdAt', 'source']) &&
-             data.keys().hasOnly(['id', 'title', 'category', 'amount', 'createdAt', 'source']) &&
+             data.keys().hasOnly(['id', 'title', 'category', 'amount', 'createdAt', 'source', 'expenseDate']) &&
              data.id is string && data.id.size() > 0 && data.id.size() <= 100 &&
              data.title is string && data.title.size() > 0 && data.title.size() <= 100 &&
              data.category is string && data.category.size() > 0 && data.category.size() <= 50 &&
              data.amount is number && data.amount > 0 && data.amount <= 10000000 &&
              data.createdAt is timestamp &&
+             (!data.keys().hasAny(['expenseDate']) || data.expenseDate is timestamp) &&
              data.source in ['manual', 'voice'];
+    }
+
+    function isValidCorrectionSnapshot(snapshot, existingData) {
+      return snapshot is map &&
+             snapshot.keys().hasAll(['title', 'category', 'amount']) &&
+             snapshot.title == existingData.title &&
+             snapshot.category == existingData.category &&
+             snapshot.amount == existingData.amount &&
+             (
+               (!existingData.keys().hasAny(['expenseDate']) && !snapshot.keys().hasAny(['expenseDate'])) ||
+               (existingData.keys().hasAny(['expenseDate']) && snapshot.keys().hasAny(['expenseDate']) && snapshot.expenseDate == existingData.expenseDate)
+             ) &&
+             (
+               (!existingData.keys().hasAny(['updatedAt']) && !snapshot.keys().hasAny(['modifiedAt'])) ||
+               (existingData.keys().hasAny(['updatedAt']) && snapshot.keys().hasAny(['modifiedAt']) && snapshot.modifiedAt == existingData.updatedAt)
+             ) &&
+             snapshot.keys().hasOnly(['title', 'category', 'amount', 'modifiedAt', 'expenseDate']);
+    }
+
+    function isHouseholdExpenseCorrectionAllowed(existingData, newData) {
+      return newData.keys().hasAll(['id', 'title', 'category', 'amount', 'createdAt', 'source', 'updatedAt', 'history']) &&
+             newData.id == existingData.id &&
+             newData.createdAt == existingData.createdAt &&
+             newData.source == existingData.source &&
+
+             // Document must not be voided; preserves isVoided if present, or allows introducing false/omitting
+             (!existingData.keys().hasAny(['isVoided']) || (existingData.isVoided == false && newData.keys().hasAny(['isVoided']) && newData.isVoided == existingData.isVoided)) &&
+             (!newData.keys().hasAny(['isVoided']) || newData.isVoided == false) &&
+
+             // Valid corrected fields
+             newData.title is string && newData.title.size() > 0 && newData.title.size() <= 100 &&
+             newData.category is string && newData.category.size() > 0 && newData.category.size() <= 50 &&
+             newData.amount is number && newData.amount > 0 && newData.amount <= 10000000 &&
+             newData.updatedAt == request.time &&
+
+             // Preserve existing expenseDate or allow introducing it; cannot delete if previously present
+             (!existingData.keys().hasAny(['expenseDate']) || newData.keys().hasAny(['expenseDate'])) &&
+             (!newData.keys().hasAny(['expenseDate']) || newData.expenseDate is timestamp) &&
+
+             // History array verification
+             newData.history is list &&
+             newData.history.size() >= 1 &&
+             newData.history.size() <= 10 &&
+
+             // Preserved prior history entries
+             (
+               (!existingData.keys().hasAny(['history']) && newData.history.size() == 1) ||
+               (existingData.keys().hasAny(['history']) &&
+                existingData.history is list &&
+                newData.history.size() == existingData.history.size() + 1 &&
+                newData.history[0] == existingData.history[0] &&
+                (existingData.history.size() < 2 || newData.history[1] == existingData.history[1]) &&
+                (existingData.history.size() < 3 || newData.history[2] == existingData.history[2]) &&
+                (existingData.history.size() < 4 || newData.history[3] == existingData.history[3]) &&
+                (existingData.history.size() < 5 || newData.history[4] == existingData.history[4]) &&
+                (existingData.history.size() < 6 || newData.history[5] == existingData.history[5]) &&
+                (existingData.history.size() < 7 || newData.history[6] == existingData.history[6]) &&
+                (existingData.history.size() < 8 || newData.history[7] == existingData.history[7]) &&
+                (existingData.history.size() < 9 || newData.history[8] == existingData.history[8]))
+             ) &&
+
+             // The newly appended snapshot must accurately record existingData's previous values and its modifiedAt timestamp must match existingData.updatedAt
+             isValidCorrectionSnapshot(newData.history[newData.history.size() - 1], existingData) &&
+
+             // Strict key whitelist
+             newData.keys().hasOnly(['id', 'title', 'category', 'amount', 'createdAt', 'source', 'expenseDate', 'updatedAt', 'history', 'isVoided']);
+    }
+
+    function isHouseholdExpenseVoidAllowed(existingData, newData) {
+      return newData.keys().hasAll(['id', 'title', 'category', 'amount', 'createdAt', 'source', 'isVoided', 'voidedAt']) &&
+             newData.id == existingData.id &&
+             newData.title == existingData.title &&
+             newData.category == existingData.category &&
+             newData.amount == existingData.amount &&
+             newData.createdAt == existingData.createdAt &&
+             newData.source == existingData.source &&
+
+             // Preserves expenseDate, updatedAt, history if existing
+             (!existingData.keys().hasAny(['expenseDate']) || (newData.keys().hasAny(['expenseDate']) && newData.expenseDate == existingData.expenseDate)) &&
+             (!newData.keys().hasAny(['expenseDate']) || (existingData.keys().hasAny(['expenseDate']) && newData.expenseDate == existingData.expenseDate)) &&
+             (!existingData.keys().hasAny(['updatedAt']) || (newData.keys().hasAny(['updatedAt']) && newData.updatedAt == existingData.updatedAt)) &&
+             (!newData.keys().hasAny(['updatedAt']) || (existingData.keys().hasAny(['updatedAt']) && newData.updatedAt == existingData.updatedAt)) &&
+             (!existingData.keys().hasAny(['history']) || (newData.keys().hasAny(['history']) && newData.history == existingData.history)) &&
+             (!newData.keys().hasAny(['history']) || (existingData.keys().hasAny(['history']) && newData.history == existingData.history)) &&
+
+             // Void state transition: false/missing -> true only
+             (!existingData.keys().hasAny(['isVoided']) || existingData.isVoided == false) &&
+             newData.isVoided == true &&
+             newData.voidedAt == request.time &&
+
+             // Optional voidReason validation (up to 200 chars)
+             (!newData.keys().hasAny(['voidReason']) || (newData.voidReason is string && newData.voidReason.size() <= 200)) &&
+
+             // Strict key whitelist
+             newData.keys().hasOnly(['id', 'title', 'category', 'amount', 'createdAt', 'source', 'expenseDate', 'updatedAt', 'history', 'isVoided', 'voidedAt', 'voidReason']);
     }
 
     function isValidSavedShop(data) {
@@ -199,22 +303,26 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isOwner(userId);
       allow list: if false;
-      allow create: if isOwner(userId) && isValidProfile(request.resource.data);
-      allow update: if isOwner(userId) && isProfileUpdateAllowed(resource.data, request.resource.data);
+      allow create: if isOwner(userId) &&
+        !exists(/databases/$(database)/documents/deletionJobs/$(userId)) &&
+        isValidProfile(request.resource.data);
+      allow update: if isOwner(userId) &&
+        (!resource.data.keys().hasAny(['status']) || resource.data.status != 'deleting') &&
+        isProfileUpdateAllowed(resource.data, request.resource.data);
       // Deny client profile deletion until cascade-delete handling is implemented.
       allow delete: if false;
 
       match /bills/{billId} {
         allow get, list: if isOwner(userId);
-        allow create: if isOwner(userId) && billId == request.resource.data.id && isValidBill(request.resource.data);
-        allow update: if isOwner(userId) && billId == request.resource.data.id && isBillUpdateAllowed(resource.data, request.resource.data);
+        allow create: if isOwner(userId) && isUserActive(userId) && billId == request.resource.data.id && isValidBill(request.resource.data);
+        allow update: if isOwner(userId) && isUserActive(userId) && billId == request.resource.data.id && isBillUpdateAllowed(resource.data, request.resource.data);
         // Financial bill deletion policy: DISALLOWED to preserve financial audit trail & integrity.
         allow delete: if false;
       }
 
       match /expenses/{expenseId} {
         allow get, list: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidExpense(request.resource.data);
+        allow create: if isOwner(userId) && isUserActive(userId) && isValidExpense(request.resource.data);
         // Expense update policy: DISALLOWED because expense editing is not in app features.
         allow update: if false;
         // Financial expense deletion policy: DISALLOWED to preserve financial audit trail.
@@ -224,23 +332,31 @@ service cloud.firestore {
       match /householdExpenses/{expenseId} {
         allow get, list: if isOwner(userId);
         allow create: if isOwner(userId) &&
+          isUserActive(userId) &&
           expenseId == request.resource.data.id &&
           isValidHouseholdExpense(request.resource.data);
-        // Keep saved household entries immutable until a reviewed correction
-        // and audit-history flow is implemented.
-        allow update, delete: if false;
+        // Owner can correct an expense with audit history or soft-delete (void) it.
+        // Permanent document deletion is strictly disallowed to preserve financial audit trail.
+        allow update: if isOwner(userId) &&
+          isUserActive(userId) &&
+          expenseId == request.resource.data.id &&
+          (
+            isHouseholdExpenseCorrectionAllowed(resource.data, request.resource.data) ||
+            isHouseholdExpenseVoidAllowed(resource.data, request.resource.data)
+          );
+        allow delete: if false;
       }
 
       match /savedShops/{shopId} {
         allow get, list: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidSavedShop(request.resource.data);
-        allow update: if isOwner(userId) && isValidSavedShop(request.resource.data);
-        allow delete: if isOwner(userId);
+        allow create: if isOwner(userId) && isUserActive(userId) && isValidSavedShop(request.resource.data);
+        allow update: if isOwner(userId) && isUserActive(userId) && isValidSavedShop(request.resource.data);
+        allow delete: if isOwner(userId) && isUserActive(userId);
       }
 
       match /claimedReceipts/{ownerUid}/bills/{billId} {
         allow get, list: if isOwner(userId);
-        allow create: if isOwner(userId) && isCustomer(userId) &&
+        allow create: if isOwner(userId) && isCustomer(userId) && isUserActive(userId) &&
           request.resource.data.keys().hasAll(['recipientUid', 'ownerUid', 'sourceBillId', 'receipt', 'claimedAt', 'claimDigest']) &&
           request.resource.data.keys().hasOnly(['recipientUid', 'ownerUid', 'sourceBillId', 'receipt', 'claimedAt', 'claimDigest']) &&
           request.resource.data.recipientUid == userId && request.resource.data.ownerUid == ownerUid &&
@@ -254,7 +370,7 @@ service cloud.firestore {
 
       match /claimedReceiptsIndex/{receiptKey} {
         allow get, list: if isOwner(userId);
-        allow create: if isOwner(userId) && isCustomer(userId) &&
+        allow create: if isOwner(userId) && isCustomer(userId) && isUserActive(userId) &&
           request.resource.data.keys().hasAll(['recipientUid', 'ownerUid', 'sourceBillId', 'receipt', 'claimedAt', 'claimDigest']) &&
           request.resource.data.keys().hasOnly(['recipientUid', 'ownerUid', 'sourceBillId', 'receipt', 'claimedAt', 'claimDigest']) &&
           request.resource.data.recipientUid == userId && request.resource.data.ownerUid is string &&
@@ -280,7 +396,7 @@ service cloud.firestore {
         ))
       );
       allow list: if false;
-      allow create: if isAuthenticated() && isSeller(request.auth.uid) &&
+      allow create: if isAuthenticated() && isSeller(request.auth.uid) && isUserActive(request.auth.uid) &&
         validClaimDocument(request.resource.data) &&
         request.resource.data.status == 'open' &&
         request.resource.data.expiresAt > request.time &&
@@ -292,6 +408,8 @@ service cloud.firestore {
         );
       allow update: if (
         isAuthenticated() && isCustomer(request.auth.uid) &&
+        isUserActive(request.auth.uid) &&
+        isUserActive(resource.data.ownerUid) &&
         resource.data.status == 'open' && request.time < resource.data.expiresAt &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'claimedBy']) &&
         request.resource.data.status == 'claimed' &&
@@ -301,6 +419,10 @@ service cloud.firestore {
         matchingClaimIndexAfter(request.auth.uid, resource.data.ownerUid, resource.data.sourceBillId, resource.data.receipt)
       );
       allow delete: if false;
+    }
+
+    match /deletionJobs/{jobId} {
+      allow read, write: if false;
     }
 
     function matchingClaimIndexAfter(customerUid, ownerUid, billId, receipt) {

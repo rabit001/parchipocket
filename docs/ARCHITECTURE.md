@@ -1,23 +1,29 @@
 # Backend Architecture
 
-This document describes the implemented Firebase-backed development architecture and distinguishes it from production services that do not exist yet.
+This document describes the implemented Firebase-backed development architecture. Production deployment remains gated on dedicated staging validation.
 
 ## Runtime shape
 
 ```text
 Flutter Android client
   ├── AppState: session, routing, and UI state
+  ├── Feature presentation: customer, auth, shop owner, vendor, receipts
   ├── FirestoreService: serialization and persistence
   ├── Firebase Authentication: identity/session
-  ├── Cloud Firestore: profiles, bills, expenses, saved shops
-  └── Receipt claims: digest token, atomic consume, immutable copy
+  └── Cloud Firestore: profiles, bills, expenses, saved shops, receipt copies
                  │
                  ▼
        Firestore Security Rules
        - UID-scoped account data
-       - constrained immutable bill updates
-       - owner-issued receipt claim snapshots
-       - one claim + one customer copy/index in one atomic commit
+       - constrained immutable financial updates
+       - receipt claim/copy/index invariants
+       - fail-closed account-deletion lock
+
+Firebase Cloud Functions (Node.js 22)
+  ├── authenticated deleteUserAccount callable
+  ├── transactional deletion worker lease + fencing
+  ├── Auth user-deletion recovery trigger
+  └── scheduled deletion-job reconciliation
 ```
 
 ## Collections
@@ -44,7 +50,7 @@ Flutter Android client
 
 - Claim codes are bearer capabilities. A person who knows a valid code can read its minimized snapshot. Rules cannot prove client-side random entropy or provide robust per-user/IP throttling.
 - User-selected roles are app modes, not verified merchant identities.
-- No separate trusted API or Cloud Functions service is included. Cloud Functions require a billing plan that may not match a Spark-only constraint.
+- Account deletion runs through authenticated Cloud Functions with worker leasing and recovery. Other financial and receipt operations still use the Flutter client plus Firestore Security Rules; do not assume they are all server-attested. Deploying Cloud Functions requires a Firebase billing plan that supports them.
 - App Check Console enforcement cannot be inferred from source files.
 - Rules in this repository do not become live until explicitly deployed to the intended Firebase project.
 
