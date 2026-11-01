@@ -10,15 +10,54 @@ class AuthSessionLoadingScreen extends StatelessWidget {
   final AppState state;
 
   @override
-  Widget build(BuildContext context) => const Scaffold(
+  Widget build(BuildContext context) => Scaffold(
         body: SafeArea(
           child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Checking your account…'),
+                Container(
+                  width: 68,
+                  height: 68,
+                  decoration: const BoxDecoration(
+                    color: PpColors.forest,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'P',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 36,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'ParchiPocket',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Checking your account…',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: PpColors.secondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ],
             ),
           ),
@@ -97,11 +136,11 @@ class SplashScreen extends StatelessWidget {
                                           fontSize: 40,
                                           fontWeight: FontWeight.w800)))),
                           const SizedBox(height: 16),
-                          const Text('ParchiPocket',
+                          Text('ParchiPocket',
                               style: TextStyle(
                                   fontSize: 28,
                                   fontWeight: FontWeight.w800,
-                                  color: PpColors.ink)),
+                                  color: Theme.of(context).colorScheme.onSurface)),
                           const SizedBox(height: 10),
                           const Text('Every small purchase, properly recorded.',
                               textAlign: TextAlign.center,
@@ -571,15 +610,15 @@ class _CustomerSetupScreenState extends State<CustomerSetupScreen> {
                 color: PpColors.forest,
                 fontWeight: FontWeight.w700,
                 fontSize: 11)),
-        const SizedBox(height: 25),
+        const SizedBox(height: 18),
         PpField(label: 'Full name', controller: name, hint: 'Enter your name'),
-        const SizedBox(height: 15),
+        const SizedBox(height: 14),
         const Text('Verified phone number',
             style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 color: PpColors.secondary)),
-        const SizedBox(height: 7),
+        const SizedBox(height: 6),
         TextField(
           readOnly: true,
           decoration: InputDecoration(
@@ -588,17 +627,17 @@ class _CustomerSetupScreenState extends State<CustomerSetupScreen> {
                 : '+91 Verified Number',
           ),
         ),
-        const SizedBox(height: 15),
+        const SizedBox(height: 14),
         PpField(
             label: 'Email (optional)',
             controller: email,
             hint: 'name@example.com',
             keyboardType: TextInputType.emailAddress),
-        const SizedBox(height: 18),
+        const SizedBox(height: 14),
         const PpDemoNotice(
             message:
                 'Your household spending is saved under your own account. Review each entry before saving it.'),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
         PpPrimaryButton(
           _isSubmitting ? 'Saving…' : 'Save & Continue',
           onPressed: _isSubmitting ? null : _saveProfile,

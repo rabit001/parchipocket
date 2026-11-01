@@ -2,9 +2,11 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'app_state.dart';
 import 'app_check_activation.dart';
 import 'firebase_options.dart';
+import 'telemetry.dart';
 import 'screens/auth_screens.dart';
 import 'screens/common_screens.dart';
 import 'screens/customer_screens.dart';
@@ -15,6 +17,12 @@ import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  SharedPreferences? prefs;
+  try {
+    prefs = await SharedPreferences.getInstance();
+  } catch (e) {
+    debugPrint('Could not initialize SharedPreferences: $e');
+  }
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -27,23 +35,52 @@ Future<void> main() async {
     debugMode: kDebugMode,
     debugLog: debugPrint,
   );
-  runApp(const ParchiPocketApp());
+  final telemetryInitialized = await TelemetryService.instance.initialize(
+    telemetryEnabled: kTelemetryDefaultEnabled,
+    debugLog: debugPrint,
+  );
+  if (telemetryInitialized && kTelemetryDefaultEnabled) {
+    TelemetryService.instance.setupErrorHandlers(
+      telemetryEnabled: true,
+    );
+  }
+  runApp(ParchiPocketApp(prefs: prefs));
 }
 
 class ParchiPocketApp extends StatefulWidget {
-  const ParchiPocketApp({super.key});
+  const ParchiPocketApp({super.key, this.prefs, this.appState});
+
+  final SharedPreferences? prefs;
+  final AppState? appState;
 
   @override
   State<ParchiPocketApp> createState() => _ParchiPocketAppState();
 }
 
-class _ParchiPocketAppState extends State<ParchiPocketApp> {
-  late final AppState state = AppState();
+class _ParchiPocketAppState extends State<ParchiPocketApp>
+    with WidgetsBindingObserver {
+  late final AppState state = widget.appState ?? AppState(prefs: widget.prefs);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     state.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    if (lifecycleState == AppLifecycleState.resumed) {
+      if (state.isAuthenticated && !state.isDemoMode) {
+        state.refreshHouseholdExpenses();
+      }
+    }
   }
 
   Widget _screenForCurrentPage() => switch (state.page) {
@@ -110,13 +147,15 @@ class _ParchiPocketAppState extends State<ParchiPocketApp> {
       };
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'ParchiPocket',
-        debugShowCheckedModeBanner: false,
-        theme: buildPpTheme(),
-        home: AnimatedBuilder(
-          animation: state,
-          builder: (context, _) => _screenForCurrentPage(),
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: state,
+        builder: (context, _) => MaterialApp(
+          title: 'ParchiPocket',
+          debugShowCheckedModeBanner: false,
+          theme: buildPpTheme(),
+          darkTheme: buildPpDarkTheme(),
+          themeMode: state.themeMode,
+          home: _screenForCurrentPage(),
         ),
       );
 }

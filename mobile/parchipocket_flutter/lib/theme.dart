@@ -82,3 +82,91 @@ ThemeData buildPpTheme() {
         const DividerThemeData(color: PpColors.border, thickness: 1, space: 1),
   );
 }
+
+ThemeData buildPpDarkTheme() {
+  const darkPage = Color(0xFF111713);
+  const darkCard = Color(0xFF1A221C);
+  const darkBorder = Color(0xFF2C392F);
+  const darkInk = Color(0xFFE8EDE9);
+  const darkSecondary = Color(0xFF98A69C);
+
+  final scheme = ColorScheme.fromSeed(
+    seedColor: PpColors.forest,
+    brightness: Brightness.dark,
+  ).copyWith(
+    primary: PpColors.forestLight,
+    onPrimary: Colors.white,
+    surface: darkCard,
+    onSurface: darkInk,
+    error: const Color(0xFFE57373),
+  );
+
+  return ThemeData(
+    useMaterial3: true,
+    brightness: Brightness.dark,
+    colorScheme: scheme,
+    scaffoldBackgroundColor: darkPage,
+    fontFamily: 'Roboto',
+    appBarTheme: const AppBarTheme(
+      backgroundColor: darkPage,
+      foregroundColor: darkInk,
+      elevation: 0,
+      centerTitle: false,
+      titleTextStyle: TextStyle(
+        fontSize: 19,
+        fontWeight: FontWeight.w700,
+        color: darkInk,
+      ),
+    ),
+    cardTheme: CardThemeData(
+      color: darkCard,
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: darkBorder),
+      ),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: darkCard,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      hintStyle: const TextStyle(color: darkSecondary, fontSize: 13),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(11),
+        borderSide: const BorderSide(color: darkBorder),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(11),
+        borderSide: const BorderSide(color: darkBorder),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(11),
+        borderSide: const BorderSide(color: PpColors.forestLight, width: 1.5),
+      ),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        minimumSize: const Size.fromHeight(46),
+        backgroundColor: PpColors.forest,
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(44),
+        foregroundColor: darkInk,
+        side: const BorderSide(color: darkBorder),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+      ),
+    ),
+    dividerTheme: const DividerThemeData(
+      color: darkBorder,
+      thickness: 1,
+      space: 1,
+    ),
+  );
+}

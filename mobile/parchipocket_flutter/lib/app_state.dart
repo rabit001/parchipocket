@@ -1,10 +1,15 @@
-import 'package:cloud_firestore/cloud_firestore.dart' show DocumentSnapshot;
+import 'package:cloud_firestore/cloud_firestore.dart'
+    show DocumentSnapshot, Timestamp;
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show ThemeMode;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/account_deletion_service.dart';
 import 'services/firestore_service.dart';
+import 'telemetry.dart';
 
 enum UserRole { customer, shopOwner, streetVendor }
 
@@ -90,6 +95,68 @@ class DemoExpense {
   final DateTime createdAt;
 }
 
+class ExpenseCorrectionSnapshot {
+  const ExpenseCorrectionSnapshot({
+    required this.title,
+    required this.category,
+    required this.amount,
+    this.expenseDate,
+    this.modifiedAt,
+  });
+
+  final String title;
+  final String category;
+  final double amount;
+  final DateTime? expenseDate;
+  final DateTime? modifiedAt;
+
+  Map<String, dynamic> toMap() {
+    final map = <String, dynamic>{
+      'title': title,
+      'category': category,
+      'amount': amount,
+    };
+    if (expenseDate != null) {
+      map['expenseDate'] = Timestamp.fromDate(expenseDate!);
+    }
+    if (modifiedAt != null) {
+      map['modifiedAt'] = Timestamp.fromDate(modifiedAt!);
+    }
+    return map;
+  }
+
+  factory ExpenseCorrectionSnapshot.fromMap(Map<String, dynamic> map) {
+    DateTime? parseDate(dynamic value) {
+      if (value is Timestamp) return value.toDate();
+      if (value is String) return DateTime.tryParse(value);
+      return null;
+    }
+
+    return ExpenseCorrectionSnapshot(
+      title: map['title'] as String? ?? '',
+      category: map['category'] as String? ?? '',
+      amount: (map['amount'] as num?)?.toDouble() ?? 0.0,
+      expenseDate: parseDate(map['expenseDate']),
+      modifiedAt: parseDate(map['modifiedAt']),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ExpenseCorrectionSnapshot &&
+          runtimeType == other.runtimeType &&
+          title == other.title &&
+          category == other.category &&
+          amount == other.amount &&
+          expenseDate == other.expenseDate &&
+          modifiedAt == other.modifiedAt;
+
+  @override
+  int get hashCode =>
+      Object.hash(title, category, amount, expenseDate, modifiedAt);
+}
+
 class HouseholdExpense {
   const HouseholdExpense({
     this.id = '',
@@ -98,6 +165,12 @@ class HouseholdExpense {
     required this.amount,
     required this.createdAt,
     this.source = 'manual',
+    this.expenseDate,
+    this.isVoided = false,
+    this.voidedAt,
+    this.voidReason,
+    this.updatedAt,
+    this.history = const <ExpenseCorrectionSnapshot>[],
   });
 
   /// Stable Firestore document ID; empty only for local demo entries.
@@ -110,10 +183,101 @@ class HouseholdExpense {
   /// Either manual or voice. The field records how the entry was initiated,
   /// not whether the user confirmed it.
   final String source;
+
+  final DateTime? expenseDate;
+  final bool isVoided;
+  final DateTime? voidedAt;
+  final String? voidReason;
+  final DateTime? updatedAt;
+  final List<ExpenseCorrectionSnapshot> history;
+
+  DateTime get effectiveDate => expenseDate ?? createdAt;
+
+  factory HouseholdExpense.fromMap(
+    Map<String, dynamic> data, {
+    String id = '',
+  }) {
+    DateTime? parseDate(dynamic value) {
+      if (value is Timestamp) return value.toDate();
+      if (value is String) return DateTime.tryParse(value);
+      return null;
+    }
+
+    final createdAt = parseDate(data['createdAt']) ?? DateTime.now();
+    final expenseDate = parseDate(data['expenseDate']);
+    final isVoided = data['isVoided'] == true;
+    final voidedAt = parseDate(data['voidedAt']);
+    final voidReason = data['voidReason'] as String?;
+    final updatedAt = parseDate(data['updatedAt']);
+
+    final historyRaw = data['history'];
+    final history = <ExpenseCorrectionSnapshot>[];
+    if (historyRaw is List) {
+      for (final item in historyRaw) {
+        if (item is Map) {
+          history.add(ExpenseCorrectionSnapshot.fromMap(
+            Map<String, dynamic>.from(item),
+          ));
+        }
+      }
+    }
+
+    return HouseholdExpense(
+      id: id.isNotEmpty ? id : (data['id'] as String? ?? ''),
+      title: data['title'] as String? ?? '',
+      category: data['category'] as String? ?? 'Other',
+      amount: (data['amount'] as num?)?.toDouble() ?? 0.0,
+      createdAt: createdAt,
+      source: data['source'] as String? ?? 'manual',
+      expenseDate: expenseDate,
+      isVoided: isVoided,
+      voidedAt: voidedAt,
+      voidReason: voidReason,
+      updatedAt: updatedAt,
+      history: history,
+    );
+  }
+
+  HouseholdExpense copyWith({
+    String? id,
+    String? title,
+    String? category,
+    double? amount,
+    DateTime? createdAt,
+    String? source,
+    DateTime? expenseDate,
+    bool? isVoided,
+    DateTime? voidedAt,
+    String? voidReason,
+    DateTime? updatedAt,
+    List<ExpenseCorrectionSnapshot>? history,
+  }) {
+    return HouseholdExpense(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      category: category ?? this.category,
+      amount: amount ?? this.amount,
+      createdAt: createdAt ?? this.createdAt,
+      source: source ?? this.source,
+      expenseDate: expenseDate ?? this.expenseDate,
+      isVoided: isVoided ?? this.isVoided,
+      voidedAt: voidedAt ?? this.voidedAt,
+      voidReason: voidReason ?? this.voidReason,
+      updatedAt: updatedAt ?? this.updatedAt,
+      history: history ?? this.history,
+    );
+  }
 }
 
 class AppState extends ChangeNotifier {
-  AppState({FirebaseAuth? auth}) : _auth = auth {
+  AppState({
+    FirebaseAuth? auth,
+    SharedPreferences? prefs,
+    AccountDeletionService? accountDeletionService,
+  })  : _auth = auth,
+        _prefs = prefs,
+        _accountDeletionService = accountDeletionService {
+    _loadPersistedTheme();
     _restoreDemoState();
     _initAuthListener();
   }
@@ -133,6 +297,18 @@ class AppState extends ChangeNotifier {
   set auth(FirebaseAuth? instance) => _auth = instance;
 
   bool get isAuthenticated => auth?.currentUser != null;
+
+  AccountDeletionService? _accountDeletionService;
+  AccountDeletionService get accountDeletionService =>
+      _accountDeletionService ??= AccountDeletionService(auth: auth);
+  set accountDeletionService(AccountDeletionService service) =>
+      _accountDeletionService = service;
+
+  bool isDeletingAccount = false;
+  String? deletionError;
+  String? deletionSuccessMessage;
+  String? deletionVerificationId;
+  int? deletionResendToken;
 
   FirestoreService? _firestoreService;
   FirestoreService get firestoreService =>
@@ -186,6 +362,82 @@ class AppState extends ChangeNotifier {
   String supportReference = 'PP-SUP-1042';
   String lastNotice = '';
   String language = 'English';
+  SharedPreferences? _prefs;
+  static const String _themePrefKey = 'user_theme_mode';
+
+  void _loadPersistedTheme() {
+    final prefs = _prefs;
+    if (prefs != null) {
+      _applyThemeString(prefs.getString(_themePrefKey));
+    } else {
+      SharedPreferences.getInstance().then((p) {
+        _prefs = p;
+        final saved = p.getString(_themePrefKey);
+        if (saved != null) {
+          _applyThemeString(saved);
+          notifyListeners();
+        }
+      }).catchError((_) {});
+    }
+  }
+
+  void _applyThemeString(String? value) {
+    if (value == 'light') {
+      _themeMode = ThemeMode.light;
+    } else if (value == 'dark') {
+      _themeMode = ThemeMode.dark;
+    } else {
+      _themeMode = ThemeMode.system;
+    }
+  }
+
+  bool _isOffline = false;
+  bool get isOffline => _isOffline;
+  void setOffline(bool offline) {
+    if (_isOffline == offline) return;
+    _isOffline = offline;
+    notifyListeners();
+  }
+
+  bool _isNetworkError(dynamic error) {
+    if (error == null) return false;
+    final message = error.toString().toLowerCase();
+    return message.contains('network') ||
+        message.contains('offline') ||
+        message.contains('unavailable') ||
+        message.contains('socketexception') ||
+        message.contains('client is offline') ||
+        message.contains('failed host lookup') ||
+        message.contains('connection timed out');
+  }
+
+  Future<void> retryConnection() async {
+    if (isDemoMode || auth?.currentUser == null) {
+      _isOffline = false;
+      notifyListeners();
+      return;
+    }
+    clearCloudError();
+    await refreshHouseholdExpenses();
+  }
+
+  ThemeMode _themeMode = ThemeMode.system;
+  ThemeMode get themeMode => _themeMode;
+  void setThemeMode(ThemeMode mode) {
+    if (_themeMode == mode) return;
+    _themeMode = mode;
+    final prefs = _prefs;
+    if (prefs != null) {
+      prefs.setString(_themePrefKey, mode.name);
+    } else {
+      SharedPreferences.getInstance().then((p) {
+        _prefs = p;
+        p.setString(_themePrefKey, mode.name);
+      }).catchError((_) {});
+    }
+    notifyListeners();
+  }
+
   bool notificationsEnabled = true;
   bool spendingSummaryEnabled = true;
   bool productUpdatesEnabled = false;
@@ -194,6 +446,9 @@ class AppState extends ChangeNotifier {
   final List<ClaimedReceipt> claimedReceipts = <ClaimedReceipt>[];
   final List<DemoExpense> expenses = <DemoExpense>[];
   final List<HouseholdExpense> householdExpenses = <HouseholdExpense>[];
+  final List<HouseholdExpense> _monthlyHouseholdExpenses = <HouseholdExpense>[];
+  int? _loadedMonthlyExpensesYear;
+  int? _loadedMonthlyExpensesMonth;
   bool hasMoreHouseholdExpenses = false;
   bool isLoadingMoreHouseholdExpenses = false;
   DocumentSnapshot<Map<String, dynamic>>? _lastHouseholdExpenseDoc;
@@ -203,6 +458,10 @@ class AppState extends ChangeNotifier {
   DemoBill? _retryableCloudBill;
   DemoExpense? _retryableCloudExpense;
   HouseholdExpense? _retryableHouseholdExpense;
+  final Set<String> _pendingHouseholdExpenseOperations = <String>{};
+
+  bool isHouseholdExpenseOperationPending(String expenseId) =>
+      _pendingHouseholdExpenseOperations.contains(expenseId);
 
   void _initAuthListener() {
     final authInstance = auth;
@@ -345,63 +604,79 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      // Stage all reads first. If one collection fails, do not apply only a
-      // subset of cloud data alongside demo or stale records.
-      final cloudBills = await firestoreService.loadBills();
-      if (!isCurrentLoad()) return CloudProfileStatus.unknown;
-      final cloudExpenses = await firestoreService.loadExpenses();
-      if (!isCurrentLoad()) return CloudProfileStatus.unknown;
-      final now = DateTime.now();
-      final startOfMonth = DateTime(now.year, now.month, 1);
-      final initialExpensePage =
-          await firestoreService.loadHouseholdExpensesPage(limit: 50);
-      if (!isCurrentLoad()) return CloudProfileStatus.unknown;
+      await TelemetryService.instance.measureTrace(
+        traceName: 'initial_dashboard_data_load',
+        action: () async {
+          // Stage all reads first. If one collection fails, do not apply only a
+          // subset of cloud data alongside demo or stale records.
+          final cloudBills = await firestoreService.loadBills();
+          if (!isCurrentLoad()) return;
+          final cloudExpenses = await firestoreService.loadExpenses();
+          if (!isCurrentLoad()) return;
+          final now = DateTime.now();
+          final startOfMonth = DateTime(now.year, now.month, 1);
+          final initialExpensePage =
+              await firestoreService.loadHouseholdExpensesPage(limit: 50);
+          if (!isCurrentLoad()) return;
 
-      final cloudHouseholdExpenses =
-          <HouseholdExpense>[...initialExpensePage.items];
-      var lastDoc = initialExpensePage.lastDocument;
-      var hasMore = initialExpensePage.hasMore;
+          final cloudHouseholdExpenses = <HouseholdExpense>[
+            ...initialExpensePage.items
+          ];
+          var lastDoc = initialExpensePage.lastDocument;
+          var hasMore = initialExpensePage.hasMore;
 
-      while (hasMore && lastDoc != null && cloudHouseholdExpenses.isNotEmpty) {
-        final oldestLoaded = cloudHouseholdExpenses.last.createdAt;
-        if (oldestLoaded.isBefore(startOfMonth)) {
-          break;
-        }
-        final nextPage = await firestoreService.loadHouseholdExpensesPage(
-          startAfter: lastDoc,
-          limit: 50,
-        );
-        if (!isCurrentLoad()) return CloudProfileStatus.unknown;
-        if (nextPage.items.isEmpty) {
-          hasMore = false;
-          break;
-        }
-        cloudHouseholdExpenses.addAll(nextPage.items);
-        lastDoc = nextPage.lastDocument;
-        hasMore = nextPage.hasMore;
-      }
-      final cloudSavedShops = await firestoreService.loadSavedShops();
-      if (!isCurrentLoad()) return CloudProfileStatus.unknown;
-      final cloudClaims = await firestoreService.loadClaimedReceipts();
-      if (!isCurrentLoad()) return CloudProfileStatus.unknown;
+          while (
+              hasMore && lastDoc != null && cloudHouseholdExpenses.isNotEmpty) {
+            final oldestLoaded = cloudHouseholdExpenses.last.createdAt;
+            if (oldestLoaded.isBefore(startOfMonth)) {
+              break;
+            }
+            final nextPage = await firestoreService.loadHouseholdExpensesPage(
+              startAfter: lastDoc,
+              limit: 50,
+            );
+            if (!isCurrentLoad()) return;
+            if (nextPage.items.isEmpty) {
+              hasMore = false;
+              break;
+            }
+            cloudHouseholdExpenses.addAll(nextPage.items);
+            lastDoc = nextPage.lastDocument;
+            hasMore = nextPage.hasMore;
+          }
+          final cloudSavedShops = await firestoreService.loadSavedShops();
+          if (!isCurrentLoad()) return;
+          final cloudClaims = await firestoreService.loadClaimedReceipts();
+          if (!isCurrentLoad()) return;
+          final cloudMonthlyExpenses = await firestoreService
+              .loadHouseholdExpensesForMonth(now.year, now.month);
+          if (!isCurrentLoad()) return;
 
-      bills
-        ..clear()
-        ..addAll(cloudBills);
-      claimedReceipts
-        ..clear()
-        ..addAll(cloudClaims);
-      expenses
-        ..clear()
-        ..addAll(cloudExpenses);
-      householdExpenses
-        ..clear()
-        ..addAll(cloudHouseholdExpenses);
-      _lastHouseholdExpenseDoc = lastDoc;
-      hasMoreHouseholdExpenses = hasMore;
-      savedShops
-        ..clear()
-        ..addAll(cloudSavedShops);
+          bills
+            ..clear()
+            ..addAll(cloudBills);
+          claimedReceipts
+            ..clear()
+            ..addAll(cloudClaims);
+          expenses
+            ..clear()
+            ..addAll(cloudExpenses);
+          householdExpenses
+            ..clear()
+            ..addAll(cloudHouseholdExpenses);
+          _lastHouseholdExpenseDoc = lastDoc;
+          hasMoreHouseholdExpenses = hasMore;
+          _monthlyHouseholdExpenses
+            ..clear()
+            ..addAll(cloudMonthlyExpenses);
+          _loadedMonthlyExpensesYear = now.year;
+          _loadedMonthlyExpensesMonth = now.month;
+          savedShops
+            ..clear()
+            ..addAll(cloudSavedShops);
+        },
+      );
+      if (!isCurrentLoad()) return CloudProfileStatus.unknown;
     } catch (e) {
       if (!isCurrentLoad()) return CloudProfileStatus.unknown;
       cloudError =
@@ -605,12 +880,16 @@ class AppState extends ChangeNotifier {
     claimedReceipts.clear();
     expenses.clear();
     householdExpenses.clear();
+    _monthlyHouseholdExpenses.clear();
+    _loadedMonthlyExpensesYear = null;
+    _loadedMonthlyExpensesMonth = null;
     savedShops.clear();
     selectedBill = null;
     selectedClaimedReceipt = null;
     hasMoreHouseholdExpenses = false;
     isLoadingMoreHouseholdExpenses = false;
     _lastHouseholdExpenseDoc = null;
+    _pendingHouseholdExpenseOperations.clear();
   }
 
   bool _isCurrentAuthenticatedSession(String uid, int generation) =>
@@ -652,6 +931,10 @@ class AppState extends ChangeNotifier {
     hasMoreHouseholdExpenses = false;
     isLoadingMoreHouseholdExpenses = false;
     _lastHouseholdExpenseDoc = null;
+    _pendingHouseholdExpenseOperations.clear();
+    _monthlyHouseholdExpenses.clear();
+    _loadedMonthlyExpensesYear = null;
+    _loadedMonthlyExpensesMonth = null;
     lastNotice = '';
     supportReference = 'PP-SUP-1042';
     language = 'English';
@@ -874,6 +1157,9 @@ class AppState extends ChangeNotifier {
       }
     } catch (error) {
       if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        if (_isNetworkError(error)) {
+          _isOffline = true;
+        }
         cloudError = error.toString();
       }
       rethrow;
@@ -912,6 +1198,9 @@ class AppState extends ChangeNotifier {
       return receipt;
     } catch (error) {
       if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        if (_isNetworkError(error)) {
+          _isOffline = true;
+        }
         cloudError = error.toString();
       }
       rethrow;
@@ -1024,6 +1313,7 @@ class AppState extends ChangeNotifier {
       page = vendorMode ? 'vendorReceipt' : 'receipt';
       lastNotice = 'Bill created successfully.';
       cloudError = null;
+      _isOffline = false;
       return bill;
     } catch (e) {
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
@@ -1079,6 +1369,7 @@ class AppState extends ChangeNotifier {
       selectedBill!.isSaved = true;
       lastNotice = 'Receipt saved (demo).';
       cloudError = null;
+      _isOffline = false;
       notifyListeners();
       return true;
     }
@@ -1109,6 +1400,7 @@ class AppState extends ChangeNotifier {
       selectedBill!.isSaved = true;
       lastNotice = 'Receipt saved to cloud.';
       cloudError = null;
+      _isOffline = false;
       return true;
     } catch (e) {
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
@@ -1130,6 +1422,7 @@ class AppState extends ChangeNotifier {
     if (!bill.isUdhaar) {
       const err = 'Only Udhaar bills can be marked as settled.';
       cloudError = null;
+      _isOffline = false;
       lastNotice = err;
       notifyListeners();
       return false;
@@ -1140,6 +1433,7 @@ class AppState extends ChangeNotifier {
       bill.isSettled = true;
       lastNotice = '${bill.id} settled (demo).';
       cloudError = null;
+      _isOffline = false;
       notifyListeners();
       return true;
     }
@@ -1170,6 +1464,7 @@ class AppState extends ChangeNotifier {
       bill.isSettled = true;
       lastNotice = '${bill.id} marked as settled.';
       cloudError = null;
+      _isOffline = false;
       return true;
     } catch (e) {
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
@@ -1191,6 +1486,7 @@ class AppState extends ChangeNotifier {
     required String category,
     required double amount,
     String source = 'manual',
+    DateTime? expenseDate,
   }) async {
     if (isCloudLoading || isSigningOut) return false;
     final normalizedTitle = title.trim();
@@ -1217,7 +1513,8 @@ class AppState extends ChangeNotifier {
         pending.title == normalizedTitle &&
         pending.category == normalizedCategory &&
         pending.amount == amount &&
-        pending.source == source;
+        pending.source == source &&
+        pending.expenseDate == expenseDate;
 
     final HouseholdExpense expense;
     if (isRetry) {
@@ -1230,6 +1527,7 @@ class AppState extends ChangeNotifier {
         amount: amount,
         createdAt: DateTime.now(),
         source: source,
+        expenseDate: expenseDate,
       );
       if (cloudWrite) _retryableHouseholdExpense = expense;
     }
@@ -1239,6 +1537,7 @@ class AppState extends ChangeNotifier {
       lastNotice = 'Household expense recorded in demo mode.';
       page = 'householdExpenses';
       cloudError = null;
+      _isOffline = false;
       notifyListeners();
       return true;
     }
@@ -1257,13 +1556,28 @@ class AppState extends ChangeNotifier {
       if (identical(_retryableHouseholdExpense, expense)) {
         _retryableHouseholdExpense = null;
       }
+      if (_loadedMonthlyExpensesYear != null &&
+          _loadedMonthlyExpensesMonth != null) {
+        final eff = expense.effectiveDate;
+        if (eff.year == _loadedMonthlyExpensesYear &&
+            eff.month == _loadedMonthlyExpensesMonth) {
+          _monthlyHouseholdExpenses.removeWhere((e) => e.id == expense.id);
+          _monthlyHouseholdExpenses.add(expense);
+          _monthlyHouseholdExpenses
+              .sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+        }
+      }
       lastNotice = 'Household expense saved to cloud.';
       page = 'householdExpenses';
       cloudError = null;
+      _isOffline = false;
       return true;
     } catch (error) {
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
         return false;
+      }
+      if (_isNetworkError(error)) {
+        _isOffline = true;
       }
       cloudError = error.toString();
       lastNotice = 'Household expense was not saved. Retry the same entry.';
@@ -1281,7 +1595,9 @@ class AppState extends ChangeNotifier {
       hasMoreHouseholdExpenses = false;
       return false;
     }
-    if (isLoadingMoreHouseholdExpenses || !hasMoreHouseholdExpenses) return false;
+    if (isLoadingMoreHouseholdExpenses || !hasMoreHouseholdExpenses) {
+      return false;
+    }
     final lastDoc = _lastHouseholdExpenseDoc;
     if (lastDoc == null) {
       hasMoreHouseholdExpenses = false;
@@ -1313,6 +1629,488 @@ class AppState extends ChangeNotifier {
     } finally {
       isLoadingMoreHouseholdExpenses = false;
       notifyListeners();
+    }
+  }
+
+  /// Active (non-voided) household expenses.
+  Iterable<HouseholdExpense> get activeHouseholdExpenses =>
+      householdExpenses.where((e) => !e.isVoided);
+
+  /// Non-voided household expenses for the current month.
+  ///
+  /// In cloud mode, this is populated via [FirestoreService.loadHouseholdExpensesForMonth].
+  /// In demo mode or if monthly query has not run, falls back to filtering [activeHouseholdExpenses].
+  List<HouseholdExpense> get monthlyHouseholdExpenses {
+    final now = DateTime.now();
+    if (!isDemoMode &&
+        _loadedMonthlyExpensesYear == now.year &&
+        _loadedMonthlyExpensesMonth == now.month) {
+      return List.unmodifiable(
+          _monthlyHouseholdExpenses.where((e) => !e.isVoided));
+    }
+    return List.unmodifiable(
+      activeHouseholdExpenses.where((e) {
+        final d = e.effectiveDate;
+        return d.year == now.year && d.month == now.month;
+      }),
+    );
+  }
+
+  /// Total spending across all active household expenses.
+  double get totalHouseholdSpend =>
+      activeHouseholdExpenses.fold<double>(0.0, (sum, e) => sum + e.amount);
+
+  /// Household spend for today based on each expense's effectiveDate.
+  double get spentToday {
+    final now = DateTime.now();
+    return spentOnDay(now);
+  }
+
+  /// Household spend on a specific calendar day based on effectiveDate.
+  double spentOnDay(DateTime day) {
+    final source = (!isDemoMode &&
+            _loadedMonthlyExpensesYear == day.year &&
+            _loadedMonthlyExpensesMonth == day.month)
+        ? _monthlyHouseholdExpenses.where((e) => !e.isVoided)
+        : activeHouseholdExpenses;
+    return source.where((e) {
+      final date = e.effectiveDate;
+      return date.year == day.year &&
+          date.month == day.month &&
+          date.day == day.day;
+    }).fold<double>(0.0, (sum, e) => sum + e.amount);
+  }
+
+  /// Household spend for the current calendar month based on effectiveDate.
+  double get spentThisMonth {
+    final now = DateTime.now();
+    return householdSpendForMonth(now.year, now.month);
+  }
+
+  /// Alias matching requirements for total monthly household spend.
+  double get totalHouseholdSpendThisMonth => spentThisMonth;
+
+  /// Household spend for a specific year and month based on effectiveDate.
+  double householdSpendForMonth(int year, int month) {
+    final source = (!isDemoMode &&
+            _loadedMonthlyExpensesYear == year &&
+            _loadedMonthlyExpensesMonth == month)
+        ? _monthlyHouseholdExpenses.where((e) => !e.isVoided)
+        : activeHouseholdExpenses;
+    return source.where((e) {
+      final date = e.effectiveDate;
+      return date.year == year && date.month == month;
+    }).fold<double>(0.0, (sum, e) => sum + e.amount);
+  }
+
+  bool _isRefreshingHouseholdExpenses = false;
+  bool get isRefreshingHouseholdExpenses => _isRefreshingHouseholdExpenses;
+
+  /// Refreshes the current month's household expenses from Firestore.
+  ///
+  /// In demo mode or when unauthenticated, this is a no-op.
+  Future<void> refreshCurrentMonthExpenses() async {
+    if (isDemoMode || !isAuthenticated || _isRefreshingHouseholdExpenses) {
+      return;
+    }
+    final uid = auth?.currentUser?.uid;
+    final authGeneration = _authEventGeneration;
+    try {
+      final now = DateTime.now();
+      final items = await firestoreService.loadHouseholdExpensesForMonth(
+        now.year,
+        now.month,
+      );
+      if (_disposed ||
+          isSigningOut ||
+          uid == null ||
+          !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return;
+      }
+      _monthlyHouseholdExpenses
+        ..clear()
+        ..addAll(items);
+      _loadedMonthlyExpensesYear = now.year;
+      _loadedMonthlyExpensesMonth = now.month;
+      cloudError = null;
+      _isOffline = false;
+      notifyListeners();
+    } catch (e) {
+      if (_disposed ||
+          isSigningOut ||
+          uid == null ||
+          !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return;
+      }
+      if (_isNetworkError(e)) {
+        _isOffline = true;
+      }
+      cloudError = 'Could not refresh insights: $e';
+      notifyListeners();
+    }
+  }
+
+  /// Refreshes all household expenses (first page of daily log and current month query).
+  ///
+  /// In demo mode or when unauthenticated, triggers a local notification update.
+  Future<void> refreshHouseholdExpenses() async {
+    if (isDemoMode) {
+      notifyListeners();
+      return;
+    }
+    if (!isAuthenticated || _isRefreshingHouseholdExpenses) return;
+    final uid = auth?.currentUser?.uid;
+    final authGeneration = _authEventGeneration;
+    _isRefreshingHouseholdExpenses = true;
+    try {
+      final now = DateTime.now();
+      final pageResult =
+          await firestoreService.loadHouseholdExpensesPage(limit: 50);
+      final monthlyResult =
+          await firestoreService.loadHouseholdExpensesForMonth(
+        now.year,
+        now.month,
+      );
+      if (_disposed ||
+          isSigningOut ||
+          uid == null ||
+          !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return;
+      }
+      householdExpenses
+        ..clear()
+        ..addAll(pageResult.items);
+      _lastHouseholdExpenseDoc = pageResult.lastDocument;
+      hasMoreHouseholdExpenses = pageResult.hasMore;
+      _monthlyHouseholdExpenses
+        ..clear()
+        ..addAll(monthlyResult);
+      _loadedMonthlyExpensesYear = now.year;
+      _loadedMonthlyExpensesMonth = now.month;
+      cloudError = null;
+      _isOffline = false;
+      notifyListeners();
+    } catch (e) {
+      if (_disposed ||
+          isSigningOut ||
+          uid == null ||
+          !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return;
+      }
+      if (_isNetworkError(e)) {
+        _isOffline = true;
+      }
+      cloudError = 'Could not refresh expenses: $e';
+      notifyListeners();
+    } finally {
+      _isRefreshingHouseholdExpenses = false;
+    }
+  }
+
+  /// Clears any active cloud error message.
+  void clearCloudError() {
+    if (cloudError != null) {
+      cloudError = null;
+      notifyListeners();
+    }
+  }
+
+  /// Updates an existing household expense.
+  ///
+  /// In cloud mode, executes a Firestore transaction via [FirestoreService].
+  /// In demo mode, records a correction snapshot and updates local state.
+  Future<bool> updateHouseholdExpense(HouseholdExpense expense) async {
+    if (_disposed || isSigningOut) return false;
+    final trimmedId = expense.id.trim();
+    if (trimmedId.isEmpty) {
+      throw ArgumentError('Expense ID cannot be empty.');
+    }
+
+    if (_pendingHouseholdExpenseOperations.contains(trimmedId)) {
+      throw StateError('An operation is already in progress for this expense.');
+    }
+
+    var index = householdExpenses.indexWhere((e) => e.id == trimmedId);
+    final HouseholdExpense existing;
+    if (index != -1) {
+      existing = householdExpenses[index];
+    } else {
+      final mIndex =
+          _monthlyHouseholdExpenses.indexWhere((e) => e.id == trimmedId);
+      if (mIndex != -1) {
+        existing = _monthlyHouseholdExpenses[mIndex];
+      } else {
+        throw StateError('Household expense not found.');
+      }
+    }
+    if (existing.isVoided) {
+      throw StateError('Cannot modify a voided household expense.');
+    }
+
+    final normalizedTitle = expense.title.trim();
+    if (normalizedTitle.isEmpty || normalizedTitle.length > 100) {
+      throw ArgumentError('Title must be between 1 and 100 characters.');
+    }
+    final normalizedCategory = expense.category.trim();
+    if (normalizedCategory.isEmpty || normalizedCategory.length > 50) {
+      throw ArgumentError('Category must be between 1 and 50 characters.');
+    }
+    if (!expense.amount.isFinite ||
+        expense.amount <= 0 ||
+        expense.amount > 10000000) {
+      throw ArgumentError('Amount must be positive, finite and <= 10,000,000.');
+    }
+
+    final targetExpenseDate = expense.expenseDate ?? existing.expenseDate;
+
+    if (existing.history.length >= 10) {
+      throw StateError('Maximum correction history limit of 10 reached.');
+    }
+
+    // Build the prior state snapshot
+    final snapshot = ExpenseCorrectionSnapshot(
+      title: existing.title,
+      category: existing.category,
+      amount: existing.amount,
+      expenseDate: existing.expenseDate,
+      modifiedAt: existing.updatedAt,
+    );
+    final newHistory = <ExpenseCorrectionSnapshot>[
+      ...existing.history,
+      snapshot,
+    ];
+
+    final updatedLocal = existing.copyWith(
+      title: normalizedTitle,
+      category: normalizedCategory,
+      amount: expense.amount,
+      expenseDate: targetExpenseDate,
+      updatedAt: DateTime.now(),
+      history: newHistory,
+    );
+
+    final cloudWrite = !isDemoMode && isAuthenticated;
+    if (!cloudWrite) {
+      if (index != -1) {
+        householdExpenses[index] = updatedLocal;
+      }
+      final mIndex =
+          _monthlyHouseholdExpenses.indexWhere((e) => e.id == trimmedId);
+      if (mIndex != -1) {
+        _monthlyHouseholdExpenses[mIndex] = updatedLocal;
+      }
+      lastNotice = 'Household expense updated in demo mode.';
+      cloudError = null;
+      _isOffline = false;
+      notifyListeners();
+      return true;
+    }
+
+    _pendingHouseholdExpenseOperations.add(trimmedId);
+    isCloudLoading = true;
+    cloudError = null;
+    notifyListeners();
+
+    final uid = auth?.currentUser?.uid;
+    final authGeneration = _authEventGeneration;
+
+    try {
+      final targetForCloud = expense.copyWith(
+        id: existing.id,
+        title: normalizedTitle,
+        category: normalizedCategory,
+        amount: expense.amount,
+        createdAt: existing.createdAt,
+        source: existing.source,
+        expenseDate: targetExpenseDate,
+      );
+
+      await firestoreService.updateHouseholdExpense(targetForCloud);
+
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
+
+      final currentIndex =
+          householdExpenses.indexWhere((e) => e.id == trimmedId);
+      if (currentIndex != -1) {
+        householdExpenses[currentIndex] = updatedLocal;
+      }
+
+      final eff = updatedLocal.effectiveDate;
+      final mIndex =
+          _monthlyHouseholdExpenses.indexWhere((e) => e.id == trimmedId);
+      final isCurrentMonth = _loadedMonthlyExpensesYear != null &&
+          _loadedMonthlyExpensesMonth != null &&
+          eff.year == _loadedMonthlyExpensesYear &&
+          eff.month == _loadedMonthlyExpensesMonth;
+      if (isCurrentMonth) {
+        if (mIndex != -1) {
+          _monthlyHouseholdExpenses[mIndex] = updatedLocal;
+        } else {
+          _monthlyHouseholdExpenses.add(updatedLocal);
+        }
+        _monthlyHouseholdExpenses
+            .sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+      } else if (mIndex != -1) {
+        _monthlyHouseholdExpenses.removeAt(mIndex);
+      }
+
+      if (_loadedMonthlyExpensesYear != null &&
+          _loadedMonthlyExpensesMonth != null) {
+        try {
+          final refreshed =
+              await firestoreService.loadHouseholdExpensesForMonth(
+            _loadedMonthlyExpensesYear!,
+            _loadedMonthlyExpensesMonth!,
+          );
+          if (_isCurrentAuthenticatedSession(uid, authGeneration)) {
+            _monthlyHouseholdExpenses
+              ..clear()
+              ..addAll(refreshed);
+          }
+        } catch (_) {
+          // Fallback to in-memory update
+        }
+      }
+
+      lastNotice = 'Household expense updated in cloud.';
+      cloudError = null;
+      _isOffline = false;
+      return true;
+    } catch (error) {
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
+      if (_isNetworkError(error)) {
+        _isOffline = true;
+      }
+      cloudError = error.toString();
+      rethrow;
+    } finally {
+      _pendingHouseholdExpenseOperations.remove(trimmedId);
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        isCloudLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Marks a household expense as voided (soft-delete).
+  ///
+  /// In cloud mode, executes a Firestore transaction via [FirestoreService].
+  /// In demo mode, marks the item voided in local memory.
+  Future<bool> voidHouseholdExpense(String expenseId, {String? reason}) async {
+    if (_disposed || isSigningOut) return false;
+    final trimmedId = expenseId.trim();
+    if (trimmedId.isEmpty) {
+      throw ArgumentError('Expense ID cannot be empty.');
+    }
+    final trimmedReason = reason?.trim();
+    if (trimmedReason != null && trimmedReason.length > 200) {
+      throw ArgumentError('Void reason cannot exceed 200 characters.');
+    }
+
+    if (_pendingHouseholdExpenseOperations.contains(trimmedId)) {
+      throw StateError('An operation is already in progress for this expense.');
+    }
+
+    var index = householdExpenses.indexWhere((e) => e.id == trimmedId);
+    final HouseholdExpense existing;
+    if (index != -1) {
+      existing = householdExpenses[index];
+    } else {
+      final mIndex =
+          _monthlyHouseholdExpenses.indexWhere((e) => e.id == trimmedId);
+      if (mIndex != -1) {
+        existing = _monthlyHouseholdExpenses[mIndex];
+      } else {
+        throw StateError('Household expense not found.');
+      }
+    }
+    if (existing.isVoided) {
+      throw StateError('Expense is already voided.');
+    }
+
+    final voidedLocal = existing.copyWith(
+      isVoided: true,
+      voidedAt: DateTime.now(),
+      voidReason: trimmedReason,
+    );
+
+    final cloudWrite = !isDemoMode && isAuthenticated;
+    if (!cloudWrite) {
+      if (index != -1) {
+        householdExpenses[index] = voidedLocal;
+      }
+      _monthlyHouseholdExpenses.removeWhere((e) => e.id == trimmedId);
+      lastNotice = 'Household expense voided in demo mode.';
+      cloudError = null;
+      _isOffline = false;
+      notifyListeners();
+      return true;
+    }
+
+    _pendingHouseholdExpenseOperations.add(trimmedId);
+    isCloudLoading = true;
+    cloudError = null;
+    notifyListeners();
+
+    final uid = auth?.currentUser?.uid;
+    final authGeneration = _authEventGeneration;
+
+    try {
+      await firestoreService.voidHouseholdExpense(trimmedId,
+          reason: trimmedReason);
+
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
+
+      final currentIndex =
+          householdExpenses.indexWhere((e) => e.id == trimmedId);
+      if (currentIndex != -1) {
+        householdExpenses[currentIndex] = voidedLocal;
+      }
+      _monthlyHouseholdExpenses.removeWhere((e) => e.id == trimmedId);
+
+      if (_loadedMonthlyExpensesYear != null &&
+          _loadedMonthlyExpensesMonth != null) {
+        try {
+          final refreshed =
+              await firestoreService.loadHouseholdExpensesForMonth(
+            _loadedMonthlyExpensesYear!,
+            _loadedMonthlyExpensesMonth!,
+          );
+          if (_isCurrentAuthenticatedSession(uid, authGeneration)) {
+            _monthlyHouseholdExpenses
+              ..clear()
+              ..addAll(refreshed);
+          }
+        } catch (_) {
+          // Fallback to in-memory removal
+        }
+      }
+
+      lastNotice = 'Household expense voided in cloud.';
+      cloudError = null;
+      _isOffline = false;
+      return true;
+    } catch (error) {
+      if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
+      if (_isNetworkError(error)) {
+        _isOffline = true;
+      }
+      cloudError = error.toString();
+      rethrow;
+    } finally {
+      _pendingHouseholdExpenseOperations.remove(trimmedId);
+      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        isCloudLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -1359,6 +2157,7 @@ class AppState extends ChangeNotifier {
       lastNotice = 'Expense recorded (demo).';
       page = 'expenseSaved';
       cloudError = null;
+      _isOffline = false;
       notifyListeners();
       return true;
     }
@@ -1381,6 +2180,7 @@ class AppState extends ChangeNotifier {
       lastNotice = 'Expense saved to cloud.';
       page = 'expenseSaved';
       cloudError = null;
+      _isOffline = false;
       return true;
     } catch (e) {
       // A write from the previous account/session must not surface an error
@@ -1414,6 +2214,7 @@ class AppState extends ChangeNotifier {
         lastNotice = 'Shop saved.';
       }
       cloudError = null;
+      _isOffline = false;
       notifyListeners();
       return true;
     }
@@ -1443,6 +2244,7 @@ class AppState extends ChangeNotifier {
         lastNotice = 'Shop saved.';
       }
       cloudError = null;
+      _isOffline = false;
       return true;
     } catch (e) {
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
@@ -1484,6 +2286,7 @@ class AppState extends ChangeNotifier {
       lastNotice = 'Profile updated (demo).';
       if (successPage != null) page = successPage;
       cloudError = null;
+      _isOffline = false;
       notifyListeners();
       return true;
     }
@@ -1517,6 +2320,7 @@ class AppState extends ChangeNotifier {
       lastNotice = 'Profile updated in cloud.';
       if (successPage != null) page = successPage;
       cloudError = null;
+      _isOffline = false;
       return true;
     } catch (e) {
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
@@ -1557,6 +2361,7 @@ class AppState extends ChangeNotifier {
       shopAddress = newAddress;
       lastNotice = 'Shop updated (demo).';
       cloudError = null;
+      _isOffline = false;
       notifyListeners();
       return true;
     }
@@ -1590,6 +2395,7 @@ class AppState extends ChangeNotifier {
       profileStatus = CloudProfileStatus.loaded;
       lastNotice = 'Shop profile updated in cloud.';
       cloudError = null;
+      _isOffline = false;
       return true;
     } catch (e) {
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
@@ -1627,6 +2433,7 @@ class AppState extends ChangeNotifier {
       vendorCategory = newCategory;
       lastNotice = 'Vendor updated (demo).';
       cloudError = null;
+      _isOffline = false;
       notifyListeners();
       return true;
     }
@@ -1659,6 +2466,7 @@ class AppState extends ChangeNotifier {
       profileStatus = CloudProfileStatus.loaded;
       lastNotice = 'Vendor profile updated in cloud.';
       cloudError = null;
+      _isOffline = false;
       return true;
     } catch (e) {
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
@@ -1951,5 +2759,150 @@ class AppState extends ChangeNotifier {
       }
     }
     return e.toString();
+  }
+
+  Future<bool> sendDeletionReauthOtp({
+    void Function(String verificationId)? onCodeSent,
+    void Function(String error)? onError,
+  }) async {
+    if (isDemoMode || _explicitDemoSession) {
+      deletionError =
+          'Account deletion is not supported in Demo Mode. Reset demo data locally instead.';
+      notifyListeners();
+      onError?.call(deletionError!);
+      return false;
+    }
+
+    final user = auth?.currentUser;
+    if (user == null) {
+      deletionError = 'You must be signed in to request account deletion.';
+      notifyListeners();
+      onError?.call(deletionError!);
+      return false;
+    }
+
+    final targetPhone = user.phoneNumber?.trim() ?? '';
+    if (targetPhone.isEmpty) {
+      deletionError =
+          'No verified phone number found on account to re-authenticate.';
+      notifyListeners();
+      onError?.call(deletionError!);
+      return false;
+    }
+
+    deletionError = null;
+    notifyListeners();
+
+    final completer = Completer<bool>();
+
+    try {
+      await auth!.verifyPhoneNumber(
+        phoneNumber: targetPhone,
+        timeout: const Duration(seconds: 60),
+        forceResendingToken: deletionResendToken,
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          try {
+            await user.reauthenticateWithCredential(credential);
+            if (!completer.isCompleted) completer.complete(true);
+          } catch (_) {
+            if (!completer.isCompleted) completer.complete(false);
+          }
+        },
+        verificationFailed: (FirebaseAuthException e) {
+          deletionError =
+              e.message ?? 'SMS verification failed. Check phone connection.';
+          notifyListeners();
+          onError?.call(deletionError!);
+          if (!completer.isCompleted) completer.complete(false);
+        },
+        codeSent: (String vId, int? resendToken) {
+          deletionVerificationId = vId;
+          deletionResendToken = resendToken;
+          onCodeSent?.call(vId);
+          notifyListeners();
+          if (!completer.isCompleted) completer.complete(true);
+        },
+        codeAutoRetrievalTimeout: (String vId) {
+          deletionVerificationId = vId;
+        },
+      );
+    } catch (e) {
+      deletionError = 'Failed to send verification SMS: $e';
+      notifyListeners();
+      onError?.call(deletionError!);
+      return false;
+    }
+
+    return completer.future;
+  }
+
+  Future<bool> deleteAccountWithOtp(
+    String smsCode, {
+    bool skipFreshnessCheckForTest = false,
+  }) async {
+    if (isDemoMode || _explicitDemoSession) {
+      deletionError =
+          'Demo mode sessions cannot perform server-side account deletion.';
+      notifyListeners();
+      return false;
+    }
+
+    final user = auth?.currentUser;
+    if (user == null) {
+      deletionError = 'You must be signed in to delete your account.';
+      notifyListeners();
+      return false;
+    }
+
+    if (deletionVerificationId == null || deletionVerificationId!.isEmpty) {
+      deletionError = 'Please request an SMS verification code first.';
+      notifyListeners();
+      return false;
+    }
+
+    isDeletingAccount = true;
+    deletionError = null;
+    notifyListeners();
+
+    try {
+      final credential = PhoneAuthProvider.credential(
+        verificationId: deletionVerificationId!,
+        smsCode: smsCode.trim(),
+      );
+      await user.reauthenticateWithCredential(credential);
+
+      await accountDeletionService.invokeDeletion(
+        skipFreshnessCheckForTest: skipFreshnessCheckForTest,
+      );
+
+      _clearCloudAccountState();
+      try {
+        await firestoreService.firestore.clearPersistence();
+      } catch (_) {}
+
+      try {
+        await auth?.signOut();
+      } catch (_) {}
+
+      _restoreDemoState();
+      isDemoMode = true;
+      deletionSuccessMessage =
+          'Your account and personal data have been permanently deleted.';
+      page = 'splash';
+      return true;
+    } catch (e) {
+      deletionError = 'Account deletion failed: $e';
+      return false;
+    } finally {
+      isDeletingAccount = false;
+      notifyListeners();
+    }
+  }
+
+  void resetDemoData() {
+    _restoreDemoState();
+    deletionError = null;
+    deletionSuccessMessage = 'Demo records reset to default state.';
+    notifyListeners();
   }
 }

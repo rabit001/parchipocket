@@ -6,6 +6,52 @@ import '../widgets/ui.dart';
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key, required this.state});
   final AppState state;
+
+  void _showThemeDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Choose theme',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            ListTile(
+              title: const Text('System default'),
+              trailing: state.themeMode == ThemeMode.system
+                  ? const Icon(Icons.check_rounded, color: PpColors.forest)
+                  : null,
+              onTap: () {
+                state.setThemeMode(ThemeMode.system);
+                Navigator.of(dialogCtx).pop();
+              },
+            ),
+            ListTile(
+              title: const Text('Light theme'),
+              trailing: state.themeMode == ThemeMode.light
+                  ? const Icon(Icons.check_rounded, color: PpColors.forest)
+                  : null,
+              onTap: () {
+                state.setThemeMode(ThemeMode.light);
+                Navigator.of(dialogCtx).pop();
+              },
+            ),
+            ListTile(
+              title: const Text('Dark theme'),
+              trailing: state.themeMode == ThemeMode.dark
+                  ? const Icon(Icons.check_rounded, color: PpColors.forest)
+                  : null,
+              onTap: () {
+                state.setThemeMode(ThemeMode.dark);
+                Navigator.of(dialogCtx).pop();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => PpScaffold(
       state: state,
@@ -17,6 +63,15 @@ class SettingsScreen extends StatelessWidget {
             title: 'Account',
             subtitle: 'Edit your profile and city',
             onTap: () => state.go('editProfile')),
+        _SettingRow(
+            icon: Icons.palette_outlined,
+            title: 'Appearance',
+            subtitle: switch (state.themeMode) {
+              ThemeMode.system => 'System default',
+              ThemeMode.light => 'Light theme',
+              ThemeMode.dark => 'Dark theme',
+            },
+            onTap: () => _showThemeDialog(context)),
         _SettingRow(
             icon: Icons.language,
             title: 'Language',
@@ -141,14 +196,17 @@ class _SettingRow extends StatelessWidget {
   final String title, subtitle;
   final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) => ListTile(
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
         leading: Container(
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-                color: PpColors.soft, borderRadius: BorderRadius.circular(10)),
-            child: Icon(icon, color: PpColors.forest, size: 20)),
+                color: isDark ? const Color(0xFF243026) : PpColors.soft,
+                borderRadius: BorderRadius.circular(10)),
+            child: Icon(icon, color: isDark ? PpColors.forestLight : PpColors.forest, size: 20)),
         title: Text(title,
             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
         subtitle: Text(subtitle,
@@ -157,6 +215,7 @@ class _SettingRow extends StatelessWidget {
             size: 18, color: PpColors.secondary),
         onTap: onTap,
       );
+  }
 }
 
 class NotificationsScreen extends StatelessWidget {
@@ -711,6 +770,7 @@ class _PrivacyTile extends StatelessWidget {
 class DeleteAccountReviewScreen extends StatelessWidget {
   const DeleteAccountReviewScreen({super.key, required this.state});
   final AppState state;
+
   @override
   Widget build(BuildContext context) => PpScaffold(
       state: state,
@@ -721,69 +781,248 @@ class DeleteAccountReviewScreen extends StatelessWidget {
         const Icon(Icons.warning_amber_rounded,
             size: 45, color: PpColors.error),
         const SizedBox(height: 10),
-        const Text('Review before deleting',
+        const Text('Review Before Deleting',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
         const Text(
-            'Deleting an account is permanent in the live app and should require identity re-verification.',
+            'Deleting your account is permanent and cannot be undone. All your personal data and account credentials will be permanently erased.',
             style: TextStyle(fontSize: 12, color: PpColors.secondary)),
         const SizedBox(height: 18),
         const PpCard(
             child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-              Text('Before continuing',
+              Text('What will be deleted:',
                   style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
               SizedBox(height: 9),
               Text(
-                  '• Explain which profile and saved records will be removed.\n\n• Explain which records need to be retained.\n\n• Re-verify the user identity.\n\n• Ask for a final confirmation.',
-                  style: TextStyle(fontSize: 11, height: 1.3))
+                  '• Your profile information, verified phone number, and authentication login.\n\n'
+                  '• All business bills and recorded merchant expenses.\n\n'
+                  '• All household expenses, categories, and monthly spending insights.\n\n'
+                  '• All saved shop bookmarks and claimed receipt lookup indexes.',
+                  style: TextStyle(fontSize: 11, height: 1.35))
             ])),
-        const SizedBox(height: 12),
-        const PpDemoNotice(
-            message:
-                'Figma/Flutter starter only. No account or data will actually be deleted from this screen.'),
+        const SizedBox(height: 14),
+        const PpCard(
+            color: PpColors.soft,
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+              Text('Important Notice regarding Receipts:',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+              SizedBox(height: 8),
+              Text(
+                  '• Merchant Receipts: If you are a seller, digital receipts already claimed by customers are preserved in customer accounts as their independent proof of purchase.\n\n'
+                  '• Customer Claims: If you are a customer, your claimed receipt copies will be removed from your account, and your identity unlinked from receipt claims.',
+                  style: TextStyle(
+                      fontSize: 11, height: 1.35, color: PpColors.secondary))
+            ])),
         const SizedBox(height: 18),
-        PpPrimaryButton('Review Final Confirmation',
+        PpPrimaryButton('Proceed to Identity Verification',
             onPressed: () => state.go('deleteConfirm')),
         const SizedBox(height: 9),
-        PpSecondaryButton('Cancel', onPressed: () => state.go('privacy')),
+        PpSecondaryButton('Cancel and Keep Account',
+            onPressed: () => state.go('privacy')),
       ]));
 }
 
-class DeleteAccountConfirmScreen extends StatelessWidget {
+class DeleteAccountConfirmScreen extends StatefulWidget {
   const DeleteAccountConfirmScreen({super.key, required this.state});
   final AppState state;
+
   @override
-  Widget build(BuildContext context) => PpScaffold(
-      state: state,
-      title: 'Final confirmation',
-      backTo: 'deleteReview',
-      body: ListView(children: <Widget>[
-        const SizedBox(height: 22),
-        const Center(
-            child: CircleAvatar(
+  State<DeleteAccountConfirmScreen> createState() =>
+      _DeleteAccountConfirmScreenState();
+}
+
+class _DeleteAccountConfirmScreenState
+    extends State<DeleteAccountConfirmScreen> {
+  final TextEditingController _otpController = TextEditingController();
+  bool _otpSent = false;
+  bool _isSendingOtp = false;
+
+  @override
+  void dispose() {
+    _otpController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = widget.state;
+
+    if (state.isDemoMode) {
+      return PpScaffold(
+        state: state,
+        title: 'Demo Session',
+        backTo: 'deleteReview',
+        body: ListView(
+          children: <Widget>[
+            const SizedBox(height: 22),
+            const Center(
+              child: CircleAvatar(
                 radius: 34,
-                backgroundColor: PpColors.errorSoft,
-                child: Icon(Icons.warning_rounded,
-                    color: PpColors.error, size: 34))),
-        const SizedBox(height: 16),
-        const Text('Final deletion step',
+                backgroundColor: PpColors.soft,
+                child: Icon(Icons.info_outline_rounded,
+                    color: PpColors.secondary, size: 34),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Demo Mode Active',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'You are exploring ParchiPocket in offline demo mode. No remote Firebase cloud account exists for this session.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: PpColors.secondary),
+            ),
+            const SizedBox(height: 22),
+            PpPrimaryButton(
+              'Reset Demo Data Locally',
+              onPressed: () {
+                state.resetDemoData();
+                state.go('privacy');
+              },
+            ),
+            const SizedBox(height: 10),
+            PpSecondaryButton(
+              'Back to Privacy',
+              onPressed: () => state.go('privacy'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final userPhone =
+        state.auth?.currentUser?.phoneNumber ?? state.phoneNumber;
+    final maskedPhone = userPhone.length > 4
+        ? '${userPhone.substring(0, userPhone.length - 4).replaceAll(RegExp(r"\\d"), "*")}${userPhone.substring(userPhone.length - 4)}'
+        : userPhone;
+
+    return PpScaffold(
+      state: state,
+      title: 'Final Confirmation',
+      backTo: 'deleteReview',
+      body: ListView(
+        children: <Widget>[
+          const SizedBox(height: 16),
+          const Center(
+            child: CircleAvatar(
+              radius: 34,
+              backgroundColor: PpColors.errorSoft,
+              child: Icon(Icons.warning_rounded,
+                  color: PpColors.error, size: 34),
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'Confirm Account Deletion',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 10),
-        const Text(
-            'A real app should show the account-specific deletion summary and request verified confirmation here.',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'To protect your data, re-verify ownership of registered phone number $maskedPhone via SMS OTP.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: PpColors.secondary)),
-        const SizedBox(height: 22),
-        const PpDemoNotice(
-            message:
-                'No data has been deleted. A secure backend deletion workflow is not part of this starter.'),
-        const SizedBox(height: 22),
-        PpPrimaryButton('Back to Privacy & Security',
-            onPressed: () => state.go('privacy')),
-      ]));
+            style: const TextStyle(fontSize: 12, color: PpColors.secondary),
+          ),
+          const SizedBox(height: 20),
+          if (state.deletionError != null) ...<Widget>[
+            PpCard(
+              color: PpColors.errorSoft,
+              child: Row(
+                children: <Widget>[
+                  const Icon(Icons.error_outline,
+                      color: PpColors.error, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      state.deletionError!,
+                      style: const TextStyle(
+                          fontSize: 11,
+                          color: PpColors.error,
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (!_otpSent) ...<Widget>[
+            PpPrimaryButton(
+              _isSendingOtp
+                  ? 'Sending SMS OTP...'
+                  : 'Send SMS Verification Code',
+              onPressed: _isSendingOtp
+                  ? null
+                  : () async {
+                      setState(() => _isSendingOtp = true);
+                      final sent = await state.sendDeletionReauthOtp(
+                        onCodeSent: (_) {
+                          if (mounted) setState(() => _otpSent = true);
+                        },
+                      );
+                      if (mounted) {
+                        setState(() {
+                          _isSendingOtp = false;
+                          if (sent) _otpSent = true;
+                        });
+                      }
+                    },
+            ),
+          ] else ...<Widget>[
+            TextField(
+              controller: _otpController,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                labelText: '6-digit SMS OTP',
+                hintText: 'Enter code received via SMS',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            PpPrimaryButton(
+              state.isDeletingAccount
+                  ? 'Deleting Account & Data...'
+                  : 'Permanently Delete Account',
+              onPressed: state.isDeletingAccount ||
+                      _otpController.text.trim().length != 6
+                  ? null
+                  : () async {
+                      await state.deleteAccountWithOtp(
+                        _otpController.text.trim(),
+                      );
+                    },
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: state.isDeletingAccount
+                  ? null
+                  : () async {
+                      setState(() => _isSendingOtp = true);
+                      await state.sendDeletionReauthOtp();
+                      if (mounted) setState(() => _isSendingOtp = false);
+                    },
+              child: const Text('Resend Verification SMS'),
+            ),
+          ],
+          const SizedBox(height: 14),
+          PpSecondaryButton(
+            'Cancel and Go Back',
+            onPressed:
+                state.isDeletingAccount ? null : () => state.go('privacy'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class LanguageScreen extends StatelessWidget {
