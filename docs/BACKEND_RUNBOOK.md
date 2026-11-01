@@ -4,7 +4,7 @@ This guide describes the Firebase backend currently implemented in ParchiPocket.
 
 ## Backend scope
 
-The backend is Firebase Authentication plus Cloud Firestore and Security Rules. No separate server/API or Cloud Functions service is included. This is compatible with a Spark-oriented setup, but client-only receipt claims cannot have server-attested token entropy or robust per-user/IP throttling.
+The backend comprises Firebase Authentication, Cloud Firestore, Firestore Security Rules, and a Node.js 22 Cloud Functions service. Account deletion is implemented through authenticated callable functions with Auth-trigger and scheduled recovery. Receipt claiming continues to use the documented Firestore claim/copy/index flow; do not infer that every receipt operation has moved to trusted server code. This is compatible with a Spark-oriented setup, but client-only receipt claims cannot have server-attested token entropy or robust per-user/IP throttling.
 
 ## Data schema
 
