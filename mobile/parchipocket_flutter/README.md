@@ -1,63 +1,74 @@
-# ParchiPocket Flutter Frontend Starter
+# ParchiPocket Android app
 
-A Flutter Android starter based on the ParchiPocket Figma prototype. It focuses on mobile UI and local demo interactions for customers, shop owners, and street vendors.
+ParchiPocket is a Flutter Android app. The current development focus is Home & Family spending: record daily purchases, review a household log, and see category totals. Firebase Authentication and Cloud Firestore are integrated for authenticated sessions and cloud data.
 
-## Included
+This is a development/debug-preview build, not a production accounting service.
 
-- Welcome, mocked Google sign-in flow, phone number and demo OTP flow
-- Role selection and separate customer/shop-owner/street-vendor setup
-- Customer home, searchable bills, itemised receipt, manual bill-code lookup, spending insights, nearby shops, saved shops, profile and edit profile
-- Shop-owner dashboard, bill creation with item validation and totals, local receipt creation, bill history, expenses, udhaar settlement confirmation, sales report preview, customer directory and printer preview
-- Street-vendor quick billing, multi-item flow, receipt, sales history and profile
-- Notifications preferences, language setting, FAQs, support submission preview, receipt-sharing preview, privacy screen, logout confirmation and account-deletion review
-- Reusable UI widgets, theme colours, local in-memory demo state and sample records
+## Current app behaviour
 
-## Important limitations
+- **Phone sign-in:** uses Firebase Authentication phone verification. Real SMS delivery requires Phone provider configuration and an eligible Firebase plan. Use configured Firebase test numbers while developing.
+- **Google sign-in:** the Google button is still a demo route, not completed Google OAuth.
+- **Demo mode:** uses local sample data in memory and must not be treated as a real account or ledger.
+- **Home & Family:** manual and voice-assisted household purchase entry, daily log, and category totals.
+- **Legacy seller features:** Shop Owner and Street Vendor source files remain for future work and compatibility, but those role flows are paused in the current onboarding/navigation.
+- **Receipts:** receipt-claim functionality remains available as a secondary flow. PDF export, production printer support, live nearby-shop discovery, push notifications, and robust offline sync are not production-complete.
 
-This is **frontend starter code**, not a production-ready application. Login is mocked, the OTP is the demo value `123456`, data resets when the app restarts, QR scanning is a placeholder, and share/PDF/printer screens are previews. There is no cloud database, real customer account linking, SMS, Google OAuth, push notification service or Bluetooth printing connected. Demo data must not be used as an actual business ledger.
+## Run on Windows
 
-## Run on your computer
+Open PowerShell in this folder, the one containing `pubspec.yaml`:
 
-1. Install the Flutter SDK and Android Studio, including an Android SDK and emulator or connect an Android phone with USB debugging enabled.
-2. Extract this project folder on your Windows computer.
-3. Open PowerShell in the extracted `parchipocket_flutter` directory.
-4. Run `flutter doctor` and fix any Android toolchain issues it reports.
-5. Generate the native Android platform folder and fetch packages by running:
-
-   ```powershell
-   .\setup_android.ps1
-   ```
-
-6. Start an Android emulator or connect a phone with USB debugging enabled, then run:
-
-   ```powershell
-   flutter run
-   ```
-
-The setup script uses the Flutter SDK on your computer to create the Android Gradle/Kotlin wrapper. It does not overwrite the Dart UI source files.
-
-## Build an Android release bundle later
-
-After installing the required Android build tools and completing app configuration/signing:
-
-```bash
-flutter build appbundle --release
+```powershell
+flutter doctor
+flutter pub get
+flutter devices
+flutter run
 ```
 
-The generated AAB is only a build artifact. Play Store publishing still requires production authentication, backend and data-protection decisions, testing, signing, store listing assets, and compliance with current Play Console requirements.
+For a USB-connected Android phone, enable Developer Options and USB debugging, then accept the computer authorization prompt on the phone.
 
-## Next development stage
+## Validate the app
 
-1. Review the Flutter UI against the Figma screens on a phone-sized viewport.
-2. Decide the backend and data model for users, shops, receipts, item lines, expenses, udhaar, saved shops and consented customer links.
-3. Add actual Google/phone authentication and verified customer bill ownership.
-4. Add QR generation/scanning, PDF receipt export and supported thermal-printer integration.
-5. Test error, offline, security, accessibility and data recovery behaviour before release.
+From this folder:
 
-## Source layout
+```powershell
+flutter test --reporter compact
+flutter analyze
+```
 
-- `lib/main.dart`: app entry and page router
-- `lib/app_state.dart`: demo models and local in-memory state
-- `lib/theme.dart`: app theme tokens
-- `lib/widgets/ui.dart`: reusable buttons, cards, fields, transaction rows and layout widgets
-- `lib/screens/`: onboarding, customer, shop-owner, street-vendor and shared screens
+The repository-level verification script runs Flutter tests, analysis, and the Firestore rules harness:
+
+```powershell
+cd ..\..
+.\scripts\verify-backend.ps1
+```
+
+For the full Android emulator integration suite, use GitHub Actions or an online Android emulator. The CI workflow runs both Firestore/Auth integration tests and the Daily Log pagination test.
+
+## Firebase configuration files
+
+There are two different Firebase configuration files and they are not duplicates:
+
+- Repository-root `firebase.json`: Firebase CLI configuration for Firestore rules, Functions, Hosting, and local emulators.
+- This folder's `firebase.json`: FlutterFire CLI platform mapping for the Android app.
+- `android/app/google-services.json` and `lib/firebase_options.dart`: generated Android/Dart Firebase app configuration.
+
+Publishing code to GitHub does not deploy Firestore rules or Functions to Firebase. See `docs/BACKEND_RUNBOOK.md` before any production deployment.
+
+## Project layout
+
+- `lib/core/`: shared app state, Firestore access, and telemetry.
+- `lib/features/`: auth, customer, expenses, receipts, settings, account deletion, and retained seller/vendor modules.
+- `lib/shared/`: theme and reusable widgets.
+- `test/`: unit and widget tests grouped by responsibility.
+- `integration_test/`: emulator-backed Firebase and Daily Log tests.
+- `android/`: native Android project and resources.
+
+A few old import paths at the top of `lib/` are compatibility export shims. They intentionally forward to the canonical files under `core/`, `features/`, and `shared/`; do not add new implementation code there.
+
+## Latest debug build
+
+The latest published debug APK is on the GitHub Releases page:
+
+[Download ParchiPocket v0.1.1 Debug Preview](https://github.com/rabit001/parchipocket/releases/tag/v0.1.1-debug)
+
+The APK is debug-signed and is intended for testing. It is not a Play Store production release.
