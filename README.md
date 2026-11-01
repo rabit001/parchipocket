@@ -66,20 +66,20 @@ The latest published test APK is available from [ParchiPocket v0.1.1 Debug Previ
 
 ```text
 .
-├── README.md
-├── firebase.json
-├── firestore.rules
-├── test_rules.js
-├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── BACKEND_RUNBOOK.md
-│   ├── FEATURE_STATUS.md
-│   └── SETUP_GUIDE.md
-└── mobile/parchipocket_flutter/
-    ├── lib/
-    ├── test/
-    └── integration_test/
+├── .agents/skills/              # Repository-specific audit/fix guidance
+├── .github/workflows/           # CI, Android validation, debug release publishing
+├── docs/                        # Architecture, setup, roadmap, status, release guides
+├── functions/                   # Firebase Cloud Functions (Node.js)
+├── mobile/parchipocket_flutter/ # Flutter Android app, Dart tests, integration tests
+├── public/delete-account/       # Account-deletion web page
+├── scripts/                     # Verification, Firestore deployment, APK packaging
+├── firebase.json                # Firebase CLI config
+├── firestore.rules              # Firestore authorization rules
+├── test_deletion.js
+└── test_rules.js
 ```
+
+Build outputs stay outside the source tree. Local packaged APK/AAB files belong in the ignored root `release-assets/` folder; distributable debug APKs are published as GitHub Release assets.
 
 ## Run the app on Windows
 
