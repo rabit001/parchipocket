@@ -3,17 +3,17 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'app_state.dart';
+import 'core/state/app_state.dart';
 import 'app_check_activation.dart';
 import 'firebase_options.dart';
-import 'telemetry.dart';
-import 'screens/auth_screens.dart';
-import 'screens/common_screens.dart';
-import 'screens/customer_screens.dart';
-import 'screens/receipt_claim_screens.dart';
-import 'screens/shop_screens.dart';
-import 'screens/vendor_screens.dart';
-import 'theme.dart';
+import 'core/monitoring/telemetry.dart';
+import 'features/auth/presentation/auth_screens.dart';
+import 'features/settings/presentation/common_screens.dart';
+import 'features/customer/presentation/customer_screens.dart';
+import 'features/receipts/presentation/receipt_claim_screens.dart';
+import 'features/shop_owner/presentation/shop_screens.dart';
+import 'features/street_vendor/presentation/vendor_screens.dart';
+import 'shared/theme/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
