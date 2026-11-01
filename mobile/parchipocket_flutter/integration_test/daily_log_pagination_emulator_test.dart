@@ -275,6 +275,8 @@ void main() {
       // Tap Save changes
       await tester.tap(find.widgetWithText(ElevatedButton, 'Save changes'));
       await tester.pumpAndSettle();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
       debugPrint('=== STEP 5: Saved edited expense (amount 150 -> 250)');
 
       // 8. Verify changed amount and correction history in Daily Log UI
@@ -292,16 +294,22 @@ void main() {
       expect(find.text('₹150'), findsOneWidget);
       await tester.tap(find.text('Close'));
       await tester.pumpAndSettle();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
       debugPrint('=== STEP 6: Verified updated amount and correction history in UI');
 
       // 9. Void an expense through the actual UI:
-      // The second entry may be below the ListView's lazy build viewport.
+      // Ensure the second entry is visible in the viewport before tapping.
       final laundryExpenseFinder = find.text('Laundry Detergent');
-      await tester.scrollUntilVisible(
-        laundryExpenseFinder,
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
+      if (laundryExpenseFinder.evaluate().isEmpty) {
+        await tester.scrollUntilVisible(
+          laundryExpenseFinder,
+          50,
+          scrollable: find.byType(Scrollable).first,
+        );
+      } else {
+        await tester.ensureVisible(laundryExpenseFinder);
+      }
       await tester.pumpAndSettle();
       await tester.tap(laundryExpenseFinder);
       await tester.pumpAndSettle();
@@ -347,13 +355,17 @@ void main() {
       expect(find.text('Showing voided'), findsOneWidget);
       expect(find.text('1 purchase entries · 1 voided'), findsOneWidget);
 
-      // Open detail dialog of the voided expense. It can be below the viewport.
+      // Open detail dialog of the voided expense. Ensure it is visible before tapping.
       final voidedLaundryExpenseFinder = find.text('Laundry Detergent');
-      await tester.scrollUntilVisible(
-        voidedLaundryExpenseFinder,
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
+      if (voidedLaundryExpenseFinder.evaluate().isEmpty) {
+        await tester.scrollUntilVisible(
+          voidedLaundryExpenseFinder,
+          50,
+          scrollable: find.byType(Scrollable).first,
+        );
+      } else {
+        await tester.ensureVisible(voidedLaundryExpenseFinder);
+      }
       await tester.pumpAndSettle();
       await tester.tap(voidedLaundryExpenseFinder);
       await tester.pumpAndSettle();
