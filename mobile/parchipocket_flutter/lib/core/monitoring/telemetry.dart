@@ -62,7 +62,7 @@ final RegExp _bearerPattern = RegExp(
   caseSensitive: false,
 );
 final RegExp _basicAuthPattern = RegExp(
-  r'((?:(?:Proxy-)?Authorization\s*[:=]\s*)?Basic\s+)(?!(?:password|passwd|secret|otp|pin|api[_-]?key|auth[_-]?token)\s*[:=])[A-Za-z0-9+/]+={0,2}',
+  r'((?:(?:Proxy-)?Authorization\s*[:=]\s*)?\bBasic\s+)(?!(?:password|passwd|secret|otp|pin|api[_-]?key|auth[_-]?token)\s*[:=])[A-Za-z0-9+/]+={0,2}',
   caseSensitive: false,
 );
 final RegExp _secretKeyPattern = RegExp(
