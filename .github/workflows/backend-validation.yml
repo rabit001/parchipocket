@@ -181,6 +181,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
       - name: Download verified debug APK
         uses: actions/download-artifact@v4
         with:
