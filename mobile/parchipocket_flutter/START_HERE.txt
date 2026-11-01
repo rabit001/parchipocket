@@ -1,15 +1,28 @@
-PARCHIPOCKET - FLUTTER FRONTEND STARTER
+PARCHIPOCKET ANDROID APP - START HERE
 
 1. Install Flutter and Android Studio on Windows.
-2. Open PowerShell in this folder.
+2. Open PowerShell in this folder (the folder containing pubspec.yaml).
 3. Run: flutter doctor
-4. Fix any Android SDK / license warnings shown by flutter doctor.
-5. Run: .\setup_android.ps1
-6. Start an Android emulator or connect your Android phone with USB debugging.
+4. Run: flutter pub get
+5. Start an Android emulator or connect a phone with USB debugging.
+6. Run: flutter devices
 7. Run: flutter run
 
-Demo OTP: 123456
+TESTS
+- flutter test --reporter compact
+- flutter analyze
 
-Important: this is frontend code with local in-memory demo data. Google login, OTP delivery, cloud sync, actual QR scanning, PDF export, notifications and Bluetooth thermal printing are not connected yet.
+AUTHENTICATION
+- Phone login uses Firebase Authentication.
+- Real SMS OTP requires Phone provider configuration in Firebase.
+- Use configured Firebase test numbers during development.
+- Google sign-in is demo-only.
+- "Skip sign-in" opens local demo data; it is not a cloud account.
 
-Read README.md for details and the next development stage.
+PROJECT NOTES
+- Current focus: Home & Family daily spending.
+- Shop Owner and Street Vendor screens are retained but paused in current navigation.
+- PDF export, production printer support, push notifications, and robust offline sync are not production-complete.
+- Do not use demo data as a real financial ledger.
+
+Read README.md in this folder and ../../docs/SETUP_GUIDE.md for full setup details.
