@@ -64,11 +64,17 @@ The Flutter test runner discovers `*_test.dart` files recursively under `test/`.
 
 ## Validation
 
-From repository root:
+From repository root, install the Functions dependencies once:
 
 ```powershell
-node test_deletion.js
-node test_rules.js
+npm --prefix functions ci
+```
+
+Run the deletion and rules harnesses inside isolated local Auth and Firestore emulators:
+
+```powershell
+npx --yes firebase-tools@latest emulators:exec --only auth,firestore --project demo-parchipocket-phase4 "node test_deletion.js"
+npx --yes firebase-tools@latest emulators:exec --only auth,firestore --project demo-parchipocket-phase4 "node test_rules.js"
 ```
 
 From `mobile/parchipocket_flutter/`:
