@@ -72,7 +72,7 @@ $allArtifacts = Get-ChildItem -LiteralPath $androidRoot -Recurse -File |
 
 $lines = foreach ($file in $allArtifacts) {
     $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-    $relativePath = [System.IO.Path]::GetRelativePath($repoRoot, $file.FullName).Replace("\\", "/")
+    $relativePath = $file.FullName.Substring($repoRoot.Length + 1).Replace("\\", "/")
     "{0} *{1}" -f $hash, $relativePath
 }
 [System.IO.File]::WriteAllLines($checksumFile, [string[]]$lines, [System.Text.UTF8Encoding]::new($false))
