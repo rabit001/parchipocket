@@ -1,7 +1,7 @@
 name: parchipocket
-description: ParchiPocket mobile app starter for digital receipts and small-vendor billing.
+description: ParchiPocket household expense and digital billing app.
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.1.2+2
 environment:
   sdk: '>=3.3.0 <4.0.0'
 dependencies:
