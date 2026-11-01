@@ -25,6 +25,18 @@ Raw claim codes are not persisted. The official client generates 128 bits with `
 
 The `deleteUserAccount` callable derives the target UID from authenticated callable context and requires recent authentication. The worker creates a server-only `deletionJobs/{uid}` checkpoint, locks the user profile, pseudonymizes retained customer receipt references, deletes the user's owned data, and finally deletes the Firebase Auth account. The Auth deletion trigger and scheduled reconciliation worker recover interrupted jobs. Incomplete jobs must not receive a TTL; only completed jobs receive the 24-hour expiry. See `functions/src/account_deletion/index.js` and the emulator test harness `test_deletion.js`.
 
+## App Check for account deletion
+
+The `deleteUserAccount` callable declares `enforceAppCheck: true`. This protects the destructive endpoint in addition to Firebase Authentication, the five-minute reauthentication freshness check, the deletion-job lock, and worker fencing.
+
+Both supported callers must send valid attestation:
+- Android release builds use Play Integrity; debug builds use the App Check debug provider and must use an individually allowlisted debug token.
+- The public web deletion portal uses Firebase App Check with a registered Web app and a reCAPTCHA v3 site key. It disables OTP and deletion actions until the Web app ID and site key placeholders in `public/delete-account/index.html` are configured.
+
+The Android client obtains a fresh App Check token before it sends the account-deletion callable request. If token retrieval fails or returns an empty token, the request fails locally instead of silently omitting the App Check header. The Web portal checks for a usable App Check token before sending OTP or requesting account deletion.
+
+Before deploying the updated function, complete the Android and Web Firebase Console registration and the Web page configuration in [SETUP_GUIDE.md](SETUP_GUIDE.md). Deploying the function before the Web key is configured will cause the public deletion portal to fail closed. This repository change does not alter live Firebase configuration or deploy Cloud Functions/Hosting.
+
 ## Security boundaries
 
 - The authenticated UID must match the user path for profiles, original bills, expenses, saved shops, and claimed copies.
@@ -59,7 +71,7 @@ The Dart integration tests expect Firestore on port 8088 and Auth on port 9099. 
 
 ## GitHub Actions validation
 
-The `ParchiPocket backend validation` workflow runs Flutter unit/widget tests, static analysis, harness syntax validation, and the Firestore rules harness on pushes and pull requests.
+The `ParchiPocket backend validation` workflow runs Flutter unit/widget tests, static analysis, JavaScript syntax checks, the Firestore rules harness, and the account-deletion security harness on pushes and pull requests. The deletion harness runs after `npm ci --prefix functions` in the same isolated Auth/Firestore emulator session; it exercises callable freshness/identity gates, deletion recovery, fencing, and concurrency cases.
 
 The Android emulator integration job runs automatically for pull requests and pushes to `main`, after the Flutter and Firestore-rules jobs pass. It can also be requested manually from GitHub Actions by selecting `ParchiPocket backend validation`, choosing `Run workflow`, and setting `run_android_integration` to true. A skipped or failed job is **not** an integration-test pass.
 

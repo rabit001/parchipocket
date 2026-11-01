@@ -19,6 +19,45 @@ void main() {
     });
   });
 
+  group('requireAppCheckToken', () {
+    test('returns a non-empty attestation token', () async {
+      final token = await requireAppCheckToken(
+        getToken: () async => 'verified-app-check-token',
+      );
+
+      expect(token, 'verified-app-check-token');
+    });
+
+    test('rejects a null token', () async {
+      await expectLater(
+        requireAppCheckToken(getToken: () async => null),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('rejects an empty token', () async {
+      await expectLater(
+        requireAppCheckToken(getToken: () async => '  '),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('does not expose provider exception details', () async {
+      await expectLater(
+        requireAppCheckToken(
+          getToken: () async => throw StateError('private provider detail'),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            isNot(contains('private provider detail')),
+          ),
+        ),
+      );
+    });
+  });
+
   group('activateAppCheckSafely', () {
     test('returns true when activation succeeds', () async {
       final diagnostics = <String>[];

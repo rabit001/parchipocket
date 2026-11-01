@@ -41,8 +41,13 @@
     .hidden { display: none !important; }
     #recaptcha-container { margin: 12px 0; }
   </style>
-  <!-- Firebase App & Auth SDKs -->
+  <!-- Public Firebase Web App ID and reCAPTCHA v3 site key are configured after registering
+       the Web app in Firebase Console > App Check. Neither value is a secret. -->
+  <meta name="firebase-web-app-id" content="__FIREBASE_WEB_APP_ID__">
+  <meta name="firebase-app-check-site-key" content="__FIREBASE_APP_CHECK_RECAPTCHA_SITE_KEY__">
+  <!-- Firebase App, App Check, Auth, and Functions compat SDKs must use the same version. -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-check-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-functions-compat.js"></script>
 </head>
@@ -103,15 +108,46 @@
       projectId: "parchipocket",
       storageBucket: "parchipocket.firebasestorage.app",
       messagingSenderId: "1090179494873",
-      appId: "1:1090179494873:android:25e358bbb0b9a5a1c19fc8"
+      appId: ""
     };
 
-    const app = firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
-    const functions = firebase.functions();
+    const webAppId = document
+      .querySelector('meta[name="firebase-web-app-id"]')
+      ?.content.trim() ?? '';
+    const appCheckSiteKey = document
+      .querySelector('meta[name="firebase-app-check-site-key"]')
+      ?.content.trim() ?? '';
 
-    // Connect to local emulators when testing locally
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    let appCheckReady = false;
+    let auth = null;
+    let functions = null;
+
+    // Do not run a deletion flow from the Android app registration or without
+    // App Check. The public portal needs its own registered Firebase Web app
+    // and a matching reCAPTCHA v3 site key from Firebase Console.
+    const isConfiguredValue = (value) =>
+      value.length > 0 && !value.startsWith('__') && !value.includes('REPLACE_');
+
+    if (isConfiguredValue(webAppId) && isConfiguredValue(appCheckSiteKey)) {
+      try {
+        firebaseConfig.appId = webAppId;
+        const app = firebase.initializeApp(firebaseConfig);
+        firebase.appCheck().activate(appCheckSiteKey, true);
+        auth = firebase.auth();
+        functions = firebase.functions();
+        appCheckReady = true;
+      } catch (_) {
+        appCheckReady = false;
+      }
+    }
+
+    // Connect to local emulators when testing locally. App Check still has to
+    // be initialized with a registered web debug/test provider for local use.
+    if (
+      appCheckReady &&
+      (window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1')
+    ) {
       auth.useEmulator('http://127.0.0.1:9099');
       functions.useEmulator('127.0.0.1', 5001);
     }
@@ -132,25 +168,69 @@
       statusBox.classList.remove('hidden');
     }
 
-    // Initialize reCAPTCHA
-    window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
-      size: 'normal',
-      callback: () => {
-        sendOtpBtn.classList.remove('btn-disabled');
+    async function hasAppCheckToken() {
+      try {
+        const tokenResult = await firebase.appCheck().getToken();
+        return Boolean(
+          tokenResult &&
+          typeof tokenResult.token === 'string' &&
+          tokenResult.token.trim() &&
+          !tokenResult.error
+        );
+      } catch (_) {
+        return false;
       }
-    });
-    window.recaptchaVerifier.render();
+    }
+
+    if (!appCheckReady) {
+      sendOtpBtn.disabled = true;
+      sendOtpBtn.classList.add('btn-disabled');
+      showStatus(
+        'This deletion portal is not configured yet. A Firebase Web app and its App Check reCAPTCHA site key must be registered before account deletion can be used.',
+        true,
+      );
+    }
+
+    // Initialize reCAPTCHA
+    if (appCheckReady && auth) {
+      window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
+        size: 'normal',
+        callback: () => {
+          sendOtpBtn.classList.remove('btn-disabled');
+        }
+      });
+      window.recaptchaVerifier.render().catch(() => {
+        sendOtpBtn.disabled = true;
+        showStatus('Phone verification could not be initialized. Please retry later.', true);
+      });
+    } else {
+      document.getElementById('recaptcha-container').classList.add('hidden');
+    }
 
     // Send OTP
     sendOtpBtn.addEventListener('click', async () => {
+      if (!appCheckReady || !auth) {
+        showStatus('App verification is unavailable. Account deletion is blocked until App Check is configured.', true);
+        return;
+      }
       const phoneNumber = phoneInput.value.trim();
       if (!phoneNumber.startsWith('+') || phoneNumber.length < 10) {
         showStatus('Please enter a valid phone number including country code (e.g. +91 9876543210).', true);
         return;
       }
+      // Disable the control before awaiting App Check so repeated clicks
+      // cannot start overlapping token requests or send duplicate SMS messages.
       sendOtpBtn.disabled = true;
-      sendOtpBtn.textContent = 'Sending SMS...';
+      sendOtpBtn.textContent = 'Checking app verification...';
 
+      if (!(await hasAppCheckToken())) {
+        sendOtpBtn.disabled = false;
+        sendOtpBtn.textContent = 'Send Verification SMS OTP';
+        showStatus('App verification is unavailable. No SMS was sent. Please retry after App Check is working.', true);
+        return;
+      }
+
+      sendOtpBtn.textContent = 'Sending SMS...';
       try {
         confirmationResult = await auth.signInWithPhoneNumber(phoneNumber, window.recaptchaVerifier);
         document.getElementById('step-phone').classList.add('hidden');
@@ -187,12 +267,26 @@
 
     // Invoke Backend Deletion
     deleteBtn.addEventListener('click', async () => {
+      if (!appCheckReady || !functions || !auth) {
+        showStatus('App verification is unavailable. Account deletion is blocked until App Check is configured.', true);
+        return;
+      }
       if (!confirm('Are you absolutely certain? This action cannot be undone.')) {
         return;
       }
+      // Disable before the asynchronous App Check preflight to prevent
+      // duplicate destructive actions from rapid repeated clicks.
       deleteBtn.disabled = true;
-      deleteBtn.textContent = 'Deleting Account & Data...';
+      deleteBtn.textContent = 'Checking app verification...';
 
+      if (!(await hasAppCheckToken())) {
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = 'Permanently Delete My Account & Data';
+        showStatus('App verification is unavailable. Account deletion was not requested. Please retry later.', true);
+        return;
+      }
+
+      deleteBtn.textContent = 'Deleting Account & Data...';
       try {
         const deleteUserAccountFn = functions.httpsCallable('deleteUserAccount');
         const result = await deleteUserAccountFn();
