@@ -62,7 +62,7 @@ final RegExp _bearerPattern = RegExp(
   caseSensitive: false,
 );
 final RegExp _basicAuthPattern = RegExp(
-  r'(\b(?:Authorization\s*:\s*)?Basic\s+)[A-Za-z0-9+/=]+',
+  r'(\b(?:Proxy-)?Authorization\s*:\s*Basic\s+)[A-Za-z0-9+/]+={0,2}',
   caseSensitive: false,
 );
 final RegExp _secretKeyPattern = RegExp(
@@ -81,8 +81,8 @@ String sanitizeDiagnosticString(String? input) {
       .replaceAll(_jwtPattern, '[REDACTED_TOKEN]')
       .replaceAll(_appCheckTokenPattern, '[REDACTED_TOKEN]')
       .replaceAll(_bearerPattern, 'Bearer [REDACTED]')
-      .replaceAllMapped(_basicAuthPattern, (m) => '${m.group(1)}[REDACTED]')
       .replaceAllMapped(_secretKeyPattern, (m) => '${m.group(1)}:[REDACTED]')
+      .replaceAllMapped(_basicAuthPattern, (m) => '${m.group(1)}[REDACTED]')
       .replaceAllMapped(_contextPhonePattern, (m) => '${m.group(1)}:[REDACTED_PHONE]')
       .replaceAll(_phonePattern, '[REDACTED_PHONE]')
       .replaceAll(_financialPattern, '[REDACTED_FINANCIAL]');
