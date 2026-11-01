@@ -14,6 +14,8 @@ The current published preview is:
 
 This is a debug-signed testing build. It is not a production-signed APK or Play Store release.
 
+The `v0.1.1-debug` release tag was created while the Flutter package metadata still said `0.1.0+1`. This cleanup updates the app package version to `0.1.2+2`; after this change reaches `main` and all checks pass, the next automatic debug release will be tagged `v0.1.2-debug`.
+
 ## Standard local layout
 
 ```text
