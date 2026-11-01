@@ -5,6 +5,10 @@
 
 ParchiPocket is currently focused on **Home & Family daily expense tracking**: users can record what they bought, the amount, and a spending category, then review daily entries and monthly category totals. The current work adds voice-assisted entry with a review-before-save flow. Firebase Authentication, Cloud Firestore persistence, UID-scoped security rules, and the existing receipt-claim flow remain part of the project. Shop Owner and Street Vendor screens remain in the repository for future work, but their role choices and navigation are paused in the current app experience. This is still a development project, not a production-ready accounting service.
 
+## Latest Android debug preview
+
+The latest published test APK is available from [ParchiPocket v0.1.1 Debug Preview](https://github.com/rabit001/parchipocket/releases/tag/v0.1.1-debug). It is debug-signed and is not a production Play Store build. New debug release tags are generated from the Flutter app version in `mobile/parchipocket_flutter/pubspec.yaml`.
+
 ## Current backend
 
 - Firebase Authentication for account sessions and phone-auth flow.
