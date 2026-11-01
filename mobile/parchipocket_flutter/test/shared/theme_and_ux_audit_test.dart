@@ -74,6 +74,10 @@ class FakeFirestoreServiceWithDelays extends FirestoreService {
 
 void main() {
   group('ParchiPocket UI/UX & Theme Verification Tests', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+    });
+
     test('1. AppState manages ThemeMode with reactive listener notification', () {
       final state = AppState();
       expect(state.themeMode, ThemeMode.system);
