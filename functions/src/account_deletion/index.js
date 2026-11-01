@@ -608,7 +608,7 @@ async function deleteUserCollectionsFenced(db, userRef, session, batchSize = 50)
  */
 exports.deleteUserAccount = onCall(
   {
-    enforceAppCheck: false,
+    enforceAppCheck: true,
     cors: true,
     timeoutSeconds: 540,
   },
