@@ -69,6 +69,6 @@ A few old import paths at the top of `lib/` are compatibility export shims. They
 
 The latest published debug APK is on the GitHub Releases page:
 
-[Download ParchiPocket v0.1.1 Debug Preview](https://github.com/rabit001/parchipocket/releases/tag/v0.1.1-debug)
+[Open the latest ParchiPocket debug release](https://github.com/rabit001/parchipocket/releases/latest)
 
 The APK is debug-signed and is intended for testing. It is not a Play Store production release.
