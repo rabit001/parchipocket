@@ -50,7 +50,7 @@ Firebase Cloud Functions (Node.js 22)
 
 - Claim codes are bearer capabilities. A person who knows a valid code can read its minimized snapshot. Rules cannot prove client-side random entropy or provide robust per-user/IP throttling.
 - User-selected roles are app modes, not verified merchant identities.
-- No separate trusted API or Cloud Functions service is included. Cloud Functions require a billing plan that may not match a Spark-only constraint.
+- Account deletion runs through authenticated Cloud Functions with worker leasing and recovery. Other financial and receipt operations still use the Flutter client plus Firestore Security Rules; do not assume they are all server-attested. Deploying Cloud Functions requires a Firebase billing plan that supports them.
 - App Check Console enforcement cannot be inferred from source files.
 - Rules in this repository do not become live until explicitly deployed to the intended Firebase project.
 
