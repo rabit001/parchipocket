@@ -4,7 +4,7 @@ APK/AAB files are build outputs, not application source. Do not commit them into
 
 ## Published GitHub debug release
 
-The current published preview is:
+The [latest published debug preview](https://github.com/rabit001/parchipocket/releases/latest) is always linked through the Releases page. The preceding published preview was:
 
 - Release: [ParchiPocket v0.1.1 Debug Preview](https://github.com/rabit001/parchipocket/releases/tag/v0.1.1-debug)
 - APK asset: [app-debug.apk](https://github.com/rabit001/parchipocket/releases/download/v0.1.1-debug/app-debug.apk)
