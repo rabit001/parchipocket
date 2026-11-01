@@ -273,10 +273,13 @@ async function runAllTests() {
 
   let worker1ReadDone = false;
   let worker2ReadDone = false;
+  let worker2Committed = false;
+  let worker2CommitError = null;
   let worker1Attempts = 0;
   let worker1CommitError = null;
 
-  // Task B: Worker 2 starts lease acquisition transaction first (T1 priority)
+  // Task B: Worker 2 starts lease acquisition transaction first (T1 priority).
+  // The commit signal is raised only after Firestore confirms its generation-2 write.
   const worker2Task = db.runTransaction(async (t) => {
     const jobDocRef = db.collection('deletionJobs').doc(fenceTargetUid);
     await t.get(jobDocRef);
@@ -297,6 +300,11 @@ async function runAllTests() {
       },
       { merge: true }
     );
+  }).then(() => {
+    worker2Committed = true;
+  }).catch((error) => {
+    worker2CommitError = error;
+    throw error;
   });
 
   // Task A: Worker 1 runFencedTransaction (T2)
@@ -312,9 +320,12 @@ async function runAllTests() {
 
       if (worker1Attempts === 1) {
         worker1ReadDone = true;
-        // Pause at barrier inside transaction callback before commit
-        while (!worker2ReadDone) await new Promise((r) => setTimeout(r, 5));
-        await new Promise((r) => setTimeout(r, 10));
+        // Do not allow Worker 1 to commit until Worker 2's generation-2
+        // transaction has actually committed, not merely read the job document.
+        while (!worker2Committed && !worker2CommitError) {
+          await new Promise((r) => setTimeout(r, 5));
+        }
+        if (worker2CommitError) throw worker2CommitError;
       }
     });
   })().catch((err) => {
@@ -331,6 +342,10 @@ async function runAllTests() {
       ? { name: worker1CommitError.name, code: worker1CommitError.code || null }
       : null,
     worker1Aborted: session1.aborted,
+    worker2Committed,
+    worker2CommitError: worker2CommitError
+      ? { name: worker2CommitError.name, code: worker2CommitError.code || null }
+      : null,
     worker2Generation: raceJobAfter.data().generation,
     worker2OwnsLease: raceJobAfter.data().workerId === session2.workerId,
     targetValue: raceTargetAfter.data().value,
