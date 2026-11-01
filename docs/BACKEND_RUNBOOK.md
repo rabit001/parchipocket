@@ -25,6 +25,18 @@ Raw claim codes are not persisted. The official client generates 128 bits with `
 
 The `deleteUserAccount` callable derives the target UID from authenticated callable context and requires recent authentication. The worker creates a server-only `deletionJobs/{uid}` checkpoint, locks the user profile, pseudonymizes retained customer receipt references, deletes the user's owned data, and finally deletes the Firebase Auth account. The Auth deletion trigger and scheduled reconciliation worker recover interrupted jobs. Incomplete jobs must not receive a TTL; only completed jobs receive the 24-hour expiry. See `functions/src/account_deletion/index.js` and the emulator test harness `test_deletion.js`.
 
+## App Check for account deletion
+
+The `deleteUserAccount` callable now declares `enforceAppCheck: true`. This protects the destructive endpoint in addition to Firebase Authentication, the five-minute reauthentication freshness check, the deletion-job lock, and worker fencing.
+
+Both supported callers must send valid attestation:
+- Android release builds use Play Integrity; debug builds use the App Check debug provider and must use an individually allowlisted debug token.
+- The public web deletion portal uses Firebase App Check with a registered Web app and a reCAPTCHA v3 site key. It intentionally disables its OTP and deletion actions until the Web app ID and site key placeholders in `public/delete-account/index.html` have been configured.
+
+The Android client obtains a fresh App Check token before it sends the account-deletion callable request. If token retrieval fails or returns an empty token, the request fails locally instead of silently omitting the App Check header. The Firebase Web Functions callable SDK attaches its App Check token after `firebase.appCheck().activate(...)`.
+
+Before deploying the updated function, complete the Android and Web Firebase Console registration and the Web page configuration in [SETUP_GUIDE.md](SETUP_GUIDE.md). Deploying the function before the web key is configured will cause the web deletion portal to fail closed. This code change does not alter live Firebase configuration or deploy Cloud Functions/Hosting.
+
 ## Security boundaries
 
 - The authenticated UID must match the user path for profiles, original bills, expenses, saved shops, and claimed copies.
