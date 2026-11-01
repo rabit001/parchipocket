@@ -630,6 +630,7 @@ class AppState extends ChangeNotifier {
     _loadedMonthlyExpensesYear = null;
     _loadedMonthlyExpensesMonth = null;
     savedShops.clear();
+    selectedShopName = null;
     selectedBill = null;
     selectedClaimedReceipt = null;
     hasMoreHouseholdExpenses = false;
