@@ -94,9 +94,9 @@ jobs:
         run: git diff --check origin/main...HEAD
 
   firestore-rules:
-    name: Firestore rules emulator harness
+    name: Firestore and account-deletion security harnesses
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -111,10 +111,17 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-      - name: Run rules harness in isolated demo emulators
+      - name: Install Cloud Functions test dependencies
+        run: npm ci --prefix functions
+      - name: Validate security test harness syntax
+        run: |
+          node --check test_rules.js
+          node --check test_deletion.js
+          node --check functions/src/account_deletion/index.js
+      - name: Run Firestore rules and account-deletion harnesses in isolated demo emulators
         env:
           FIRESTORE_EMULATOR_PROJECT_ID: demo-parchipocket-phase4
-        run: npx --yes firebase-tools@latest emulators:exec --only auth,firestore --project demo-parchipocket-phase4 "node test_rules.js"
+        run: npx --yes firebase-tools@latest emulators:exec --only auth,firestore --project demo-parchipocket-phase4 "node test_rules.js && node test_deletion.js"
 
   firestore-integration:
     name: Dart Firestore/Auth integration on Android emulator
