@@ -113,6 +113,12 @@ void main() {
   setUp(() async {
     await signInSafely(_auth);
     await signInSafely(_claimantAuth);
+
+    // Firestore writes require an active user profile. Seed the default test
+    // identities before each test; tests that sign in a new UID create its
+    // profile explicitly when they need a role-specific operation.
+    await _saveRoleProfile(_service, UserRole.shopOwner);
+    await _saveRoleProfile(_claimantService, UserRole.customer);
   });
 
   tearDown(() async {
