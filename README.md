@@ -7,7 +7,7 @@ ParchiPocket is currently focused on **Home & Family daily expense tracking**: u
 
 ## Latest Android debug preview
 
-The latest published test APK is available from [ParchiPocket v0.1.1 Debug Preview](https://github.com/rabit001/parchipocket/releases/tag/v0.1.1-debug). It is debug-signed and is not a production Play Store build. New debug release tags are generated from the Flutter app version in `mobile/parchipocket_flutter/pubspec.yaml`.
+The latest published test APK is available from [GitHub Releases](https://github.com/rabit001/parchipocket/releases/latest). It is debug-signed and is not a production Play Store build. New debug release tags are generated from the Flutter app version in `mobile/parchipocket_flutter/pubspec.yaml`.
 
 ## Current backend
 
