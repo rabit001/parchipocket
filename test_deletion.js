@@ -268,7 +268,7 @@ async function runAllTests() {
   // 3.6 ORDERING 2: A successor takes over an expired lease, then the stale
   // worker attempts another destructive transaction using its old generation.
   await testDocRef.set({ value: 'barrier_initial_val', author: 'initial' });
-  session1.stopHeartbeat();
+  await session1.stopHeartbeatAndWait();
 
   const deletionJobRef = db.collection('deletionJobs').doc(fenceTargetUid);
   await deletionJobRef.update({
