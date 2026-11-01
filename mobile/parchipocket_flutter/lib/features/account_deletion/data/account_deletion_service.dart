@@ -76,6 +76,7 @@ class AccountDeletionService {
 
     final uri = Uri.parse(endpointUrl);
     final client = _httpClient ?? HttpClient();
+    client.connectionTimeout ??= const Duration(seconds: 20);
 
     try {
       final request = await client.postUrl(uri);
@@ -101,8 +102,13 @@ class AccountDeletionService {
       final body = jsonEncode(<String, dynamic>{'data': requestData});
       request.write(body);
 
-      final response = await request.close();
-      final responseBody = await response.transform(utf8.decoder).join();
+      // Account deletion can process a large receipt history. Bound the wait,
+      // while leaving time for the backend's maximum execution window.
+      final response = await request.close().timeout(const Duration(minutes: 10));
+      final responseBody = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(const Duration(seconds: 30));
 
       Map<String, dynamic> jsonResponse;
       try {
