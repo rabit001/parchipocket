@@ -58,15 +58,15 @@ final RegExp _appCheckTokenPattern = RegExp(
   r'\bey[A-Za-z0-9_-]{20,}\b',
 );
 final RegExp _bearerPattern = RegExp(
-  r'Bearer\\s+[^\\s,;]+',
+  r'Bearer\s+[^\s,;]+',
   caseSensitive: false,
 );
 final RegExp _basicAuthPattern = RegExp(
-  r'\\bBasic\\s+[A-Za-z0-9+/]+={0,2}',
+  r'\bBasic\s+[A-Za-z0-9+/]+={0,2}',
   caseSensitive: false,
 );
 final RegExp _secretKeyPattern = RegExp(
-  r"""(password|passwd|secret|otp|pin|apiKey|auth_token)\\s*[:=]\\s*(?:"[^"]*"|'[^']*'|[^\\s,;]+)""",
+  r"""(password|passwd|secret|otp|pin|apiKey|auth_token)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)""",
   caseSensitive: false,
 );
 final RegExp _financialPattern = RegExp(
