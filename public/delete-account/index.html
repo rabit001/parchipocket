@@ -178,13 +178,20 @@
     }
 
     // Initialize reCAPTCHA
-    window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
-      size: 'normal',
-      callback: () => {
-        sendOtpBtn.classList.remove('btn-disabled');
-      }
-    });
-    window.recaptchaVerifier.render();
+    if (appCheckReady && auth) {
+      window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
+        size: 'normal',
+        callback: () => {
+          sendOtpBtn.classList.remove('btn-disabled');
+        }
+      });
+      window.recaptchaVerifier.render().catch(() => {
+        sendOtpBtn.disabled = true;
+        showStatus('Phone verification could not be initialized. Please retry later.', true);
+      });
+    } else {
+      document.getElementById('recaptcha-container').classList.add('hidden');
+    }
 
     // Send OTP
     sendOtpBtn.addEventListener('click', async () => {
