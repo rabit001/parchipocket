@@ -70,6 +70,21 @@ void main() {
       expect(kTelemetryDefaultEnabled, isFalse);
     });
 
+    test('TelemetryService.initialize fails closed when a collection setter throws', () async {
+      final service = TelemetryService.instance;
+      final success = await service.initialize(
+        telemetryEnabled: true,
+        isPermitted: () => true,
+        setCrashlyticsCollectionEnabled: (_) async {
+          throw StateError('native setter unavailable');
+        },
+        setPerformanceCollectionEnabled: (_) async {},
+      );
+      expect(success, isFalse);
+      expect(service.isInitialized, isFalse);
+      expect(service.isTelemetryEnabled, isFalse);
+    });
+
     test('TelemetryService.initialize ignores accidental runtime enable in non-production', () async {
       final service = TelemetryService.instance;
       bool? crashlyticsReportedState;
@@ -149,6 +164,17 @@ void main() {
       expect(
         sanitizeDiagnosticString('Invalid apiKey: AIzaSyD1234567890abcdef'),
         'Invalid apiKey:[REDACTED]',
+      );
+    });
+
+    test('redacts Basic authorization headers and quoted secrets with spaces', () {
+      expect(
+        sanitizeDiagnosticString('Authorization: Basic dXNlcjpwYXNz'),
+        'Authorization: Basic [REDACTED]',
+      );
+      expect(
+        sanitizeDiagnosticString('password: "secret with spaces"'),
+        'password:[REDACTED]',
       );
     });
 
