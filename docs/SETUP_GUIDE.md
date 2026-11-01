@@ -78,3 +78,37 @@ Pushing to GitHub does **not** deploy Firestore rules. A manual deployment comma
 - **Emulator offline:** restart ADB and stop/cold-boot the existing device; do not create duplicate AVDs as a first step.
 - **Permission denied on claims index:** verify whether demo mode is accessing the cloud; for an authenticated cloud session, check whether deployed rules match reviewed repository rules.
 - **Data is absent in demo mode after restart:** expected because sample demo state is in memory.
+
+
+## 8. Firebase App Check setup for account deletion
+
+The account-deletion callable is configured with `enforceAppCheck: true`. Do not deploy the updated function until both supported clients are registered and configured in the same Firebase project.
+
+### Android app
+
+1. In Firebase Console, open **Security → App Check → Apps** and register the Android app `com.parchipocket.app.parchipocket` with **Play Integrity** for release builds.
+2. Add the SHA-256 signing-certificate fingerprint(s) for the certificates that will sign the distributed APK. Link the Play Integrity API to the same Google Cloud project when the Play Console flow requires it.
+3. Debug builds use `AndroidProvider.debug`. Run a debug build, obtain the generated App Check debug token from the local device logs, and allowlist it under the Android app's **Manage debug tokens** page.
+4. Treat debug tokens like passwords: keep them private, never commit them, and remove tokens that are no longer needed.
+
+### Web account-deletion portal
+
+The deletion page is a separate Firebase Web app client. Register a Web app in the same Firebase project and register App Check for it with the reCAPTCHA v3 provider (or an approved reCAPTCHA Enterprise provider if the project uses that flow).
+
+In `public/delete-account/index.html`, replace these public configuration placeholders with values from the registered Firebase Web app and its App Check registration:
+
+- `__FIREBASE_WEB_APP_ID__`: the Web app ID (not the Android app ID).
+- `__FIREBASE_APP_CHECK_RECAPTCHA_SITE_KEY__`: the matching public reCAPTCHA v3 site key.
+
+The reCAPTCHA secret key belongs only in the Firebase/Google console. Never put it in HTML or Git. The page intentionally disables OTP/deletion actions while either public setting is missing or still a placeholder. The Firebase Functions callable SDK attaches the App Check token automatically after the Web SDK is activated.
+
+### Safe rollout order
+
+1. Register Android and Web apps and finish provider configuration in Firebase Console.
+2. Allowlist debug tokens only for testers, then install a debug APK and verify App Check tokens are issued.
+3. Set the Web app ID and reCAPTCHA site key in the deletion page, deploy Hosting, and test the full web OTP/deletion flow with a disposable test account.
+4. Deploy only the account-deletion function after both clients are ready:
+   `firebase deploy --only functions:deleteUserAccount --project parchipocket`
+5. Monitor App Check metrics and function errors before enabling any broader Firestore/Auth enforcement. Do not enable project-wide or unrelated service enforcement as part of this function-only change.
+
+This repository change does not register Firebase apps, create a reCAPTCHA key, allowlist debug tokens, or deploy Hosting/Functions. Those are separate Firebase Console and deployment actions.
