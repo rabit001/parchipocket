@@ -24,21 +24,37 @@ late FirestoreService _claimantService;
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
+  Future<void> signInSafely(FirebaseAuth auth) async {
+    for (var i = 0; i < 3; i++) {
+      try {
+        await auth.signInAnonymously();
+        return;
+      } catch (_) {
+        if (i == 2) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      }
+    }
+  }
+
   setUpAll(() async {
     if (!_projectId.startsWith('demo-') || _emulatorHost != '10.0.2.2') {
       throw StateError(
           'Integration tests must use the local demo Firebase Emulator project.');
     }
 
-    _firebaseApp = await Firebase.initializeApp(
-      name: 'parchipocket-phase4-owner-tests',
-      options: const FirebaseOptions(
-        apiKey: 'fake-emulator-api-key',
-        appId: '1:123456789012:android:0123456789abcdef',
-        messagingSenderId: '123456789012',
-        projectId: _projectId,
-      ),
-    );
+    try {
+      _firebaseApp = Firebase.app('parchipocket-phase4-owner-tests');
+    } catch (_) {
+      _firebaseApp = await Firebase.initializeApp(
+        name: 'parchipocket-phase4-owner-tests',
+        options: const FirebaseOptions(
+          apiKey: 'fake-emulator-api-key',
+          appId: '1:123456789012:android:0123456789abcdef',
+          messagingSenderId: '123456789012',
+          projectId: _projectId,
+        ),
+      );
+    }
     _auth = FirebaseAuth.instanceFor(app: _firebaseApp);
     await _auth.useAuthEmulator(_emulatorHost, _authPort);
 
@@ -47,15 +63,19 @@ void main() {
     _firestore.useFirestoreEmulator(_emulatorHost, _firestorePort);
     _service = FirestoreService(firestore: _firestore, auth: _auth);
 
-    _claimantApp = await Firebase.initializeApp(
-      name: 'parchipocket-phase4-claimant-tests',
-      options: const FirebaseOptions(
-        apiKey: 'fake-emulator-api-key',
-        appId: '1:123456789012:android:0123456789abcdef',
-        messagingSenderId: '123456789012',
-        projectId: _projectId,
-      ),
-    );
+    try {
+      _claimantApp = Firebase.app('parchipocket-phase4-claimant-tests');
+    } catch (_) {
+      _claimantApp = await Firebase.initializeApp(
+        name: 'parchipocket-phase4-claimant-tests',
+        options: const FirebaseOptions(
+          apiKey: 'fake-emulator-api-key',
+          appId: '1:123456789012:android:0123456789abcdef',
+          messagingSenderId: '123456789012',
+          projectId: _projectId,
+        ),
+      );
+    }
     _claimantAuth = FirebaseAuth.instanceFor(app: _claimantApp);
     await _claimantAuth.useAuthEmulator(_emulatorHost, _authPort);
     _claimantFirestore = FirebaseFirestore.instanceFor(app: _claimantApp);
@@ -63,11 +83,42 @@ void main() {
     _claimantFirestore.useFirestoreEmulator(_emulatorHost, _firestorePort);
     _claimantService =
         FirestoreService(firestore: _claimantFirestore, auth: _claimantAuth);
+
+    // Warm up the emulator gRPC channels and transaction pipeline to prevent cold-start deadline-exceeded timeouts
+    try {
+      await signInSafely(_auth);
+      final warmupRef = _firestore.collection('_warmup').doc('init');
+      await warmupRef.set(<String, dynamic>{'ts': FieldValue.serverTimestamp()});
+      await warmupRef.get();
+      await warmupRef.delete();
+      await _auth.signOut();
+    } catch (_) {}
+  });
+
+  tearDownAll(() async {
+    try {
+      if (_auth.currentUser != null) await _auth.signOut();
+    } catch (_) {}
+    try {
+      if (_claimantAuth.currentUser != null) await _claimantAuth.signOut();
+    } catch (_) {}
+    try {
+      await _firebaseApp.delete();
+    } catch (_) {}
+    try {
+      await _claimantApp.delete();
+    } catch (_) {}
   });
 
   setUp(() async {
-    await _auth.signInAnonymously();
-    await _claimantAuth.signInAnonymously();
+    await signInSafely(_auth);
+    await signInSafely(_claimantAuth);
+
+    // Firestore writes require an active user profile. Seed the default test
+    // identities before each test; tests that sign in a new UID create its
+    // profile explicitly when they need a role-specific operation.
+    await _saveRoleProfile(_service, UserRole.shopOwner);
+    await _saveRoleProfile(_claimantService, UserRole.customer);
   });
 
   tearDown(() async {
@@ -428,6 +479,323 @@ void main() {
       expect(afterRemoval, contains('A_B'));
     },
   );
+
+  group('HouseholdExpense lifecycle in Firestore emulator', () {
+    testWidgets(
+      'addHouseholdExpense writes record with optional expenseDate and without isVoided',
+      (tester) async {
+        final ownerUid = _auth.currentUser!.uid;
+        final expenseId = _service.newHouseholdExpenseId();
+        final expenseDate = DateTime.utc(2026, 10, 20, 15, 30);
+        final createdAt = DateTime.utc(2026, 10, 25, 12, 0);
+
+        final expense = HouseholdExpense(
+          id: expenseId,
+          title: 'Sunflower Oil 1L',
+          category: 'Groceries',
+          amount: 145.50,
+          createdAt: createdAt,
+          source: 'manual',
+          expenseDate: expenseDate,
+        );
+
+        await _service.addHouseholdExpense(expense);
+
+        final docRef = _householdExpenseReference(ownerUid, expenseId);
+        final snapshot = await docRef.get();
+        expect(snapshot.exists, isTrue);
+
+        final data = snapshot.data()!;
+        expect(data['id'], expenseId);
+        expect(data['title'], 'Sunflower Oil 1L');
+        expect(data['category'], 'Groceries');
+        expect(data['amount'], 145.50);
+        expect(data['source'], 'manual');
+        expect(data['createdAt'], isA<Timestamp>());
+        expect((data['createdAt'] as Timestamp).toDate().toUtc(), createdAt);
+        expect(data['expenseDate'], isA<Timestamp>());
+        expect((data['expenseDate'] as Timestamp).toDate().toUtc(), expenseDate);
+        expect(data.containsKey('isVoided'), isFalse);
+        expect(data.containsKey('updatedAt'), isFalse);
+        expect(data.containsKey('history'), isFalse);
+
+        // Idempotent retry succeeds
+        await _service.addHouseholdExpense(expense);
+
+        // Conflict fails
+        await expectLater(
+          _service.addHouseholdExpense(
+            expense.copyWith(title: 'Conflicting Oil'),
+          ),
+          throwsA(isA<ExpenseIdCollisionException>()),
+        );
+      },
+    );
+
+    testWidgets(
+      'updateHouseholdExpense executes first and second corrections with strict audit history',
+      (tester) async {
+        final ownerUid = _auth.currentUser!.uid;
+        final expenseId = _service.newHouseholdExpenseId();
+        final initialExpenseDate = DateTime.utc(2026, 10, 21, 10, 0);
+        final createdAt = DateTime.utc(2026, 10, 26, 8, 0);
+
+        final initialExpense = HouseholdExpense(
+          id: expenseId,
+          title: 'Basmati Rice 5kg',
+          category: 'Groceries',
+          amount: 350.0,
+          createdAt: createdAt,
+          expenseDate: initialExpenseDate,
+        );
+        await _service.addHouseholdExpense(initialExpense);
+
+        // First correction: edit title and amount
+        final correctedExpense1 = initialExpense.copyWith(
+          title: 'Basmati Rice 10kg',
+          amount: 680.0,
+        );
+        await _service.updateHouseholdExpense(correctedExpense1);
+
+        final docRef = _householdExpenseReference(ownerUid, expenseId);
+        final snap1 = await docRef.get();
+        final data1 = snap1.data()!;
+
+        expect(data1['title'], 'Basmati Rice 10kg');
+        expect(data1['amount'], 680.0);
+        expect(data1['updatedAt'], isA<Timestamp>());
+        final firstUpdatedAt = data1['updatedAt'] as Timestamp;
+
+        final history1 = (data1['history'] as List<dynamic>).cast<Map<String, dynamic>>();
+        expect(history1.length, 1);
+        expect(history1[0]['title'], 'Basmati Rice 5kg');
+        expect(history1[0]['amount'], 350.0);
+        expect(history1[0]['category'], 'Groceries');
+        expect(history1[0]['expenseDate'], isA<Timestamp>());
+        expect(history1[0].containsKey('modifiedAt'), isFalse);
+
+        // Second correction: change category and date
+        final updatedExpenseDate = DateTime.utc(2026, 10, 22, 11, 0);
+        final correctedExpense2 = correctedExpense1.copyWith(
+          category: 'Pantry',
+          expenseDate: updatedExpenseDate,
+        );
+        await _service.updateHouseholdExpense(correctedExpense2);
+
+        final snap2 = await docRef.get();
+        final data2 = snap2.data()!;
+
+        expect(data2['category'], 'Pantry');
+        expect((data2['expenseDate'] as Timestamp).toDate().toUtc(), updatedExpenseDate);
+        expect(data2['updatedAt'], isA<Timestamp>());
+
+        final history2 = (data2['history'] as List<dynamic>).cast<Map<String, dynamic>>();
+        expect(history2.length, 2);
+        // First snapshot preserved
+        expect(history2[0]['title'], 'Basmati Rice 5kg');
+        expect(history2[0].containsKey('modifiedAt'), isFalse);
+        // Second snapshot has previous values and modifiedAt == firstUpdatedAt
+        expect(history2[1]['title'], 'Basmati Rice 10kg');
+        expect(history2[1]['amount'], 680.0);
+        expect(history2[1]['category'], 'Groceries');
+        expect(history2[1]['modifiedAt'], firstUpdatedAt);
+      },
+    );
+
+    testWidgets(
+      'updateHouseholdExpense enforces history limit of 10 without truncation',
+      (tester) async {
+        final expenseId = _service.newHouseholdExpenseId();
+        var current = HouseholdExpense(
+          id: expenseId,
+          title: 'Correction Step 0',
+          category: 'Groceries',
+          amount: 10.0,
+          createdAt: DateTime.utc(2026, 10, 26, 10, 0),
+        );
+        await _service.addHouseholdExpense(current);
+
+        // Perform 10 corrections (filling history to 10 entries)
+        for (var i = 1; i <= 10; i++) {
+          current = current.copyWith(
+            title: 'Correction Step $i',
+            amount: 10.0 + i,
+          );
+          await _service.updateHouseholdExpense(current);
+        }
+
+        // 11th correction must fail
+        final eleventhCorrection = current.copyWith(
+          title: 'Correction Step 11',
+          amount: 99.0,
+        );
+        await expectLater(
+          _service.updateHouseholdExpense(eleventhCorrection),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              contains('Maximum correction history limit of 10 reached'),
+            ),
+          ),
+        );
+
+        final ownerUid = _auth.currentUser!.uid;
+        final snap = await _householdExpenseReference(ownerUid, expenseId).get();
+        final history = snap.data()!['history'] as List<dynamic>;
+        expect(history.length, 10);
+        expect(snap.data()!['title'], 'Correction Step 10');
+      },
+    );
+
+    testWidgets(
+      'voidHouseholdExpense marks expense voided, records voidReason, and prevents further edit/void',
+      (tester) async {
+        final ownerUid = _auth.currentUser!.uid;
+        final expenseId = _service.newHouseholdExpenseId();
+        final expense = HouseholdExpense(
+          id: expenseId,
+          title: 'Wrong Bill Entry',
+          category: 'Utilities',
+          amount: 550.0,
+          createdAt: DateTime.utc(2026, 10, 26, 12, 0),
+        );
+        await _service.addHouseholdExpense(expense);
+
+        // Reason length validation
+        final tooLongReason = 'A' * 201;
+        expect(
+          () => _service.voidHouseholdExpense(expenseId, reason: tooLongReason),
+          throwsA(isA<ArgumentError>()),
+        );
+
+        // Void the expense
+        await _service.voidHouseholdExpense(
+          expenseId,
+          reason: 'Billed twice by electricity provider',
+        );
+
+        final docRef = _householdExpenseReference(ownerUid, expenseId);
+        final snap = await docRef.get();
+        final data = snap.data()!;
+
+        expect(data['isVoided'], isTrue);
+        expect(data['voidedAt'], isA<Timestamp>());
+        expect(data['voidReason'], 'Billed twice by electricity provider');
+        expect(data['title'], 'Wrong Bill Entry');
+        expect(data['amount'], 550.0);
+
+        // Repeated void fails
+        await expectLater(
+          _service.voidHouseholdExpense(expenseId),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              contains('Expense is already voided'),
+            ),
+          ),
+        );
+
+        // Modifying voided expense fails
+        await expectLater(
+          _service.updateHouseholdExpense(
+            expense.copyWith(title: 'Trying to resurrect'),
+          ),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              contains('Cannot update a voided household expense'),
+            ),
+          ),
+        );
+      },
+    );
+
+    testWidgets(
+      'another authenticated user cannot read, update or delete owner household expense',
+      (tester) async {
+        final ownerUid = _auth.currentUser!.uid;
+        final expenseId = _service.newHouseholdExpenseId();
+        final expense = HouseholdExpense(
+          id: expenseId,
+          title: 'Owner Private Expense',
+          category: 'Personal',
+          amount: 200.0,
+          createdAt: DateTime.utc(2026, 10, 26, 14, 0),
+        );
+        await _service.addHouseholdExpense(expense);
+        final ownerExpenseRef = _householdExpenseReference(ownerUid, expenseId);
+
+        // Sign in as a different user
+        await _auth.signOut();
+        await _auth.signInAnonymously();
+        expect(_auth.currentUser!.uid, isNot(ownerUid));
+
+        // Attempting to read owner's expense is denied
+        await expectLater(
+          ownerExpenseRef.get(),
+          throwsA(isA<FirebaseException>()
+              .having((error) => error.code, 'code', 'permission-denied')),
+        );
+
+        // Attempting to write/update owner's expense is denied
+        await expectLater(
+          ownerExpenseRef.update(<String, Object>{'title': 'Claimant Tampering'}),
+          throwsA(isA<FirebaseException>()
+              .having((error) => error.code, 'code', 'permission-denied')),
+        );
+
+        // Attempting to delete owner's expense is denied
+        await expectLater(
+          ownerExpenseRef.delete(),
+          throwsA(isA<FirebaseException>()
+              .having((error) => error.code, 'code', 'permission-denied')),
+        );
+      },
+    );
+
+    testWidgets(
+      'loadHouseholdExpensesPage deserializes modern corrected and voided expenses',
+      (tester) async {
+        final expenseId = _service.newHouseholdExpenseId();
+        final customDate = DateTime.utc(2026, 10, 18, 9, 0);
+        final initialExpense = HouseholdExpense(
+          id: expenseId,
+          title: 'Milk Pack 1L',
+          category: 'Groceries',
+          amount: 60.0,
+          createdAt: DateTime.utc(2026, 10, 26, 15, 0),
+          expenseDate: customDate,
+        );
+        await _service.addHouseholdExpense(initialExpense);
+
+        await _service.updateHouseholdExpense(
+          initialExpense.copyWith(title: 'Milk Pack 2L', amount: 118.0),
+        );
+
+        await _service.voidHouseholdExpense(
+          expenseId,
+          reason: 'Spoiled on arrival',
+        );
+
+        final page = await _service.loadHouseholdExpensesPage(limit: 50);
+        final loaded = page.items.firstWhere((e) => e.id == expenseId);
+
+        expect(loaded.title, 'Milk Pack 2L');
+        expect(loaded.amount, 118.0);
+        expect(loaded.isVoided, isTrue);
+        expect(loaded.voidReason, 'Spoiled on arrival');
+        expect(loaded.voidedAt, isNotNull);
+        expect(loaded.updatedAt, isNotNull);
+        expect(loaded.history.length, 1);
+        expect(loaded.history[0].title, 'Milk Pack 1L');
+        expect(loaded.history[0].amount, 60.0);
+        expect(loaded.effectiveDate.toUtc(), customDate);
+      },
+    );
+  });
 }
 
 Future<void> _saveRoleProfile(FirestoreService service, UserRole role) =>
@@ -471,3 +839,12 @@ DemoBill _copyBill(DemoBill bill, {required bool isSaved}) => DemoBill(
 
 DocumentReference<Map<String, dynamic>> _billReference(String uid, String id) =>
     _firestore.collection('users').doc(uid).collection('bills').doc(id);
+
+
+DocumentReference<Map<String, dynamic>> _householdExpenseReference(
+        String uid, String id) =>
+    _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('householdExpenses')
+        .doc(id);

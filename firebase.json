@@ -2,6 +2,18 @@
   "firestore": {
     "rules": "firestore.rules"
   },
+  "functions": {
+    "source": "functions"
+  },
+  "hosting": {
+    "public": "public",
+    "rewrites": [
+      {
+        "source": "/delete-account",
+        "destination": "/delete-account/index.html"
+      }
+    ]
+  },
   "emulators": {
     "auth": {
       "host": "127.0.0.1",
@@ -10,6 +22,14 @@
     "firestore": {
       "host": "127.0.0.1",
       "port": 8088
+    },
+    "functions": {
+      "host": "127.0.0.1",
+      "port": 5001
+    },
+    "hosting": {
+      "host": "127.0.0.1",
+      "port": 5000
     }
   }
 }

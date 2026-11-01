@@ -195,6 +195,171 @@ void main() {
       state.dispose();
     },
   );
+
+  testWidgets(
+    'Daily Log UI expense editing and voiding flows update ledger and audit history correctly',
+    (tester) async {
+      // 1. Authenticate with ephemeral anonymous user
+      final userCredential = await _auth.signInAnonymously();
+      final user = userCredential.user;
+      expect(user, isNotNull);
+      final uid = user!.uid;
+      expect(uid, isNotEmpty);
+      debugPrint('=== STEP 1: Authenticated with demo emulator UID: $uid');
+
+      // 2. Seed profile and 2 household expenses
+      await _seedEditVoidTestData(_firestore, _service, uid);
+      debugPrint('=== STEP 2: Seeded profile and 2 records');
+
+      // 3. Initialize AppState connected to the isolated demo emulator
+      final state = AppState(auth: _auth)..firestoreService = _service;
+
+      // 4. Pump the test application UI
+      await tester.pumpWidget(
+        MaterialApp(
+          title: 'ParchiPocket Test',
+          debugShowCheckedModeBanner: false,
+          theme: buildPpTheme(),
+          home: AnimatedBuilder(
+            animation: state,
+            builder: (context, _) => switch (state.page) {
+              'authLoading' => AuthSessionLoadingScreen(state: state),
+              'customerHome' => CustomerHomeScreen(state: state),
+              'householdExpenses' => HouseholdExpensesScreen(state: state),
+              _ => Scaffold(body: Center(child: Text('Page: ${state.page}'))),
+            },
+          ),
+        ),
+      );
+
+      // 5. Wait for auth and initial cloud data to load
+      var waitCycles = 0;
+      while (state.page == 'authLoading' && waitCycles < 100) {
+        await tester.pump(const Duration(milliseconds: 100));
+        waitCycles++;
+      }
+      await tester.pumpAndSettle();
+      expect(state.page, 'customerHome');
+      debugPrint('=== STEP 3: Loaded customerHome page');
+
+      // Initial monthly total: 150 + 220 = ₹370 across 2 purchases
+      expect(find.text('₹370'), findsAtLeast(1));
+      expect(find.text('Across your household · 2 purchases'), findsOneWidget);
+
+      // 6. Navigate to Daily Log (HouseholdExpensesScreen)
+      state.go('householdExpenses');
+      await tester.pumpAndSettle();
+      expect(state.page, 'householdExpenses');
+      expect(find.text('2 purchase entries'), findsOneWidget);
+      expect(find.text('₹370'), findsOneWidget);
+      debugPrint('=== STEP 4: Navigated to Daily Log with 2 records totaling ₹370');
+
+      // 7. Edit an expense through the actual Daily Log UI:
+      // Tap on 'Fresh Mangoes'
+      await tester.tap(find.text('Fresh Mangoes'));
+      await tester.pumpAndSettle();
+      expect(find.byType(HouseholdExpenseDetailDialog), findsOneWidget);
+
+      // Tap Edit
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Edit'));
+      await tester.pumpAndSettle();
+      expect(find.byType(EditHouseholdExpenseDialog), findsOneWidget);
+
+      // Change title to 'Organic Alphonso Mangoes' and amount to '250'
+      await tester.enterText(
+          find.widgetWithText(TextField, 'Fresh Mangoes'), 'Organic Alphonso Mangoes');
+      await tester.enterText(
+          find.widgetWithText(TextField, '150'), '250');
+      await tester.pumpAndSettle();
+
+      // Tap Save changes
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Save changes'));
+      await tester.pumpAndSettle();
+      debugPrint('=== STEP 5: Saved edited expense (amount 150 -> 250)');
+
+      // 8. Verify changed amount and correction history in Daily Log UI
+      expect(find.text('Organic Alphonso Mangoes'), findsOneWidget);
+      expect(find.text('₹250'), findsOneWidget);
+      // Daily log metric card total should now be 250 + 220 = ₹470
+      expect(find.text('₹470'), findsOneWidget);
+
+      // Open detail dialog to verify correction history
+      await tester.tap(find.text('Organic Alphonso Mangoes'));
+      await tester.pumpAndSettle();
+      expect(find.byType(HouseholdExpenseDetailDialog), findsOneWidget);
+      expect(find.text('Correction History (1)'), findsOneWidget);
+      expect(find.text('Version 1: Fresh Mangoes'), findsOneWidget);
+      expect(find.text('₹150'), findsOneWidget);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      debugPrint('=== STEP 6: Verified updated amount and correction history in UI');
+
+      // 9. Void an expense through the actual UI:
+      // Tap on 'Laundry Detergent'
+      await tester.tap(find.text('Laundry Detergent'));
+      await tester.pumpAndSettle();
+      expect(find.byType(HouseholdExpenseDetailDialog), findsOneWidget);
+
+      // Tap Void
+      await tester.tap(find.widgetWithText(TextButton, 'Void'));
+      await tester.pumpAndSettle();
+      expect(find.byType(VoidExpenseConfirmationDialog), findsOneWidget);
+
+      // Enter optional void reason
+      await tester.enterText(
+          find.widgetWithText(TextField, 'Reason for voiding (optional)'),
+          'Duplicate purchase');
+      await tester.pumpAndSettle();
+
+      // Confirm void
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Void Expense'));
+      await tester.pumpAndSettle();
+      debugPrint('=== STEP 7: Voided expense through UI with reason');
+
+      // 10. Verify voided expense disappears from active entries and totals
+      expect(find.text('Laundry Detergent'), findsNothing);
+      expect(find.text('1 purchase entries'), findsOneWidget);
+      // Total in Daily Log is now only ₹250
+      expect(find.text('₹250'), findsNWidgets(2)); // metric card + tile
+
+      // Customer home totals updated too
+      state.go('customerHome');
+      await tester.pumpAndSettle();
+      expect(find.text('Across your household · 1 purchases'), findsOneWidget);
+      debugPrint('=== STEP 8: Verified voided expense removed from active entries and totals updated');
+
+      // 11. Navigate back to Daily Log and test "Show voided entries" toggle
+      state.go('householdExpenses');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Show voided entries'));
+      await tester.pumpAndSettle();
+
+      // Voided expense is now visible with voided indicator
+      expect(find.text('Laundry Detergent'), findsOneWidget);
+      expect(find.text('Showing voided'), findsOneWidget);
+      expect(find.text('1 purchase entries · 1 voided'), findsOneWidget);
+
+      // Open detail dialog of the voided expense
+      await tester.tap(find.text('Laundry Detergent'));
+      await tester.pumpAndSettle();
+      expect(find.byType(HouseholdExpenseDetailDialog), findsOneWidget);
+      expect(find.text('VOIDED'), findsOneWidget);
+      expect(find.text('Reason: Duplicate purchase'), findsOneWidget);
+
+      // Confirm voided expense cannot be edited or voided again
+      expect(find.widgetWithText(ElevatedButton, 'Edit'), findsNothing);
+      expect(find.widgetWithText(TextButton, 'Void'), findsNothing);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      debugPrint('=== STEP 9: Verified voided expense toggle and immutable void state in UI');
+
+      // 12. Sign out and cleanup
+      await _auth.signOut();
+      state.dispose();
+      debugPrint('=== STEP 10: Cleaned up and signed out user $uid');
+    },
+  );
 }
 
 Future<void> _seedTestData(
@@ -271,4 +436,43 @@ Future<void> _seedTestData(
     batch.set(collection.doc(data['id'] as String), data);
   }
   await batch.commit();
+}
+
+Future<void> _seedEditVoidTestData(
+  FirebaseFirestore firestore,
+  FirestoreService service,
+  String uid,
+) async {
+  await service.saveUserProfile(
+    role: UserRole.customer,
+    name: 'Emulator Customer',
+    email: '',
+    city: 'Mumbai',
+    shopName: '',
+    shopCategory: '',
+    shopAddress: '',
+    vendorName: '',
+    vendorCategory: '',
+  );
+
+  final now = DateTime.now();
+  final collection = firestore.collection('users').doc(uid).collection('householdExpenses');
+
+  await collection.doc('exp-edit-01').set({
+    'id': 'exp-edit-01',
+    'title': 'Fresh Mangoes',
+    'category': 'Groceries',
+    'amount': 150.0,
+    'createdAt': Timestamp.fromDate(DateTime(now.year, now.month, now.day, 10, 0)),
+    'source': 'manual',
+  });
+
+  await collection.doc('exp-void-02').set({
+    'id': 'exp-void-02',
+    'title': 'Laundry Detergent',
+    'category': 'Household',
+    'amount': 220.0,
+    'createdAt': Timestamp.fromDate(DateTime(now.year, now.month, now.day, 9, 0)),
+    'source': 'manual',
+  });
 }
