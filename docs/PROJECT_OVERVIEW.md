@@ -1,9 +1,11 @@
 # ParchiPocket: Project Overview
 
 **Project owner:** Rabit Mansuri (@rabit001)  
-**Platform:** Android  
-**Client:** Flutter and Dart  
-**Backend:** Firebase Authentication, Cloud Firestore, Firestore Security Rules, and Cloud Functions  
+**Platform:** Android
+
+**Client:** Flutter and Dart
+
+**Backend:** Firebase Authentication, Cloud Firestore, Firestore Security Rules, and Cloud Functions
 **Current status:** Working development MVP with a published debug preview; not production-ready.
 
 ## 1. Current product focus
