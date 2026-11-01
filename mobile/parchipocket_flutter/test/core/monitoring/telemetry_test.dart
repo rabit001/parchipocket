@@ -176,6 +176,16 @@ void main() {
         sanitizeDiagnosticString('password: "secret with spaces"'),
         'password:[REDACTED]',
       );
+      // Do not mistake the word "password" after Basic for a base64 credential.
+      // The labelled secret must be consumed in full, including spaces.
+      expect(
+        sanitizeDiagnosticString('Basic password: "secret with spaces"'),
+        'Basic password:[REDACTED]',
+      );
+      expect(
+        sanitizeDiagnosticString('Proxy-Authorization: Basic dXNlcjpwYXNz'),
+        'Proxy-Authorization: Basic [REDACTED]',
+      );
     });
 
     test('redacts financial details, amounts, and currency figures', () {
