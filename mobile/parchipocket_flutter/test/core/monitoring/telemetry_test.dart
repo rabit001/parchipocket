@@ -186,6 +186,22 @@ void main() {
         sanitizeDiagnosticString('Proxy-Authorization: Basic dXNlcjpwYXNz'),
         'Proxy-Authorization: Basic [REDACTED]',
       );
+      expect(
+        sanitizeDiagnosticString('Basic dXNlcjpwYXNz'),
+        'Basic [REDACTED]',
+      );
+      expect(
+        sanitizeDiagnosticString('sending Basic dXNlcjpwYXNz'),
+        'sending Basic [REDACTED]',
+      );
+      expect(
+        sanitizeDiagnosticString('authorization=Basic dXNlcjpwYXNz'),
+        'authorization=Basic [REDACTED]',
+      );
+      expect(
+        sanitizeDiagnosticString('Proxy-Authorization=Basic dXNlcjpwYXNz'),
+        'Proxy-Authorization=Basic [REDACTED]',
+      );
     });
 
     test('redacts financial details, amounts, and currency figures', () {
