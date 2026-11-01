@@ -60,7 +60,7 @@ These similarly named files serve different tools and must not be merged or dele
 - Repository-root `firebase.json`: Firebase CLI configuration for emulators, Firestore rules, Functions, and Hosting.
 - `mobile/parchipocket_flutter/firebase.json`: FlutterFire CLI mapping for this Flutter app.
 - `mobile/parchipocket_flutter/android/app/google-services.json`: Android Firebase app configuration.
-- `mobile/parchipocket/lib/firebase_options.dart`: generated Dart Firebase options.
+- `mobile/parchipocket_flutter/lib/firebase_options.dart`: generated Dart Firebase options.
 
 ## Compatibility export shims
 
