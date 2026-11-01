@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:parchipocket/app_check_activation.dart';
 
 /// Service responsible for invoking the trusted backend `deleteUserAccount`
 /// Callable Cloud Function adhering strictly to the Firebase HTTPS Callable protocol.
@@ -83,15 +84,12 @@ class AccountDeletionService {
       request.headers.contentType = ContentType.json;
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $idToken');
 
-      // Attempt App Check token inclusion if available
-      try {
-        final appCheckToken = await appCheck.getToken();
-        if (appCheckToken != null && appCheckToken.isNotEmpty) {
-          request.headers.set('X-Firebase-AppCheck', appCheckToken);
-        }
-      } catch (_) {
-        // App Check token fetch may throw in isolated unit tests or unconfigured emulators; safe fallback.
-      }
+      // Account deletion is App Check protected. Obtain a fresh token and
+      // fail closed rather than sending the callable request without attestation.
+      final appCheckToken = await requireAppCheckToken(
+        getToken: () => appCheck.getToken(true),
+      );
+      request.headers.set('X-Firebase-AppCheck', appCheckToken);
 
       final requestData = <String, dynamic>{};
       if (skipFreshnessCheckForTest) {
