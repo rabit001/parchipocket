@@ -70,7 +70,7 @@ The Dart integration test expects Firestore on port 8088 and Auth on port 9099. 
 
 ## GitHub Actions validation
 
-The `ParchiPocket backend validation` workflow runs Flutter unit/widget tests, static analysis, harness syntax validation, and the Firestore rules harness on pushes and pull requests.
+The `ParchiPocket backend validation` workflow runs Flutter unit/widget tests, static analysis, JavaScript syntax checks, the Firestore rules harness, and the account-deletion security harness on pushes and pull requests. The deletion harness runs after `npm ci --prefix functions` in the same isolated Auth/Firestore emulator session; it exercises callable freshness/identity gates, deletion recovery, fencing and concurrency cases.
 
 The Android emulator integration job runs automatically for pull requests and pushes to `main`, after the Flutter and Firestore-rules jobs pass. It can also be requested manually from GitHub Actions by selecting `ParchiPocket backend validation`, choosing `Run workflow`, and setting `run_android_integration` to true. Hosted emulator runs are slower than unit tests. A skipped or failed job is **not** an integration-test pass. Do not merge/release based on the unit/rules jobs alone when the release checklist requires Android integration verification.
 
