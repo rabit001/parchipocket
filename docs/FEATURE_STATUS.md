@@ -25,7 +25,7 @@ This table describes the code currently on `main`. A passing CI run proves the a
 | Push notifications | Not implemented | No messaging backend |
 | Offline sync/conflict resolution | Not implemented | No complete offline queue/reconciliation model |
 | CI validation | Passing on current main commit | Flutter tests/analysis, Firestore rules, Android emulator integration, and debug APK build passed |
-| Android debug preview | Published | [v0.1.1-debug release](https://github.com/rabit001/parchipocket/releases/tag/v0.1.1-debug); debug-signed, not a production release |
+| Android debug preview | Published | [latest GitHub debug release](https://github.com/rabit001/parchipocket/releases/latest); debug-signed, not a production release |
 
 ## Production release gate
 
