@@ -323,6 +323,19 @@ async function runAllTests() {
 
   await Promise.allSettled([worker2Task, worker1Task]);
 
+  const raceJobAfter = await db.collection('deletionJobs').doc(fenceTargetUid).get();
+  const raceTargetAfter = await testDocRef.get();
+  console.log('    Fencing race diagnostics:', JSON.stringify({
+    worker1Attempts: session1.transactionAttempts,
+    worker1Error: worker1CommitError
+      ? { name: worker1CommitError.name, code: worker1CommitError.code || null }
+      : null,
+    worker1Aborted: session1.aborted,
+    worker2Generation: raceJobAfter.data().generation,
+    worker2OwnsLease: raceJobAfter.data().workerId === session2.workerId,
+    targetValue: raceTargetAfter.data().value,
+  }));
+
   assert(worker1ReadDone === true, '3.8 Worker 1 verified generation 1 and staged destructive write inside transaction');
   assert(worker2ReadDone === true, '3.9 Worker 2 acquired generation 2 while Worker 1 was paused at barrier');
   assert(session1.transactionAttempts >= 2, '3.10 Firestore detected conflicting deletion-job update and automatically retried Worker 1');
