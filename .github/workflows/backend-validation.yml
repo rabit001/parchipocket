@@ -168,3 +168,37 @@ jobs:
           script: |
             set -eu
             npx --yes firebase-tools@latest emulators:exec --only auth,firestore --project demo-parchipocket-phase4 "cd mobile/parchipocket_flutter && flutter pub get && flutter test integration_test/firestore_service_emulator_test.dart -d emulator-5554 --reporter compact && flutter test integration_test/daily_log_pagination_emulator_test.dart -d emulator-5554 --reporter compact"
+
+  publish-debug-release:
+    name: Publish debug APK to GitHub Release
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs:
+      - android-debug-apk
+      - flutter
+      - firestore-rules
+      - firestore-integration
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified debug APK
+        uses: actions/download-artifact@v4
+        with:
+          name: parchipocket-debug-apk
+          path: release-assets
+      - name: Generate SHA-256 checksum
+        run: sha256sum release-assets/app-debug.apk > release-assets/app-debug.apk.sha256
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v0.1.1-debug
+          name: ParchiPocket v0.1.1 Debug Preview
+          body: |
+            Debug build for testing only. This APK is not a production-signed release.
+            Published automatically after the main-branch Flutter tests, Firestore rules checks, and Android emulator integration tests pass.
+          prerelease: true
+          draft: false
+          overwrite_files: true
+          files: |
+            release-assets/app-debug.apk
+            release-assets/app-debug.apk.sha256
