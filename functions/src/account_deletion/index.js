@@ -41,6 +41,7 @@ class DeletionWorkerSession {
     this.stage = 'not_started';
     this.aborted = false;
     this.heartbeatTimer = null;
+    this.heartbeatInFlight = null;
   }
 
   async acquireLease() {
@@ -116,27 +117,28 @@ class DeletionWorkerSession {
 
   startHeartbeat() {
     if (this.heartbeatTimer) return;
-    this.heartbeatTimer = setInterval(async () => {
+    this.heartbeatTimer = setInterval(() => {
       if (this.aborted) {
         this.stopHeartbeat();
         return;
       }
-      // If a fenced transaction is actively in-flight on this session, skip heartbeat tick
-      // to avoid self-contention on /deletionJobs/{uid}; the transaction itself touches and extends the lease.
-      if (this.activeTransactionCount > 0) {
+      // If a fenced transaction or renewal is in flight, skip this tick to avoid
+      // self-contention and overlapping heartbeat writes to the same job document.
+      if (this.activeTransactionCount > 0 || this.heartbeatInFlight) {
         return;
       }
-      try {
-        await this.renewLease();
-      } catch (err) {
-        if (err instanceof StaleWorkerError) {
-          this.aborted = true;
-          this.stopHeartbeat();
-        } else {
-          // Transient transaction contention (e.g. lock wait or lock timeout from an active
-          // fenced transaction holding the document lock) does not abort the worker.
-        }
-      }
+      this.heartbeatInFlight = this.renewLease()
+        .catch((err) => {
+          if (err instanceof StaleWorkerError) {
+            this.aborted = true;
+            this.stopHeartbeat();
+          }
+          // Transient contention does not abort the worker. The next heartbeat
+          // will retry after this in-flight renewal settles.
+        })
+        .finally(() => {
+          this.heartbeatInFlight = null;
+        });
     }, this.heartbeatIntervalMs);
     if (this.heartbeatTimer.unref) this.heartbeatTimer.unref();
   }
@@ -146,6 +148,13 @@ class DeletionWorkerSession {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
+  }
+
+  /// Stops future renewals and waits for any already-started heartbeat write.
+  async stopHeartbeatAndWait() {
+    this.stopHeartbeat();
+    const inFlight = this.heartbeatInFlight;
+    if (inFlight) await inFlight;
   }
 
   async renewLease() {
