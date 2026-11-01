@@ -52,53 +52,58 @@ flutter pub get
 flutter test --reporter compact
 flutter analyze
 flutter test integration_test/firestore_service_emulator_test.dart -d emulator-5554
+flutter test integration_test/daily_log_pagination_emulator_test.dart -d emulator-5554
 ```
 
-The Dart integration test expects Firestore on port 8088 and Auth on port 9099. The Android emulator connects through `10.0.2.2`. If an emulator failed to start, that run is not a test pass.
+The Dart integration tests expect Firestore on port 8088 and Auth on port 9099. The Android emulator connects through `10.0.2.2`. If an emulator failed to start, that run is not a test pass.
 
 ## GitHub Actions validation
 
 The `ParchiPocket backend validation` workflow runs Flutter unit/widget tests, static analysis, harness syntax validation, and the Firestore rules harness on pushes and pull requests.
 
-The Android emulator integration job runs automatically for pull requests and pushes to `main`, after the Flutter and Firestore-rules jobs pass. It can also be requested manually from GitHub Actions by selecting `ParchiPocket backend validation`, choosing `Run workflow`, and setting `run_android_integration` to true. Hosted emulator runs are slower than unit tests. A skipped or failed job is **not** an integration-test pass. Do not merge/release based on the unit/rules jobs alone when the release checklist requires Android integration verification.
+The Android emulator integration job runs automatically for pull requests and pushes to `main`, after the Flutter and Firestore-rules jobs pass. It can also be requested manually from GitHub Actions by selecting `ParchiPocket backend validation`, choosing `Run workflow`, and setting `run_android_integration` to true. A skipped or failed job is **not** an integration-test pass.
+
+On successful pushes to `main`, the workflow builds the debug APK and publishes it with a SHA-256 checksum to a GitHub prerelease. The release tag is derived from the app version in `mobile/parchipocket_flutter/pubspec.yaml`.
 
 ## Repeatable Windows scripts
 
-From the repository root, run:
+From the repository root:
 
-    .\\scripts\\verify-backend.ps1
+```powershell
+.\scripts\verify-backend.ps1
+```
 
-This runs Flutter unit/widget tests, analysis, JavaScript syntax validation, and the rules harness against local demo emulators. To also run the Dart Firestore/Auth integration suite, an Android emulator must be online:
-
-    .\\scripts\\verify-backend.ps1 -RunAndroidIntegration -DeviceId emulator-5554
+This runs Flutter unit/widget tests, analysis, JavaScript syntax validation, and the rules harness against local demo emulators. The CI workflow additionally runs both Android emulator integration tests.
 
 The production deployment script is separate and interactive:
 
-    .\\scripts\\deploy-firestore-rules.ps1
+```powershell
+.\scripts\deploy-firestore-rules.ps1
+```
 
-It reruns all preflight checks and requires the Android integration suite to pass before asking for the exact target-project confirmation string. It has not been run as part of this change.
+It reruns preflight checks and requires the exact target-project confirmation string. Do not run it merely to suppress a permission error.
 
 ## Manual Firestore rules deployment
 
 GitHub pushes do not update Firebase's deployed rules. Deployment is a separate production-affecting step and requires explicit approval.
 
-After all emulator checks pass and the rule diff is reviewed, confirm the target project ID in Firebase Console. For the configured project, the manual command is:
+After all emulator checks pass and the rules diff is reviewed, confirm the target project ID in Firebase Console. For the configured project, the manual command is:
 
 ```powershell
 firebase deploy --only firestore:rules --project parchipocket
 ```
 
-Do not run this merely to hide a client/demo-mode bug. Do not use production data in emulator tests. After an approved deployment, perform a smoke test with a non-sensitive test account.
+Do not use production data in emulator tests. After an approved deployment, perform a smoke test with a non-sensitive test account.
 
 ## Release checklist
 
 - [ ] Flutter unit/widget tests pass.
 - [ ] Flutter analysis has no issues.
 - [ ] Firestore Rules harness passes against a local `demo-*` project.
-- [ ] Dart Firestore/Auth integration tests pass on an Android emulator.
+- [ ] Both Dart Firestore/Auth and Daily Log emulator integration tests pass on Android.
 - [ ] Demo mode makes no Firestore reads/writes.
 - [ ] Existing users can load profile and owned data.
 - [ ] Cross-user access and claim replay attempts are denied.
 - [ ] Rules are reviewed and the correct Firebase project is confirmed.
-- [ ] App Check configuration and Console enforcement are verified.
+- [ ] Phone Auth, App Check configuration, and Console enforcement are verified.
 - [ ] Backup, retention, privacy, and support ownership are documented.
