@@ -18,7 +18,7 @@ Status is based on code in this repository. Implementation does not prove the Fi
 | Claimed receipts | Implemented | Separate minimized read-only copies and index; QR claim remains secondary in the current customer interface |
 | Receipt-claim security | Implemented in rules | Atomic claim/copy/index constraints; emulator test and deployment still required for release |
 | Firestore Security Rules | Updated on feature branch | Household rules are checked in, but GitHub pushes do not deploy rules |
-| Firebase App Check | Client configured | Console enforcement/debug-token configuration must be verified separately |
+| Firebase App Check | Enforced by account-deletion callable in source | Android Play Integrity/debug provider and Web reCAPTCHA App Check must be registered/configured in Firebase Console before deploying the function; broader Firestore/Auth enforcement remains separate |
 | Nearby shop discovery | Demo/placeholder | No live location-based discovery service |
 | PDF generation/share | Preview/planned | Not production-complete |
 | Thermal printer integration | Preview/planned | Not validated on target hardware |
