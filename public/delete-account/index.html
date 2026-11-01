@@ -168,6 +168,20 @@
       statusBox.classList.remove('hidden');
     }
 
+    async function hasAppCheckToken() {
+      try {
+        const tokenResult = await firebase.appCheck().getToken();
+        return Boolean(
+          tokenResult &&
+          typeof tokenResult.token === 'string' &&
+          tokenResult.token.trim() &&
+          !tokenResult.error
+        );
+      } catch (_) {
+        return false;
+      }
+    }
+
     if (!appCheckReady) {
       sendOtpBtn.disabled = true;
       sendOtpBtn.classList.add('btn-disabled');
@@ -204,9 +218,19 @@
         showStatus('Please enter a valid phone number including country code (e.g. +91 9876543210).', true);
         return;
       }
+      // Disable the control before awaiting App Check so repeated clicks
+      // cannot start overlapping token requests or send duplicate SMS messages.
       sendOtpBtn.disabled = true;
-      sendOtpBtn.textContent = 'Sending SMS...';
+      sendOtpBtn.textContent = 'Checking app verification...';
 
+      if (!(await hasAppCheckToken())) {
+        sendOtpBtn.disabled = false;
+        sendOtpBtn.textContent = 'Send Verification SMS OTP';
+        showStatus('App verification is unavailable. No SMS was sent. Please retry after App Check is working.', true);
+        return;
+      }
+
+      sendOtpBtn.textContent = 'Sending SMS...';
       try {
         confirmationResult = await auth.signInWithPhoneNumber(phoneNumber, window.recaptchaVerifier);
         document.getElementById('step-phone').classList.add('hidden');
@@ -250,9 +274,19 @@
       if (!confirm('Are you absolutely certain? This action cannot be undone.')) {
         return;
       }
+      // Disable before the asynchronous App Check preflight to prevent
+      // duplicate destructive actions from rapid repeated clicks.
       deleteBtn.disabled = true;
-      deleteBtn.textContent = 'Deleting Account & Data...';
+      deleteBtn.textContent = 'Checking app verification...';
 
+      if (!(await hasAppCheckToken())) {
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = 'Permanently Delete My Account & Data';
+        showStatus('App verification is unavailable. Account deletion was not requested. Please retry later.', true);
+        return;
+      }
+
+      deleteBtn.textContent = 'Deleting Account & Data...';
       try {
         const deleteUserAccountFn = functions.httpsCallable('deleteUserAccount');
         const result = await deleteUserAccountFn();
