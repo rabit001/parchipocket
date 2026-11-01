@@ -113,11 +113,13 @@ jobs:
           node-version: "22"
       - name: Install Cloud Functions test dependencies
         run: npm ci --prefix functions
-      - name: Validate security test harness syntax
+      - name: Validate security harness and deletion portal JavaScript
         run: |
           node --check test_rules.js
           node --check test_deletion.js
           node --check functions/src/account_deletion/index.js
+          node -e "const fs=require('fs'); const html=fs.readFileSync('public/delete-account/index.html','utf8'); const scripts=[...html.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/g)].map(match=>match[1]).filter(code=>code.trim()); if (scripts.length !== 1) throw new Error('Expected exactly one inline deletion-portal script'); fs.writeFileSync('/tmp/parchipocket-delete-account.js', scripts[0]);"
+          node --check /tmp/parchipocket-delete-account.js
       - name: Run Firestore rules and account-deletion harnesses in isolated demo emulators
         env:
           FIRESTORE_EMULATOR_PROJECT_ID: demo-parchipocket-phase4
