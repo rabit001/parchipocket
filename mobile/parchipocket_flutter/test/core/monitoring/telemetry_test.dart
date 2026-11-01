@@ -195,6 +195,10 @@ void main() {
         'sending Basic [REDACTED]',
       );
       expect(
+        sanitizeDiagnosticString('notBasic dXNlcjpwYXNz'),
+        'notBasic dXNlcjpwYXNz',
+      );
+      expect(
         sanitizeDiagnosticString('authorization=Basic dXNlcjpwYXNz'),
         'authorization=Basic [REDACTED]',
       );
