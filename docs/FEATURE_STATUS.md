@@ -1,31 +1,32 @@
 # Feature Status
 
-Status is based on code in this repository. Implementation does not prove the Firebase rules are deployed or the app is production-ready.
+This table describes the code currently on `main`. A passing CI run proves the automated checks for that commit; it does not prove that Firebase production settings are deployed or that every physical-device scenario has been tested.
 
-| Area | Status | Notes |
+| Area | Current status | Notes |
 |---|---|---|
-| Home & Family daily-spending experience | In progress | Household-focused onboarding and dashboard; seller/vendor role choices hidden for this iteration |
-| Manual household purchase entry | Implemented on feature branch | Item, amount, category, date, source; must be reviewed before saving |
-| Voice-assisted household entry | MVP on feature branch | Platform speech-to-text plus conservative local parser; one purchase phrase at a time, not an LLM agent |
-| Household expense persistence | Implemented on feature branch | Owner-scoped `users/{uid}/householdExpenses` collection with strict schema and immutable entries |
-| Daily log and category insights | Implemented on feature branch | Totals use household entries; category totals no longer use fixed percentages |
-| Explicit local demo session | Implemented | In-memory sample data; must not access Firestore |
-| Phone / OTP authentication | Integrated | Firebase Auth flow; real SMS depends on project configuration and billing |
-| Google sign-in | Demo only | Not a completed Google OAuth integration |
-| Account profiles and legacy roles | Cloud persistence implemented | Existing seller roles are retained in stored profiles, but route to Home & Family while seller modes are paused |
-| Legacy bill history, seller expenses, Udhaar | Retained but paused | Existing code and records are not deleted by this feature |
-| Receipt claim QR/manual code | Implemented | 128-bit client CSPRNG, SHA-256 digest, bounded expiry |
-| Claimed receipts | Implemented | Separate minimized read-only copies and index; QR claim remains secondary in the current customer interface |
-| Receipt-claim security | Implemented in rules | Atomic claim/copy/index constraints; emulator test and deployment still required for release |
-| Firestore Security Rules | Updated on feature branch | Household rules are checked in, but GitHub pushes do not deploy rules |
-| Firebase App Check | Client configured | Console enforcement/debug-token configuration must be verified separately |
-| Nearby shop discovery | Demo/placeholder | No live location-based discovery service |
-| PDF generation/share | Preview/planned | Not production-complete |
-| Thermal printer integration | Preview/planned | Not validated on target hardware |
+| Home & Family daily spending | Implemented MVP; active development | Current onboarding and primary app experience |
+| Manual household purchase entry | Implemented | Review fields and explicitly confirm before saving |
+| Voice-assisted purchase entry | Implemented MVP | Platform speech recognition and a conservative local parser; one purchase per utterance |
+| Household expense persistence | Implemented | Owner-scoped Firestore collection with schema validation |
+| Daily log and category insights | Implemented | Uses saved household entries and paginated Daily Log data |
+| Local demo session | Implemented | In-memory sample data; must not read or write cloud data |
+| Phone / OTP authentication | Integrated; Firebase configuration check required | Firebase Auth code is implemented; real SMS depends on Phone provider, billing, quotas, and allowed test numbers |
+| Google sign-in | Demo only | Not completed Google OAuth |
+| Account profiles | Implemented | Cloud profile loading and updates for authenticated accounts |
+| Shop Owner / Street Vendor | Retained but paused | Legacy screens and stored records remain; role choices are hidden in current navigation |
+| Receipt claim QR/manual code | Implemented | Claim code is a bearer secret; shared snapshot is minimized |
+| Claimed receipt copies | Implemented | Read-only recipient copy and index are validated by Firestore rules |
+| Account deletion | Implemented in source | Cloud Functions flow and recovery logic exist; production deployment must be verified separately |
+| Firestore Security Rules | Checked in and CI-tested | Emulator harness passes; GitHub pushes do not deploy rules |
+| Firebase App Check | Client configured | Firebase Console enforcement and production debug-token settings must be checked separately |
+| Nearby shop discovery | Placeholder | No live nearby-shop service |
+| PDF receipt export | Preview/planned | Not production-complete |
+| Thermal printer | Preview/planned | Not validated against target printer hardware |
 | Push notifications | Not implemented | No messaging backend |
 | Offline sync/conflict resolution | Not implemented | No complete offline queue/reconciliation model |
-| CI validation | Added | Workflow runs Flutter checks, rules emulator, and Android integration tests; feature branch CI still needs verification |
+| CI validation | Passing on current main commit | Flutter tests/analysis, Firestore rules, Android emulator integration, and debug APK build passed |
+| Android debug preview | Published | [latest GitHub debug release](https://github.com/rabit001/parchipocket/releases); debug-signed, not a production release |
 
-## Release gate
+## Production release gate
 
-Do not treat this as a production accounting service until CI passes, the reviewed rules are deployed to the correct Firebase project, App Check enforcement is verified, critical device flows are tested, and retention/recovery/privacy decisions are documented.
+Do not treat the app as a production accounting service until the intended Firebase project and deployed rules are confirmed, App Check enforcement is reviewed, authentication and account recovery are tested on real devices, critical financial/receipt flows are verified, production signing is configured, and backup/retention/privacy processes are documented.
