@@ -106,6 +106,7 @@ class AppState extends ChangeNotifier {
   ClaimedReceipt? selectedClaimedReceipt;
   String supportReference = 'PP-SUP-1042';
   String lastNotice = '';
+  String? selectedShopName;
   String language = 'English';
   SharedPreferences? _prefs;
   static const String _themePrefKey = 'user_theme_mode';
@@ -681,6 +682,7 @@ class AppState extends ChangeNotifier {
     _loadedMonthlyExpensesYear = null;
     _loadedMonthlyExpensesMonth = null;
     lastNotice = '';
+    selectedShopName = null;
     supportReference = 'PP-SUP-1042';
     language = 'English';
     notificationsEnabled = true;
@@ -810,6 +812,11 @@ class AppState extends ChangeNotifier {
   void go(String nextPage) {
     page = nextPage;
     notifyListeners();
+  }
+
+  void openShop(String name) {
+    selectedShopName = name;
+    go('shopDetails');
   }
 
   void setRole(UserRole value) {
@@ -2616,9 +2623,16 @@ class AppState extends ChangeNotifier {
       );
       await user.reauthenticateWithCredential(credential);
 
-      await accountDeletionService.invokeDeletion(
+      final deletionResult = await accountDeletionService.invokeDeletion(
         skipFreshnessCheckForTest: skipFreshnessCheckForTest,
       );
+      if (deletionResult['success'] != true ||
+          deletionResult['completed'] != true) {
+        deletionError = deletionResult['leaseActive'] == true
+            ? 'Account deletion is already in progress. Keep your session active and try again shortly.'
+            : 'The account deletion service has not confirmed completion. Your session is still active; retry after checking the account status.';
+        return false;
+      }
 
       _clearCloudAccountState();
       try {
