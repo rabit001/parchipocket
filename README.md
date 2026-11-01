@@ -128,3 +128,20 @@ Assignment 3 evidence and status notes are maintained in [docs/assignment3/READM
 - [Retrospective and next steps](docs/assignment3/RETROSPECTIVE.md).
 
 The demo video is intentionally not included. Do not claim Android build/device testing, public deployment, or peer feedback until each has been completed and evidence is available.
+
+
+## Repository structure
+
+The project is grouped by runtime and feature responsibility:
+
+- `mobile/parchipocket_flutter/lib/core/`: application state, Firestore data access, and telemetry.
+- `mobile/parchipocket_flutter/lib/features/`: account deletion, authentication, customer, expenses, receipts, settings, shop-owner, and street-vendor modules.
+- `mobile/parchipocket_flutter/lib/shared/`: theme and reusable widgets.
+- `mobile/parchipocket_flutter/test/`: tests grouped under core, features, and shared.
+- `functions/src/account_deletion/`: Cloud Functions implementation; `functions/index.js` remains the configured package entry point.
+- `docs/`: architecture, setup, backend operations, and release documentation.
+- `public/delete-account/`: public account-deletion page source.
+
+Legacy Dart paths under `lib/app_state.dart`, `lib/screens/`, `lib/services/`, `lib/theme.dart`, `lib/telemetry.dart`, `lib/widgets/ui.dart`, and `lib/household_expense_parser.dart` are compatibility export shims. New code should use canonical imports under `core/`, `features/`, or `shared/`.
+
+See [Repository Structure](docs/REPOSITORY_STRUCTURE.md) for the full map.

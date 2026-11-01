@@ -36,3 +36,6 @@ firestore-debug.log.*
 
 # Firebase Functions dependencies
 /functions/node_modules/
+
+# Local Android APK/AAB artifacts; keep out of Git history
+/release-assets/
