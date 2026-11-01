@@ -610,6 +610,7 @@ exports.deleteUserAccount = onCall(
   {
     enforceAppCheck: false,
     cors: true,
+    timeoutSeconds: 540,
   },
   async (request) => {
     // 1. Authenticated Identity Verification
