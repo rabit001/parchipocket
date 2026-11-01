@@ -295,8 +295,15 @@ void main() {
       debugPrint('=== STEP 6: Verified updated amount and correction history in UI');
 
       // 9. Void an expense through the actual UI:
-      // Tap on 'Laundry Detergent'
-      await tester.tap(find.text('Laundry Detergent'));
+      // The second entry may be below the ListView's lazy build viewport.
+      final laundryExpenseFinder = find.text('Laundry Detergent');
+      await tester.scrollUntilVisible(
+        laundryExpenseFinder,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(laundryExpenseFinder);
       await tester.pumpAndSettle();
       expect(find.byType(HouseholdExpenseDetailDialog), findsOneWidget);
 
@@ -340,8 +347,15 @@ void main() {
       expect(find.text('Showing voided'), findsOneWidget);
       expect(find.text('1 purchase entries · 1 voided'), findsOneWidget);
 
-      // Open detail dialog of the voided expense
-      await tester.tap(find.text('Laundry Detergent'));
+      // Open detail dialog of the voided expense. It can be below the viewport.
+      final voidedLaundryExpenseFinder = find.text('Laundry Detergent');
+      await tester.scrollUntilVisible(
+        voidedLaundryExpenseFinder,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(voidedLaundryExpenseFinder);
       await tester.pumpAndSettle();
       expect(find.byType(HouseholdExpenseDetailDialog), findsOneWidget);
       expect(find.text('VOIDED'), findsOneWidget);
