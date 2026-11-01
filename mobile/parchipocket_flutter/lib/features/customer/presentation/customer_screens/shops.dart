@@ -53,10 +53,7 @@ class _NearbyShopsScreenState extends State<NearbyShopsScreen> {
                             ? '♥'
                             : '♡',
                         icon: Icons.storefront_outlined,
-                        onTap: () {
-                          widget.state.lastNotice = shop.name;
-                          widget.state.go('shopDetails');
-                        });
+                        onTap: () => widget.state.openShop(shop.name));
                   })),
           const PpDemoNotice(
               message:
@@ -71,7 +68,7 @@ class ShopDetailsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final shop =
-        demoShops.where((s) => s.name == state.lastNotice).firstOrNull ??
+        demoShops.where((s) => s.name == state.selectedShopName).firstOrNull ??
             demoShops.first;
     return PpScaffold(
         state: state,
@@ -197,10 +194,7 @@ class SavedShopsScreen extends StatelessWidget {
                 title: shop.name,
                 subtitle: '${shop.distance} · ${shop.category}',
                 trailing: '♥',
-                onTap: () {
-                  state.lastNotice = shop.name;
-                  state.go('shopDetails');
-                }),
+                onTap: () => state.openShop(shop.name)),
           const SizedBox(height: 12),
           PpPrimaryButton('Find More Shops',
               onPressed: () => state.go('nearbyShops')),
