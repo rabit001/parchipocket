@@ -6,6 +6,7 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import '../app_state.dart';
+import '../telemetry.dart';
 
 class BillIdCollisionException implements Exception {
   const BillIdCollisionException(this.billId);
@@ -419,7 +420,8 @@ class FirestoreService {
           }
           final receiptMap = copyData['receipt'];
           final claimedAtTs = copyData['claimedAt'];
-          if (receiptMap is! Map<String, dynamic> || claimedAtTs is! Timestamp) {
+          if (receiptMap is! Map<String, dynamic> ||
+              claimedAtTs is! Timestamp) {
             throw const ReceiptClaimException(
                 'Saved receipt copy has invalid or corrupted data.');
           }
@@ -699,6 +701,9 @@ class FirestoreService {
       'createdAt': Timestamp.fromDate(expense.createdAt),
       'source': expense.source,
     };
+    if (expense.expenseDate != null) {
+      data['expenseDate'] = Timestamp.fromDate(expense.expenseDate!);
+    }
 
     final hasConflictingExpense = await firestore.runTransaction<bool>(
       (transaction) async {
@@ -713,7 +718,168 @@ class FirestoreService {
     );
 
     if (hasConflictingExpense) {
-      throw StateError('Household expense ID collision. Please retry.');
+      throw ExpenseIdCollisionException(expense.id);
+    }
+  }
+
+  Future<void> updateHouseholdExpense(HouseholdExpense expense) async {
+    final doc = _userDoc;
+    if (doc == null) throw Exception('User not authenticated.');
+    if (expense.id.trim().isEmpty) {
+      throw ArgumentError('Expense ID cannot be empty.');
+    }
+    final title = expense.title.trim();
+    if (title.isEmpty || title.length > 100) {
+      throw ArgumentError('Title must be between 1 and 100 characters.');
+    }
+    final category = expense.category.trim();
+    if (category.isEmpty || category.length > 50) {
+      throw ArgumentError('Category must be between 1 and 50 characters.');
+    }
+    if (!expense.amount.isFinite ||
+        expense.amount <= 0 ||
+        expense.amount > 10000000) {
+      throw ArgumentError('Amount must be a positive number up to 10,000,000.');
+    }
+
+    final expenseRef = doc.collection('householdExpenses').doc(expense.id);
+
+    final error = await firestore.runTransaction<String?>((transaction) async {
+      final snapshot = await transaction.get(expenseRef);
+      if (!snapshot.exists) {
+        return 'Cannot update non-existent household expense.';
+      }
+      final data = snapshot.data();
+      if (data == null) {
+        return 'Household expense data is missing.';
+      }
+
+      if (data['isVoided'] == true) {
+        return 'Cannot update a voided household expense.';
+      }
+
+      final existingHistoryRaw = data['history'];
+      final existingHistory = <Map<String, dynamic>>[];
+      if (existingHistoryRaw is List) {
+        for (final item in existingHistoryRaw) {
+          if (item is Map) {
+            existingHistory.add(Map<String, dynamic>.from(item));
+          }
+        }
+      }
+
+      if (existingHistory.length >= 10) {
+        return 'Maximum correction history limit of 10 reached.';
+      }
+
+      // Snapshot prior document state
+      final snapshotMap = <String, dynamic>{
+        'title': data['title'],
+        'category': data['category'],
+        'amount': data['amount'],
+      };
+      if (data.containsKey('expenseDate') && data['expenseDate'] != null) {
+        snapshotMap['expenseDate'] = data['expenseDate'];
+      }
+      if (data.containsKey('updatedAt') && data['updatedAt'] != null) {
+        snapshotMap['modifiedAt'] = data['updatedAt'];
+      }
+
+      final newHistory = <Map<String, dynamic>>[
+        ...existingHistory,
+        snapshotMap,
+      ];
+
+      final updateData = <String, dynamic>{
+        'id': expense.id,
+        'title': title,
+        'category': category,
+        'amount': expense.amount,
+        'createdAt': data['createdAt'],
+        'source': data['source'],
+        'updatedAt': FieldValue.serverTimestamp(),
+        'history': newHistory,
+      };
+
+      // Handle expenseDate: preserve existing or allow introducing/updating
+      if (expense.expenseDate != null) {
+        updateData['expenseDate'] = Timestamp.fromDate(expense.expenseDate!);
+      } else if (data.containsKey('expenseDate') &&
+          data['expenseDate'] != null) {
+        updateData['expenseDate'] = data['expenseDate'];
+      }
+
+      // Preserve isVoided: false if present on existing document
+      if (data.containsKey('isVoided')) {
+        updateData['isVoided'] = data['isVoided'];
+      }
+
+      transaction.set(expenseRef, updateData);
+      return null;
+    });
+
+    if (error != null) {
+      throw StateError(error);
+    }
+  }
+
+  Future<void> voidHouseholdExpense(String expenseId, {String? reason}) async {
+    final doc = _userDoc;
+    if (doc == null) throw Exception('User not authenticated.');
+    if (expenseId.trim().isEmpty) {
+      throw ArgumentError('Expense ID cannot be empty.');
+    }
+    final trimmedReason = reason?.trim();
+    if (trimmedReason != null && trimmedReason.length > 200) {
+      throw ArgumentError('Void reason cannot exceed 200 characters.');
+    }
+
+    final expenseRef = doc.collection('householdExpenses').doc(expenseId);
+
+    final error = await firestore.runTransaction<String?>((transaction) async {
+      final snapshot = await transaction.get(expenseRef);
+      if (!snapshot.exists) {
+        return 'Cannot void non-existent household expense.';
+      }
+      final data = snapshot.data();
+      if (data == null) {
+        return 'Household expense data is missing.';
+      }
+
+      if (data['isVoided'] == true) {
+        return 'Expense is already voided.';
+      }
+
+      final voidData = <String, dynamic>{
+        'id': data['id'],
+        'title': data['title'],
+        'category': data['category'],
+        'amount': data['amount'],
+        'createdAt': data['createdAt'],
+        'source': data['source'],
+        'isVoided': true,
+        'voidedAt': FieldValue.serverTimestamp(),
+      };
+
+      if (data.containsKey('expenseDate') && data['expenseDate'] != null) {
+        voidData['expenseDate'] = data['expenseDate'];
+      }
+      if (data.containsKey('updatedAt') && data['updatedAt'] != null) {
+        voidData['updatedAt'] = data['updatedAt'];
+      }
+      if (data.containsKey('history') && data['history'] != null) {
+        voidData['history'] = data['history'];
+      }
+      if (trimmedReason != null && trimmedReason.isNotEmpty) {
+        voidData['voidReason'] = trimmedReason;
+      }
+
+      transaction.set(expenseRef, voidData);
+      return null;
+    });
+
+    if (error != null) {
+      throw StateError(error);
     }
   }
 
@@ -730,71 +896,74 @@ class FirestoreService {
     }
     final existingDate = existing['createdAt'];
     final requestedDate = requested['createdAt'];
-    return existingDate is Timestamp &&
-        requestedDate is Timestamp &&
-        existingDate.seconds == requestedDate.seconds &&
-        existingDate.nanoseconds == requestedDate.nanoseconds;
+    if (existingDate is! Timestamp ||
+        requestedDate is! Timestamp ||
+        existingDate.seconds != requestedDate.seconds ||
+        existingDate.nanoseconds != requestedDate.nanoseconds) {
+      return false;
+    }
+    final existingExpenseDate = existing['expenseDate'];
+    final requestedExpenseDate = requested['expenseDate'];
+    if (existingExpenseDate != null || requestedExpenseDate != null) {
+      if (existingExpenseDate is! Timestamp ||
+          requestedExpenseDate is! Timestamp ||
+          existingExpenseDate.seconds != requestedExpenseDate.seconds ||
+          existingExpenseDate.nanoseconds != requestedExpenseDate.nanoseconds) {
+        return false;
+      }
+    }
+    return true;
   }
 
   Future<HouseholdExpensePage> loadHouseholdExpensesPage({
     DocumentSnapshot<Map<String, dynamic>>? startAfter,
     int limit = 50,
-  }) async {
-    try {
-      final doc = _userDoc;
-      if (doc == null) {
-        final fallbackItems = await loadHouseholdExpenses();
-        return HouseholdExpensePage(
-          items: fallbackItems,
-          hasMore: false,
-        );
-      }
-      Query<Map<String, dynamic>> query = doc
-          .collection('householdExpenses')
-          .orderBy('createdAt', descending: true);
-      if (startAfter != null) {
-        query = query.startAfterDocument(startAfter);
-      }
-      query = query.limit(limit);
-      final snapshot = await query.get();
-      final items = snapshot.docs.map((docSnap) {
-        final data = docSnap.data();
-        final createdAtValue = data['createdAt'];
-        DateTime createdAt = DateTime.now();
-        if (createdAtValue is Timestamp) {
-          createdAt = createdAtValue.toDate();
-        } else if (createdAtValue is String) {
-          createdAt = DateTime.tryParse(createdAtValue) ?? DateTime.now();
+  }) {
+    return TelemetryService.instance.measureTrace(
+      traceName: 'daily_log_page_fetch',
+      action: () async {
+        try {
+          final doc = _userDoc;
+          if (doc == null) {
+            final fallbackItems = await loadHouseholdExpenses();
+            return HouseholdExpensePage(
+              items: fallbackItems,
+              hasMore: false,
+            );
+          }
+          Query<Map<String, dynamic>> query = doc
+              .collection('householdExpenses')
+              .orderBy('createdAt', descending: true);
+          if (startAfter != null) {
+            query = query.startAfterDocument(startAfter);
+          }
+          query = query.limit(limit);
+          final snapshot = await query.get();
+          final items = snapshot.docs.map((docSnap) {
+            return HouseholdExpense.fromMap(docSnap.data(), id: docSnap.id);
+          }).toList();
+
+          final lastDoc = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
+          final hasMore = snapshot.docs.length == limit;
+
+          return HouseholdExpensePage(
+            items: items,
+            lastDocument: lastDoc,
+            hasMore: hasMore,
+          );
+        } catch (e) {
+          if ((e is FirebaseException && e.code == 'no-app') ||
+              e.toString().contains('no-app')) {
+            final fallbackItems = await loadHouseholdExpenses();
+            return HouseholdExpensePage(
+              items: fallbackItems,
+              hasMore: false,
+            );
+          }
+          rethrow;
         }
-        return HouseholdExpense(
-          id: docSnap.id,
-          title: data['title'] as String? ?? '',
-          category: data['category'] as String? ?? 'Other',
-          amount: (data['amount'] as num?)?.toDouble() ?? 0,
-          createdAt: createdAt,
-          source: data['source'] as String? ?? 'manual',
-        );
-      }).toList();
-
-      final lastDoc = snapshot.docs.isNotEmpty ? snapshot.docs.last : null;
-      final hasMore = snapshot.docs.length == limit;
-
-      return HouseholdExpensePage(
-        items: items,
-        lastDocument: lastDoc,
-        hasMore: hasMore,
-      );
-    } catch (e) {
-      if ((e is FirebaseException && e.code == 'no-app') ||
-          e.toString().contains('no-app')) {
-        final fallbackItems = await loadHouseholdExpenses();
-        return HouseholdExpensePage(
-          items: fallbackItems,
-          hasMore: false,
-        );
-      }
-      rethrow;
-    }
+      },
+    );
   }
 
   Future<List<HouseholdExpense>> loadHouseholdExpenses() async {
@@ -805,23 +974,140 @@ class FirestoreService {
         .orderBy('createdAt', descending: true)
         .get();
     return snapshot.docs.map((docSnap) {
-      final data = docSnap.data();
-      final createdAtValue = data['createdAt'];
-      DateTime createdAt = DateTime.now();
-      if (createdAtValue is Timestamp) {
-        createdAt = createdAtValue.toDate();
-      } else if (createdAtValue is String) {
-        createdAt = DateTime.tryParse(createdAtValue) ?? DateTime.now();
-      }
-      return HouseholdExpense(
-        id: docSnap.id,
-        title: data['title'] as String? ?? '',
-        category: data['category'] as String? ?? 'Other',
-        amount: (data['amount'] as num?)?.toDouble() ?? 0,
-        createdAt: createdAt,
-        source: data['source'] as String? ?? 'manual',
-      );
+      return HouseholdExpense.fromMap(docSnap.data(), id: docSnap.id);
     }).toList();
+  }
+
+  /// Fetches all documents matching [baseQuery] across pages using cursor-based
+  /// pagination until the query is exhausted.
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      _fetchAllRangeDocuments(
+    Query<Map<String, dynamic>> baseQuery,
+    int batchSize,
+  ) async {
+    final docs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    DocumentSnapshot<Map<String, dynamic>>? lastDoc;
+
+    while (true) {
+      var query = baseQuery.limit(batchSize);
+      if (lastDoc != null) {
+        query = query.startAfterDocument(lastDoc);
+      }
+      final snapshot = await query.get();
+      if (snapshot.docs.isEmpty) {
+        break;
+      }
+      docs.addAll(snapshot.docs);
+      lastDoc = snapshot.docs.last;
+      if (snapshot.docs.length < batchSize) {
+        break;
+      }
+    }
+
+    return docs;
+  }
+
+  /// Loads non-voided household expenses whose effective date falls within
+  /// [startDate] (inclusive) and [endDate] (exclusive).
+  ///
+  /// Merges results from querying by expenseDate and by createdAt to capture
+  /// both modern custom-dated entries and legacy documents without expenseDate.
+  /// Cursor-based pagination is used to fetch all matching records across both
+  /// queries in [batchSize] batches until exhausted, avoiding silent truncation.
+  Future<List<HouseholdExpense>> loadHouseholdExpensesForDateRange(
+    DateTime startDate,
+    DateTime endDate, {
+    int batchSize = 500,
+    int? limit,
+  }) {
+    return TelemetryService.instance.measureTrace(
+      traceName: 'monthly_expense_aggregation',
+      action: () async {
+        try {
+          final doc = _userDoc;
+          if (doc == null) {
+            final all = await loadHouseholdExpenses();
+            return all.where((e) {
+              if (e.isVoided) return false;
+              final effective = e.effectiveDate;
+              return !effective.isBefore(startDate) &&
+                  effective.isBefore(endDate);
+            }).toList()
+              ..sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+          }
+
+          final effectiveBatchSize =
+              (limit ?? batchSize) > 0 ? (limit ?? batchSize) : 500;
+          final collection = doc.collection('householdExpenses');
+          final startTimestamp = Timestamp.fromDate(startDate);
+          final endTimestamp = Timestamp.fromDate(endDate);
+
+          final expenseDateQuery = collection
+              .where('expenseDate', isGreaterThanOrEqualTo: startTimestamp)
+              .where('expenseDate', isLessThan: endTimestamp)
+              .orderBy('expenseDate');
+
+          final createdAtQuery = collection
+              .where('createdAt', isGreaterThanOrEqualTo: startTimestamp)
+              .where('createdAt', isLessThan: endTimestamp)
+              .orderBy('createdAt');
+
+          final results = await Future.wait([
+            _fetchAllRangeDocuments(expenseDateQuery, effectiveBatchSize),
+            _fetchAllRangeDocuments(createdAtQuery, effectiveBatchSize),
+          ]);
+
+          final merged = <String, HouseholdExpense>{};
+
+          for (final docSnap in results[0]) {
+            merged[docSnap.id] =
+                HouseholdExpense.fromMap(docSnap.data(), id: docSnap.id);
+          }
+          for (final docSnap in results[1]) {
+            merged.putIfAbsent(
+              docSnap.id,
+              () => HouseholdExpense.fromMap(docSnap.data(), id: docSnap.id),
+            );
+          }
+
+          final filtered = merged.values.where((expense) {
+            if (expense.isVoided) return false;
+            final effective = expense.effectiveDate;
+            return !effective.isBefore(startDate) &&
+                effective.isBefore(endDate);
+          }).toList();
+
+          filtered.sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+          return filtered;
+        } on FirebaseException catch (error) {
+          if (error.code != 'no-app') rethrow;
+          final all = await loadHouseholdExpenses();
+          return all.where((e) {
+            if (e.isVoided) return false;
+            final effective = e.effectiveDate;
+            return !effective.isBefore(startDate) &&
+                effective.isBefore(endDate);
+          }).toList()
+            ..sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+        }
+      },
+    );
+  }
+
+  /// Convenience wrapper to load household expenses for a calendar month.
+  Future<List<HouseholdExpense>> loadHouseholdExpensesForMonth(
+    int year,
+    int month, {
+    int batchSize = 500,
+    int? limit,
+  }) {
+    final startDate = DateTime(year, month, 1);
+    final endDate = DateTime(year, month + 1, 1);
+    return loadHouseholdExpensesForDateRange(
+      startDate,
+      endDate,
+      batchSize: limit ?? batchSize,
+    );
   }
 
   // Saved Shops serialization & persistence

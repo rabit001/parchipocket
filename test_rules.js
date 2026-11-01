@@ -6,6 +6,7 @@ if (!PROJECT_ID.startsWith('demo-')) {
   throw new Error('Rules tests must use an isolated demo- Firestore Emulator project ID.');
 }
 const BASE_URL = `http://127.0.0.1:${PORT}/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+const httpAgent = new http.Agent({ keepAlive: true });
 
 function makeJwt(userId) {
   const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
@@ -24,7 +25,7 @@ function request({ method, path, data, userId }) {
       headers['Authorization'] = `Bearer ${makeJwt(userId)}`;
     }
 
-    const req = http.request(url, { method, headers }, (res) => {
+    const req = http.request(url, { method, headers, agent: httpAgent }, (res) => {
       let resBody = '';
       res.on('data', (chunk) => (resBody += chunk));
       res.on('end', () => {
@@ -46,6 +47,17 @@ function firestoreName(path) {
   return `projects/${PROJECT_ID}/databases/(default)/documents/${path}`;
 }
 
+function clearEmulator() {
+  return new Promise((resolve) => {
+    const url = new URL(`http://127.0.0.1:${PORT}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`);
+    const req = http.request(url, { method: 'DELETE', agent: httpAgent }, (res) => {
+      resolve({ status: res.statusCode, ok: res.statusCode >= 200 && res.statusCode < 300 });
+    });
+    req.on('error', (err) => resolve({ status: 500, ok: false, error: err }));
+    req.end();
+  });
+}
+
 function createWrite(path, data, serverTimestampFields = []) {
   const fields = { ...data };
   for (const field of serverTimestampFields) delete fields[field];
@@ -64,9 +76,11 @@ function createWrite(path, data, serverTimestampFields = []) {
 }
 
 function updateWrite(path, data, serverTimestampFields = []) {
+  const fields = { ...data };
+  for (const field of serverTimestampFields) delete fields[field];
   const write = {
-    update: { name: firestoreName(path), ...wrapDocument(data) },
-    updateMask: { fieldPaths: Object.keys(data) },
+    update: { name: firestoreName(path), ...wrapDocument(fields) },
+    updateMask: { fieldPaths: Object.keys(fields) },
     currentDocument: { exists: true },
   };
   if (serverTimestampFields.length) {
@@ -138,7 +152,10 @@ async function runTests() {
   let passed = 0;
   let failed = 0;
 
-  async function assertRule({ description, method, path, data, userId, expectedStatus }) {
+  try {
+    await clearEmulator();
+
+    async function assertRule({ description, method, path, data, userId, expectedStatus }) {
     const res = await request({ method, path, data, userId });
     const success = res.status === expectedStatus;
     if (success) {
@@ -336,6 +353,24 @@ async function runTests() {
     method: 'PATCH',
     path: '/users/userA',
     data: wrapDocument({ name: 'User A', role: 'customer', admin: true, updatedAt: timestampField() }),
+    userId: 'userA',
+    expectedStatus: 403,
+  });
+
+  await assertRule({
+    description: '4.3 User A denied status field injection on profile update',
+    method: 'PATCH',
+    path: '/users/userA',
+    data: wrapDocument({ name: 'User A', role: 'customer', status: 'deleting', updatedAt: timestampField() }),
+    userId: 'userA',
+    expectedStatus: 403,
+  });
+
+  await assertRule({
+    description: '4.4 User A denied deletionStartedAt injection on profile update',
+    method: 'PATCH',
+    path: '/users/userA',
+    data: wrapDocument({ name: 'User A', role: 'customer', deletionStartedAt: timestampField(), updatedAt: timestampField() }),
     userId: 'userA',
     expectedStatus: 403,
   });
@@ -736,8 +771,9 @@ async function runTests() {
     expectedStatus: 403,
   });
 
+  // 13.6h: Arbitrary update without valid audit history remains rejected
   await assertRule({
-    description: '13.6h Owner cannot update a saved household expense',
+    description: '13.6h Owner cannot arbitrarily update a household expense without audit history',
     method: 'PATCH',
     path: '/users/userA/householdExpenses/home-exp1',
     data: wrapDocument({
@@ -748,13 +784,901 @@ async function runTests() {
     expectedStatus: 403,
   });
 
+  // 13.6i: Permanent deletion remains strictly denied
   await assertRule({
-    description: '13.6i Owner cannot delete a saved household expense',
+    description: '13.6i Owner cannot permanently delete a saved household expense',
     method: 'DELETE',
     path: '/users/userA/householdExpenses/home-exp1',
     userId: 'userA',
     expectedStatus: 403,
   });
+
+  // --- Milestone 1: Expense Correction, Voiding & Backward Compatibility Tests ---
+
+  // 13.6j: Create household expense with optional expenseDate succeeds
+  const expenseWithDate = {
+    id: 'home-exp-date',
+    title: 'Groceries at Supermarket',
+    category: 'Groceries',
+    amount: 1250.5,
+    createdAt: timestampField('2026-10-31T12:00:00Z'),
+    expenseDate: timestampField('2026-10-30T10:00:00Z'),
+    source: 'manual',
+  };
+  await assertRule({
+    description: '13.6j Owner can create household expense with optional expenseDate',
+    method: 'PATCH',
+    path: '/users/userA/householdExpenses/home-exp-date',
+    data: wrapDocument(expenseWithDate),
+    userId: 'userA',
+    expectedStatus: 200,
+  });
+
+  // 13.6k: Unauthorized user cannot correct owner's household expense
+  // Note: Firestore server timestamp transforms use :commit with updateTransforms or PATCH with server timestamps.
+  // Testing rejection of unauthorized correction:
+  const validSnapshotForDateExp = {
+    title: expenseWithDate.title,
+    category: expenseWithDate.category,
+    amount: expenseWithDate.amount,
+    expenseDate: expenseWithDate.expenseDate,
+  };
+  await assertRule({
+    description: '13.6k Unauthorized user cannot correct owner household expense',
+    method: 'PATCH',
+    path: '/users/userA/householdExpenses/home-exp-date',
+    data: wrapDocument({
+      ...expenseWithDate,
+      amount: 1400.0,
+      updatedAt: timestampField('2026-10-31T13:00:00Z'),
+      history: [validSnapshotForDateExp],
+    }),
+    userId: 'userB',
+    expectedStatus: 403,
+  });
+
+  // 13.6l: Correction with forged history snapshot (mismatched amount) is denied
+  await assertRule({
+    description: '13.6l Correction with forged history snapshot (amount mismatch) is denied',
+    method: 'PATCH',
+    path: '/users/userA/householdExpenses/home-exp-date',
+    data: wrapDocument({
+      ...expenseWithDate,
+      amount: 1400.0,
+      updatedAt: timestampField('2026-10-31T13:00:00Z'),
+      history: [
+        {
+          ...validSnapshotForDateExp,
+          amount: 999.0, // forged previous value
+        },
+      ],
+    }),
+    userId: 'userA',
+    expectedStatus: 403,
+  });
+
+  // 13.6m: Correction with missing history is denied
+  await assertRule({
+    description: '13.6m Correction with missing history is denied',
+    method: 'PATCH',
+    path: '/users/userA/householdExpenses/home-exp-date',
+    data: wrapDocument({
+      ...expenseWithDate,
+      amount: 1400.0,
+      updatedAt: timestampField('2026-10-31T13:00:00Z'),
+    }),
+    userId: 'userA',
+    expectedStatus: 403,
+  });
+
+  // 13.6n: Correction attempting to alter immutable createdAt or source is denied
+  await assertRule({
+    description: '13.6n Correction attempting to modify immutable createdAt is denied',
+    method: 'PATCH',
+    path: '/users/userA/householdExpenses/home-exp-date',
+    data: wrapDocument({
+      ...expenseWithDate,
+      createdAt: timestampField('2026-10-01T00:00:00Z'),
+      amount: 1400.0,
+      updatedAt: timestampField('2026-10-31T13:00:00Z'),
+      history: [validSnapshotForDateExp],
+    }),
+    userId: 'userA',
+    expectedStatus: 403,
+  });
+
+  await assertRule({
+    description: '13.6o Correction attempting to modify immutable source is denied',
+    method: 'PATCH',
+    path: '/users/userA/householdExpenses/home-exp-date',
+    data: wrapDocument({
+      ...expenseWithDate,
+      source: 'voice',
+      amount: 1400.0,
+      updatedAt: timestampField('2026-10-31T13:00:00Z'),
+      history: [validSnapshotForDateExp],
+    }),
+    userId: 'userA',
+    expectedStatus: 403,
+  });
+
+  // 13.6p: Correction with invalid amount (<= 0) is denied
+  await assertRule({
+    description: '13.6p Correction with negative or zero amount is denied',
+    method: 'PATCH',
+    path: '/users/userA/householdExpenses/home-exp-date',
+    data: wrapDocument({
+      ...expenseWithDate,
+      amount: 0,
+      updatedAt: timestampField('2026-10-31T13:00:00Z'),
+      history: [validSnapshotForDateExp],
+    }),
+    userId: 'userA',
+    expectedStatus: 403,
+  });
+
+  // 13.6p1: Trusted audit timestamps: Client-supplied past timestamp rejected
+  await assertRule({
+    description: '13.6p1 Correction with client past timestamp on updatedAt is denied',
+    method: 'PATCH',
+    path: '/users/userA/householdExpenses/home-exp-date',
+    data: wrapDocument({
+      ...expenseWithDate,
+      amount: 1400.0,
+      updatedAt: timestampField('2020-01-01T00:00:00Z'),
+      history: [validSnapshotForDateExp],
+    }),
+    userId: 'userA',
+    expectedStatus: 403,
+  });
+
+  // 13.6p2: Trusted audit timestamps: Client-supplied future timestamp rejected
+  await assertRule({
+    description: '13.6p2 Correction with client future timestamp on updatedAt is denied',
+    method: 'PATCH',
+    path: '/users/userA/householdExpenses/home-exp-date',
+    data: wrapDocument({
+      ...expenseWithDate,
+      amount: 1400.0,
+      updatedAt: timestampField('2030-01-01T00:00:00Z'),
+      history: [validSnapshotForDateExp],
+    }),
+    userId: 'userA',
+    expectedStatus: 403,
+  });
+
+  // 13.6p3: Preserve existing expenseDate: Attempting to remove expenseDate on correction is denied
+  const snapshotOmittingDate = {
+    title: expenseWithDate.title,
+    category: expenseWithDate.category,
+    amount: expenseWithDate.amount,
+  };
+  const expenseWithoutDateAttempt = {
+    id: expenseWithDate.id,
+    title: 'Supermarket Groceries',
+    category: expenseWithDate.category,
+    amount: 1400.0,
+    createdAt: expenseWithDate.createdAt,
+    source: expenseWithDate.source,
+    updatedAt: null,
+    history: [snapshotOmittingDate],
+  };
+  const removeDateWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    expenseWithoutDateAttempt,
+    ['updatedAt']
+  );
+  removeDateWrite.updateMask.fieldPaths.push('expenseDate'); // explicitly unmask expenseDate for deletion
+  const removeDateRes = await commit([removeDateWrite], 'userA');
+  if (removeDateRes.status === 403) {
+    console.log('[PASS] 13.6p3 Correction attempting to remove existing expenseDate is denied (HTTP 403)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6p3 Removing existing expenseDate unexpectedly succeeded:', removeDateRes.body);
+    failed++;
+  }
+
+  // 13.6p4: First correction: Inventing a snapshot modifiedAt when no updatedAt exists is denied
+  const forgedSnapshotOnFirstCorrection = {
+    title: expenseWithDate.title,
+    category: expenseWithDate.category,
+    amount: expenseWithDate.amount,
+    expenseDate: expenseWithDate.expenseDate,
+    modifiedAt: timestampField('2026-10-31T12:00:00Z'),
+  };
+  const forgedFirstWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      ...expenseWithDate,
+      title: 'Supermarket Groceries',
+      amount: 1400.0,
+      updatedAt: null,
+      history: [forgedSnapshotOnFirstCorrection],
+    },
+    ['updatedAt']
+  );
+  const forgedFirstRes = await commit([forgedFirstWrite], 'userA');
+  if (forgedFirstRes.status === 403) {
+    console.log('[PASS] 13.6p4 First correction inventing modifiedAt when no prior updatedAt exists is denied (HTTP 403)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6p4 First correction with invented modifiedAt unexpectedly succeeded:', forgedFirstRes.body);
+    failed++;
+  }
+
+  // 13.6p5: First correction: Inventing future snapshot modifiedAt is denied
+  const futureFirstSnapshot = {
+    title: expenseWithDate.title,
+    category: expenseWithDate.category,
+    amount: expenseWithDate.amount,
+    expenseDate: expenseWithDate.expenseDate,
+    modifiedAt: timestampField('2030-01-01T00:00:00Z'),
+  };
+  const futureFirstWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      ...expenseWithDate,
+      title: 'Supermarket Groceries',
+      amount: 1400.0,
+      updatedAt: null,
+      history: [futureFirstSnapshot],
+    },
+    ['updatedAt']
+  );
+  const futureFirstRes = await commit([futureFirstWrite], 'userA');
+  if (futureFirstRes.status === 403) {
+    console.log('[PASS] 13.6p5 First correction with future modifiedAt snapshot is denied (HTTP 403)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6p5 First correction with future modifiedAt unexpectedly succeeded:', futureFirstRes.body);
+    failed++;
+  }
+
+  // 13.6q: Valid owner first correction (snapshot omits modifiedAt since no prior updatedAt exists)
+  const validSnapshot1 = {
+    title: expenseWithDate.title,
+    category: expenseWithDate.category,
+    amount: expenseWithDate.amount,
+    expenseDate: expenseWithDate.expenseDate,
+  };
+  const correctedExpenseDateData = {
+    ...expenseWithDate,
+    title: 'Supermarket Groceries & Snacks',
+    amount: 1400.0,
+    updatedAt: null,
+    history: [validSnapshot1],
+  };
+  const correctionWrite1 = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    correctedExpenseDateData,
+    ['updatedAt']
+  );
+  const correctionRes1 = await commit([correctionWrite1], 'userA');
+  if (correctionRes1.ok) {
+    console.log('[PASS] 13.6q Owner can correct expense without prior updatedAt (HTTP 200)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6q Owner correction failed:', correctionRes1.body);
+    failed++;
+  }
+
+  // Retrieve current doc state to inspect exact timestamps and values
+  const correctedDocSnap = await request({
+    method: 'GET',
+    path: '/users/userA/householdExpenses/home-exp-date',
+    userId: 'userA',
+  });
+  const currentFields = correctedDocSnap.body ? correctedDocSnap.body.fields : {};
+  const currentUpdatedAt = currentFields.updatedAt;
+
+  // 13.6r1: Second correction: Recent client-forged timestamp on modifiedAt is denied
+  const forgedRecentSnapshot = {
+    title: 'Supermarket Groceries & Snacks',
+    category: expenseWithDate.category,
+    amount: 1400.0,
+    expenseDate: expenseWithDate.expenseDate,
+    modifiedAt: timestampField(new Date().toISOString()), // forged recent timestamp != existingData.updatedAt
+  };
+  const forgedRecentWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      ...correctedExpenseDateData,
+      amount: 1550.0,
+      updatedAt: null,
+      history: [validSnapshot1, forgedRecentSnapshot],
+    },
+    ['updatedAt']
+  );
+  const forgedRecentRes = await commit([forgedRecentWrite], 'userA');
+  if (forgedRecentRes.status === 403) {
+    console.log('[PASS] 13.6r1 Second correction with recent client-forged modifiedAt is denied (HTTP 403)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6r1 Client-forged recent modifiedAt unexpectedly succeeded:', forgedRecentRes.body);
+    failed++;
+  }
+
+  // 13.6r2: Second correction: Future timestamp on modifiedAt is denied
+  const forgedFutureSnapshot = {
+    title: 'Supermarket Groceries & Snacks',
+    category: expenseWithDate.category,
+    amount: 1400.0,
+    expenseDate: expenseWithDate.expenseDate,
+    modifiedAt: timestampField('2030-01-01T00:00:00Z'),
+  };
+  const forgedFutureWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      ...correctedExpenseDateData,
+      amount: 1550.0,
+      updatedAt: null,
+      history: [validSnapshot1, forgedFutureSnapshot],
+    },
+    ['updatedAt']
+  );
+  const forgedFutureRes = await commit([forgedFutureWrite], 'userA');
+  if (forgedFutureRes.status === 403) {
+    console.log('[PASS] 13.6r2 Second correction with future modifiedAt is denied (HTTP 403)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6r2 Future modifiedAt unexpectedly succeeded:', forgedFutureRes.body);
+    failed++;
+  }
+
+  // 13.6r3: Second correction: Omitting modifiedAt when existingData.updatedAt exists is denied
+  const omittedModifiedAtSnapshot = {
+    title: 'Supermarket Groceries & Snacks',
+    category: expenseWithDate.category,
+    amount: 1400.0,
+    expenseDate: expenseWithDate.expenseDate,
+  };
+  const omittedModifiedAtWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      ...correctedExpenseDateData,
+      amount: 1550.0,
+      updatedAt: null,
+      history: [validSnapshot1, omittedModifiedAtSnapshot],
+    },
+    ['updatedAt']
+  );
+  const omittedModifiedAtRes = await commit([omittedModifiedAtWrite], 'userA');
+  if (omittedModifiedAtRes.status === 403) {
+    console.log('[PASS] 13.6r3 Second correction omitting modifiedAt when updatedAt exists is denied (HTTP 403)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6r3 Omitting modifiedAt unexpectedly succeeded:', omittedModifiedAtRes.body);
+    failed++;
+  }
+
+  // 13.6r: Second correction: Dropping prior history fails
+  const validSnapshot2 = {
+    title: 'Supermarket Groceries & Snacks',
+    category: expenseWithDate.category,
+    amount: 1400.0,
+    expenseDate: expenseWithDate.expenseDate,
+    modifiedAt: currentUpdatedAt,
+  };
+  const discardHistoryWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      ...correctedExpenseDateData,
+      amount: 1550.0,
+      updatedAt: null,
+      history: [validSnapshot2],
+    },
+    ['updatedAt']
+  );
+  const discardRes = await commit([discardHistoryWrite], 'userA');
+  if (discardRes.status === 403) {
+    console.log('[PASS] 13.6r Second correction that discards first history snapshot is denied (HTTP 403)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6r Second correction discarding history unexpectedly succeeded:', discardRes.body);
+    failed++;
+  }
+
+  // 13.6r4: Second correction: Modifying existing history snapshot in chain is denied
+  const tamperedSnapshot1 = {
+    ...validSnapshot1,
+    amount: 9999.0, // tampered prior history entry
+  };
+  const tamperedHistoryWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      ...correctedExpenseDateData,
+      amount: 1550.0,
+      updatedAt: null,
+      history: [tamperedSnapshot1, validSnapshot2],
+    },
+    ['updatedAt']
+  );
+  const tamperedHistoryRes = await commit([tamperedHistoryWrite], 'userA');
+  if (tamperedHistoryRes.status === 403) {
+    console.log('[PASS] 13.6r4 Second correction tampering with existing history entry is denied (HTTP 403)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6r4 Tampering with existing history entry unexpectedly succeeded:', tamperedHistoryRes.body);
+    failed++;
+  }
+
+  // 13.6s: Second correction preserving prior history chain and matching modifiedAt == existingData.updatedAt succeeds
+  const secondCorrectionWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      ...correctedExpenseDateData,
+      amount: 1550.0,
+      updatedAt: null,
+      history: [validSnapshot1, validSnapshot2],
+    },
+    ['updatedAt']
+  );
+  const secondCorrectionRes = await commit([secondCorrectionWrite], 'userA');
+  if (secondCorrectionRes.ok) {
+    console.log('[PASS] 13.6s Second correction preserving prior history and trusted modifiedAt is allowed (HTTP 200)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6s Second correction failed:', secondCorrectionRes.body);
+    failed++;
+  }
+
+  // Retrieve state after second correction
+  const secondDocSnap = await request({
+    method: 'GET',
+    path: '/users/userA/householdExpenses/home-exp-date',
+    userId: 'userA',
+  });
+  const secondFields = secondDocSnap.body ? secondDocSnap.body.fields : {};
+  const secondUpdatedAt = secondFields.updatedAt;
+  const preservedHistoryFromDoc = secondFields.history?.arrayValue?.values?.map((v) => {
+    const f = v.mapValue.fields;
+    const item = {
+      title: f.title.stringValue,
+      category: f.category.stringValue,
+      amount: f.amount.integerValue ? parseInt(f.amount.integerValue) : f.amount.doubleValue,
+    };
+    if (f.expenseDate) item.expenseDate = f.expenseDate;
+    if (f.modifiedAt) item.modifiedAt = f.modifiedAt;
+    return item;
+  }) || [];
+
+  // Issue 2 tests: isVoided consistency during correction
+  // 13.6s1: Correction attempting to set isVoided: true is denied
+  const validSnapshot3 = {
+    title: 'Supermarket Groceries & Snacks',
+    category: expenseWithDate.category,
+    amount: 1550.0,
+    expenseDate: expenseWithDate.expenseDate,
+    modifiedAt: secondUpdatedAt,
+  };
+  const voidViaCorrectionWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      id: expenseWithDate.id,
+      title: 'Supermarket Groceries & Snacks (Void Attempt)',
+      category: expenseWithDate.category,
+      amount: 1550.0,
+      createdAt: expenseWithDate.createdAt,
+      source: expenseWithDate.source,
+      expenseDate: expenseWithDate.expenseDate,
+      updatedAt: null,
+      isVoided: true, // attempting to void via correction
+      history: [...preservedHistoryFromDoc, validSnapshot3],
+    },
+    ['updatedAt']
+  );
+  const voidViaCorrectionRes = await commit([voidViaCorrectionWrite], 'userA');
+  if (voidViaCorrectionRes.status === 403) {
+    console.log('[PASS] 13.6s1 Correction attempting to set isVoided: true is denied (HTTP 403)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6s1 Setting isVoided: true via correction unexpectedly succeeded:', voidViaCorrectionRes.body);
+    failed++;
+  }
+
+  // 13.6s2: Correction on doc omitting isVoided can explicitly introduce isVoided: false
+  const introduceVoidFalseWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      id: expenseWithDate.id,
+      title: 'Supermarket Groceries & Snacks',
+      category: expenseWithDate.category,
+      amount: 1580.0,
+      createdAt: expenseWithDate.createdAt,
+      source: expenseWithDate.source,
+      expenseDate: expenseWithDate.expenseDate,
+      updatedAt: null,
+      isVoided: false, // introducing isVoided: false
+      history: [...preservedHistoryFromDoc, validSnapshot3],
+    },
+    ['updatedAt']
+  );
+  const introduceVoidFalseRes = await commit([introduceVoidFalseWrite], 'userA');
+  if (introduceVoidFalseRes.ok) {
+    console.log('[PASS] 13.6s2 Correction introducing isVoided: false succeeds (HTTP 200)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6s2 Introducing isVoided: false failed:', introduceVoidFalseRes.body);
+    failed++;
+  }
+
+  // Retrieve state after isVoided: false introduction
+  const thirdDocSnap = await request({
+    method: 'GET',
+    path: '/users/userA/householdExpenses/home-exp-date',
+    userId: 'userA',
+  });
+  const thirdFields = thirdDocSnap.body ? thirdDocSnap.body.fields : {};
+  const thirdUpdatedAt = thirdFields.updatedAt;
+  const thirdHistoryFromDoc = thirdFields.history?.arrayValue?.values?.map((v) => {
+    const f = v.mapValue.fields;
+    const item = {
+      title: f.title.stringValue,
+      category: f.category.stringValue,
+      amount: f.amount.integerValue ? parseInt(f.amount.integerValue) : f.amount.doubleValue,
+    };
+    if (f.expenseDate) item.expenseDate = f.expenseDate;
+    if (f.modifiedAt) item.modifiedAt = f.modifiedAt;
+    return item;
+  }) || [];
+  const validSnapshot4 = {
+    title: 'Supermarket Groceries & Snacks',
+    category: expenseWithDate.category,
+    amount: 1580.0,
+    expenseDate: expenseWithDate.expenseDate,
+    modifiedAt: thirdUpdatedAt,
+  };
+
+  // 13.6s3: Document with isVoided: false cannot drop/omit isVoided on subsequent correction
+  const dropVoidFalseWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      id: expenseWithDate.id,
+      title: 'Supermarket Groceries & Snacks',
+      category: expenseWithDate.category,
+      amount: 1590.0,
+      createdAt: expenseWithDate.createdAt,
+      source: expenseWithDate.source,
+      expenseDate: expenseWithDate.expenseDate,
+      updatedAt: null,
+      history: [...thirdHistoryFromDoc, validSnapshot4],
+    },
+    ['updatedAt']
+  );
+  dropVoidFalseWrite.updateMask.fieldPaths.push('isVoided'); // unmask for deletion
+  const dropVoidFalseRes = await commit([dropVoidFalseWrite], 'userA');
+  if (dropVoidFalseRes.status === 403) {
+    console.log('[PASS] 13.6s3 Correction attempting to remove existing isVoided: false is denied (HTTP 403)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6s3 Removing isVoided: false unexpectedly succeeded:', dropVoidFalseRes.body);
+    failed++;
+  }
+
+  // 13.6s4: Document with isVoided: false explicitly preserving isVoided: false succeeds
+  const preserveVoidFalseWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      id: expenseWithDate.id,
+      title: 'Supermarket Groceries & Snacks',
+      category: expenseWithDate.category,
+      amount: 1590.0,
+      createdAt: expenseWithDate.createdAt,
+      source: expenseWithDate.source,
+      expenseDate: expenseWithDate.expenseDate,
+      updatedAt: null,
+      isVoided: false, // preserved
+      history: [...thirdHistoryFromDoc, validSnapshot4],
+    },
+    ['updatedAt']
+  );
+  const preserveVoidFalseRes = await commit([preserveVoidFalseWrite], 'userA');
+  if (preserveVoidFalseRes.ok) {
+    console.log('[PASS] 13.6s4 Correction explicitly preserving isVoided: false succeeds (HTTP 200)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6s4 Preserving isVoided: false failed:', preserveVoidFalseRes.body);
+    failed++;
+  }
+
+  // Retrieve state before voiding tests
+  const finalPreVoidDocSnap = await request({
+    method: 'GET',
+    path: '/users/userA/householdExpenses/home-exp-date',
+    userId: 'userA',
+  });
+  const finalPreVoidFields = finalPreVoidDocSnap.body ? finalPreVoidDocSnap.body.fields : {};
+  const finalPreVoidHistory = finalPreVoidFields.history?.arrayValue?.values?.map((v) => {
+    const f = v.mapValue.fields;
+    const item = {
+      title: f.title.stringValue,
+      category: f.category.stringValue,
+      amount: f.amount.integerValue ? parseInt(f.amount.integerValue) : f.amount.doubleValue,
+    };
+    if (f.expenseDate) item.expenseDate = f.expenseDate;
+    if (f.modifiedAt) item.modifiedAt = f.modifiedAt;
+    return item;
+  }) || [];
+
+  // 13.6t: Voiding: Unauthorized user cannot void expense
+  const unauthorizedVoidWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      id: expenseWithDate.id,
+      title: 'Supermarket Groceries & Snacks',
+      category: expenseWithDate.category,
+      amount: 1590.0,
+      createdAt: expenseWithDate.createdAt,
+      source: expenseWithDate.source,
+      expenseDate: expenseWithDate.expenseDate,
+      updatedAt: finalPreVoidFields.updatedAt,
+      history: finalPreVoidHistory,
+      isVoided: true,
+      voidedAt: null,
+      voidReason: 'Mistaken duplicate entry',
+    },
+    ['voidedAt']
+  );
+  const unauthorizedVoidRes = await commit([unauthorizedVoidWrite], 'userB');
+  if (unauthorizedVoidRes.status === 403) {
+    console.log('[PASS] 13.6t Unauthorized user cannot void owner expense (HTTP 403)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6t Unauthorized void unexpectedly succeeded:', unauthorizedVoidRes.body);
+    failed++;
+  }
+
+  // 13.6u: Voiding attempting to modify expense amount or title during void is denied
+  const alteredVoidWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      id: expenseWithDate.id,
+      title: 'Supermarket Groceries & Snacks',
+      category: expenseWithDate.category,
+      amount: 9999.0, // altered
+      createdAt: expenseWithDate.createdAt,
+      source: expenseWithDate.source,
+      expenseDate: expenseWithDate.expenseDate,
+      updatedAt: finalPreVoidFields.updatedAt,
+      history: finalPreVoidHistory,
+      isVoided: true,
+      voidedAt: null,
+      voidReason: 'Mistaken duplicate entry',
+    },
+    ['voidedAt']
+  );
+  const alteredVoidRes = await commit([alteredVoidWrite], 'userA');
+  if (alteredVoidRes.status === 403) {
+    console.log('[PASS] 13.6u Void operation attempting to alter amount is denied (HTTP 403)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6u Altered void operation unexpectedly succeeded:', alteredVoidRes.body);
+    failed++;
+  }
+
+  // 13.6u1: Voiding with client-generated timestamp instead of request.time is denied
+  await assertRule({
+    description: '13.6u1 Void operation with client timestamp on voidedAt is denied',
+    method: 'PATCH',
+    path: '/users/userA/householdExpenses/home-exp-date',
+    data: wrapDocument({
+      id: expenseWithDate.id,
+      title: 'Supermarket Groceries & Snacks',
+      category: expenseWithDate.category,
+      amount: 1590.0,
+      createdAt: expenseWithDate.createdAt,
+      source: expenseWithDate.source,
+      expenseDate: expenseWithDate.expenseDate,
+      updatedAt: finalPreVoidFields.updatedAt,
+      history: finalPreVoidHistory,
+      isVoided: true,
+      voidedAt: timestampField('2020-01-01T00:00:00Z'),
+      voidReason: 'Mistaken duplicate entry',
+    }),
+    userId: 'userA',
+    expectedStatus: 403,
+  });
+
+  // 13.6v: Valid owner void with server timestamp transform accepted
+  const validVoidWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      id: expenseWithDate.id,
+      title: 'Supermarket Groceries & Snacks',
+      category: expenseWithDate.category,
+      amount: 1590.0,
+      createdAt: expenseWithDate.createdAt,
+      source: expenseWithDate.source,
+      expenseDate: expenseWithDate.expenseDate,
+      updatedAt: finalPreVoidFields.updatedAt,
+      history: finalPreVoidHistory,
+      isVoided: true,
+      voidedAt: null,
+      voidReason: 'Mistaken duplicate entry',
+    },
+    ['voidedAt']
+  );
+  const validVoidRes = await commit([validVoidWrite], 'userA');
+  if (validVoidRes.ok) {
+    console.log('[PASS] 13.6v Owner can void household expense with server timestamp transform (HTTP 200)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6v Valid owner void with server timestamp transform failed:', validVoidRes.body);
+    failed++;
+  }
+
+  // 13.6w: Repeated void operation is denied (isVoided false/missing -> true only)
+  const repeatedVoidWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      id: expenseWithDate.id,
+      title: 'Supermarket Groceries & Snacks',
+      category: expenseWithDate.category,
+      amount: 1590.0,
+      createdAt: expenseWithDate.createdAt,
+      source: expenseWithDate.source,
+      expenseDate: expenseWithDate.expenseDate,
+      updatedAt: finalPreVoidFields.updatedAt,
+      history: finalPreVoidHistory,
+      isVoided: true,
+      voidedAt: null,
+      voidReason: 'Repeated void attempt',
+    },
+    ['voidedAt']
+  );
+  const repeatedVoidRes = await commit([repeatedVoidWrite], 'userA');
+  if (repeatedVoidRes.status === 403) {
+    console.log('[PASS] 13.6w Repeated void operation on already voided expense is denied (HTTP 403)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6w Repeated void unexpectedly succeeded:', repeatedVoidRes.body);
+    failed++;
+  }
+
+  // 13.6x: Voided expense cannot be corrected
+  const correctVoidedWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp-date',
+    {
+      id: expenseWithDate.id,
+      title: 'Supermarket Groceries & Snacks',
+      category: expenseWithDate.category,
+      amount: 1600.0,
+      createdAt: expenseWithDate.createdAt,
+      source: expenseWithDate.source,
+      expenseDate: expenseWithDate.expenseDate,
+      updatedAt: null,
+      isVoided: false,
+      history: [
+        ...finalPreVoidHistory,
+        {
+          title: 'Supermarket Groceries & Snacks',
+          category: expenseWithDate.category,
+          amount: 1590.0,
+          expenseDate: expenseWithDate.expenseDate,
+          modifiedAt: finalPreVoidFields.updatedAt,
+        },
+      ],
+    },
+    ['updatedAt']
+  );
+  const correctVoidedRes = await commit([correctVoidedWrite], 'userA');
+  if (correctVoidedRes.status === 403) {
+    console.log('[PASS] 13.6x Voided expense cannot be corrected or un-voided (HTTP 403)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6x Correcting voided expense unexpectedly succeeded:', correctVoidedRes.body);
+    failed++;
+  }
+
+  // 13.6y: Backward compatibility with legacy document (no expenseDate, no history, no updatedAt)
+  // home-exp1 from earlier in test suite has no expenseDate, no history and no updatedAt.
+  // Test case 1: Correcting without introducing expenseDate works with no snapshot modifiedAt.
+  const validSnapshotForLegacy = {
+    title: validHouseholdExpense.title,
+    category: validHouseholdExpense.category,
+    amount: validHouseholdExpense.amount,
+  };
+  const legacyCorrectionWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp1',
+    {
+      ...validHouseholdExpense,
+      title: 'Fresh Vegetables & Herbs',
+      amount: 320.0,
+      updatedAt: null,
+      history: [validSnapshotForLegacy],
+    },
+    ['updatedAt']
+  );
+  const legacyCorrectionRes = await commit([legacyCorrectionWrite], 'userA');
+  if (legacyCorrectionRes.ok) {
+    console.log('[PASS] 13.6y Owner can correct legacy household expense without expenseDate (HTTP 200)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6y Correcting legacy expense without expenseDate failed:', legacyCorrectionRes.body);
+    failed++;
+  }
+
+  // Test case 2: Introducing expenseDate during correction on legacy document succeeds.
+  // Now home-exp1 HAS updatedAt from 13.6y, so new snapshot MUST have modifiedAt == legacyDocFields.updatedAt.
+  const legacyDocSnap = await request({
+    method: 'GET',
+    path: '/users/userA/householdExpenses/home-exp1',
+    userId: 'userA',
+  });
+  const legacyDocFields = legacyDocSnap.body ? legacyDocSnap.body.fields : {};
+  const legacyPreservedSnapshot = {
+    title: validHouseholdExpense.title,
+    category: validHouseholdExpense.category,
+    amount: validHouseholdExpense.amount,
+  };
+  const introduceDateSnapshot = {
+    title: 'Fresh Vegetables & Herbs',
+    category: validHouseholdExpense.category,
+    amount: 320.0,
+    modifiedAt: legacyDocFields.updatedAt,
+  };
+  const introduceDateWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp1',
+    {
+      ...validHouseholdExpense,
+      title: 'Fresh Vegetables & Herbs (Organic)',
+      amount: 340.0,
+      expenseDate: timestampField('2026-10-29T10:00:00Z'), // introducing expenseDate
+      updatedAt: null,
+      history: [legacyPreservedSnapshot, introduceDateSnapshot],
+    },
+    ['updatedAt']
+  );
+  const introduceDateRes = await commit([introduceDateWrite], 'userA');
+  if (introduceDateRes.ok) {
+    console.log('[PASS] 13.6y1 Legacy expense can introduce expenseDate during correction (HTTP 200)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6y1 Introducing expenseDate on legacy expense failed:', introduceDateRes.body);
+    failed++;
+  }
+
+  // 13.6z: Owner can void legacy household expense
+  const legacyUpdatedSnap = await request({
+    method: 'GET',
+    path: '/users/userA/householdExpenses/home-exp1',
+    userId: 'userA',
+  });
+  const legacyUpdatedFields = legacyUpdatedSnap.body ? legacyUpdatedSnap.body.fields : {};
+  const legacyHistoryFromDoc = legacyUpdatedFields.history?.arrayValue?.values?.map((v) => {
+    const f = v.mapValue.fields;
+    const item = {
+      title: f.title.stringValue,
+      category: f.category.stringValue,
+      amount: f.amount.integerValue ? parseInt(f.amount.integerValue) : f.amount.doubleValue,
+    };
+    if (f.expenseDate) item.expenseDate = f.expenseDate;
+    if (f.modifiedAt) item.modifiedAt = f.modifiedAt;
+    return item;
+  }) || [];
+
+  const legacyVoidWrite = updateWrite(
+    'users/userA/householdExpenses/home-exp1',
+    {
+      ...validHouseholdExpense,
+      title: 'Fresh Vegetables & Herbs (Organic)',
+      amount: 340.0,
+      expenseDate: timestampField('2026-10-29T10:00:00Z'),
+      updatedAt: legacyUpdatedFields.updatedAt,
+      history: legacyHistoryFromDoc,
+      isVoided: true,
+      voidedAt: null,
+    },
+    ['voidedAt']
+  );
+  const legacyVoidRes = await commit([legacyVoidWrite], 'userA');
+  if (legacyVoidRes.ok) {
+    console.log('[PASS] 13.6z Owner can void legacy household expense with server timestamp transform (HTTP 200)');
+    passed++;
+  } else {
+    console.error('[FAIL] 13.6z Voiding legacy household expense failed:', legacyVoidRes.body);
+    failed++;
+  }
 
   await assertRule({
     description: '13.6 User B denied read on User A savedShop',
@@ -788,9 +1712,11 @@ async function runTests() {
     userId: 'userB',
     expectedStatus: 403,
   });
-
-  console.log(`\n--- Test Results: ${passed} passed, ${failed} failed ---`);
-  if (failed > 0) process.exit(1);
+  } finally {
+    httpAgent.destroy();
+    console.log(`\n--- Test Results: ${passed} passed, ${failed} failed ---`);
+    process.exitCode = failed > 0 ? 1 : 0;
+  }
 }
 
 runTests();

@@ -80,30 +80,117 @@ class PpScaffold extends StatelessWidget {
                   child: LinearProgressIndicator(minHeight: 3),
                 ),
               if (hasError)
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.shade200),
-                  ),
-                  child: Row(
-                    children: <Widget>[
-                      Icon(Icons.error_outline,
-                          size: 16, color: Colors.red.shade800),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          state.cloudError!,
-                          style: TextStyle(
-                              fontSize: 11, color: Colors.red.shade800),
-                        ),
+                Builder(
+                  builder: (ctx) {
+                    final isDark = Theme.of(ctx).brightness == Brightness.dark;
+                    final bannerBg =
+                        isDark ? const Color(0xFF2C1E1E) : Colors.red.shade50;
+                    final bannerBorder =
+                        isDark ? const Color(0xFF5C2D2D) : Colors.red.shade200;
+                    final bannerFg =
+                        isDark ? const Color(0xFFFF9B9B) : Colors.red.shade800;
+                    return Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: bannerBg,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: bannerBorder),
                       ),
-                    ],
-                  ),
+                      child: Row(
+                        children: <Widget>[
+                          Icon(Icons.error_outline, size: 16, color: bannerFg),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              state.cloudError!,
+                              style: TextStyle(fontSize: 11, color: bannerFg),
+                            ),
+                          ),
+                          Semantics(
+                            button: true,
+                            excludeSemantics: true,
+                            label: 'Dismiss error message',
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () => state.clearCloudError(),
+                              child: Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: Icon(Icons.close_rounded,
+                                    size: 15, color: bannerFg),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              if (state.isOffline)
+                Builder(
+                  builder: (ctx) {
+                    final isDark = Theme.of(ctx).brightness == Brightness.dark;
+                    final bannerBg = isDark
+                        ? const Color(0xFF2C2416)
+                        : const Color(0xFFFFF8E1);
+                    final bannerBorder = isDark
+                        ? const Color(0xFF5C4720)
+                        : const Color(0xFFFFE082);
+                    final bannerFg = isDark
+                        ? const Color(0xFFFFD54F)
+                        : const Color(0xFF7F5200);
+                    return Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: bannerBg,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: bannerBorder),
+                      ),
+                      child: Row(
+                        children: <Widget>[
+                          Icon(Icons.wifi_off_rounded,
+                              size: 16, color: bannerFg),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Offline mode: showing cached records.',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                  color: bannerFg),
+                            ),
+                          ),
+                          Semantics(
+                            button: true,
+                            excludeSemantics: true,
+                            label: 'Retry connection',
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(6),
+                              onTap: () => state.retryConnection(),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                child: Text(
+                                  'Retry',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: bannerFg,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               Expanded(child: body),
             ],
@@ -185,14 +272,14 @@ class PpCard extends StatelessWidget {
       {super.key,
       required this.child,
       this.padding = const EdgeInsets.all(14),
-      this.color = PpColors.card});
+      this.color});
   final Widget child;
   final EdgeInsets padding;
-  final Color color;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) => Card(
-        color: color,
+        color: color ?? Theme.of(context).cardTheme.color,
         child: Padding(padding: padding, child: child),
       );
 }
@@ -204,22 +291,25 @@ class PpSectionTitle extends StatelessWidget {
   final VoidCallback? onAction;
 
   @override
-  Widget build(BuildContext context) => Row(
-        children: <Widget>[
-          Expanded(
-              child: Text(title,
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Row(
+      children: <Widget>[
+        Expanded(
+            child: Text(title,
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: isDark ? const Color(0xFFE8EDE9) : PpColors.ink))),
+        if (action != null)
+          TextButton(
+              onPressed: onAction,
+              child: Text(action!,
                   style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: PpColors.ink))),
-          if (action != null)
-            TextButton(
-                onPressed: onAction,
-                child: Text(action!,
-                    style: const TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w700))),
-        ],
-      );
+                      fontSize: 12, fontWeight: FontWeight.w700))),
+      ],
+    );
+  }
 }
 
 class PpDemoNotice extends StatelessWidget {
@@ -230,22 +320,33 @@ class PpDemoNotice extends StatelessWidget {
   final String message;
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-            color: PpColors.soft, borderRadius: BorderRadius.circular(12)),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            const Icon(Icons.info_outline, size: 18, color: PpColors.forest),
-            const SizedBox(width: 9),
-            Expanded(
-                child: Text(message,
-                    style: const TextStyle(
-                        fontSize: 11, height: 1.4, color: PpColors.ink))),
-          ],
-        ),
-      );
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1D2821) : PpColors.soft,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: isDark
+                  ? const Color(0xFF2C392F)
+                  : PpColors.border.withValues(alpha: 0.5))),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(Icons.info_outline,
+              size: 18, color: isDark ? PpColors.forestLight : PpColors.forest),
+          const SizedBox(width: 9),
+          Expanded(
+              child: Text(message,
+                  style: TextStyle(
+                      fontSize: 11,
+                      height: 1.4,
+                      color: isDark ? const Color(0xFFDEEFE3) : PpColors.ink))),
+        ],
+      ),
+    );
+  }
 }
 
 class PpMetricCard extends StatelessWidget {
@@ -319,10 +420,18 @@ class PpTransactionTile extends StatelessWidget {
   final IconData icon;
 
   @override
-  Widget build(BuildContext context) => Card(
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: onTap,
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final iconBg = isDark ? const Color(0xFF243026) : PpColors.soft;
+    final textFg = isDark ? const Color(0xFFE8EDE9) : PpColors.ink;
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Semantics(
+          button: true,
+          excludeSemantics: true,
+          label: '$title, $subtitle, $trailing',
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
             child: Row(children: <Widget>[
@@ -330,9 +439,10 @@ class PpTransactionTile extends StatelessWidget {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                      color: PpColors.soft,
-                      borderRadius: BorderRadius.circular(10)),
-                  child: Icon(icon, size: 20, color: PpColors.forest)),
+                      color: iconBg, borderRadius: BorderRadius.circular(10)),
+                  child: Icon(icon,
+                      size: 20,
+                      color: isDark ? PpColors.forestLight : PpColors.forest)),
               const SizedBox(width: 11),
               Expanded(
                   child: Column(
@@ -341,10 +451,10 @@ class PpTransactionTile extends StatelessWidget {
                     Text(title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
-                            color: PpColors.ink)),
+                            color: textFg)),
                     const SizedBox(height: 5),
                     Text(subtitle,
                         maxLines: 1,
@@ -354,14 +464,16 @@ class PpTransactionTile extends StatelessWidget {
                   ])),
               const SizedBox(width: 8),
               Text(trailing,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w800,
-                      color: PpColors.ink)),
+                      color: textFg)),
             ]),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 class PpField extends StatelessWidget {
@@ -399,14 +511,19 @@ class PpField extends StatelessWidget {
 }
 
 class PpEmptyState extends StatelessWidget {
-  const PpEmptyState(
-      {super.key,
-      required this.icon,
-      required this.title,
-      required this.message});
+  const PpEmptyState({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.actionLabel,
+    this.onAction,
+  });
   final IconData icon;
   final String title;
   final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) => Center(
@@ -429,6 +546,19 @@ class PpEmptyState extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                     fontSize: 12, color: PpColors.secondary, height: 1.4)),
+            if (actionLabel != null && onAction != null) ...<Widget>[
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: onAction,
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: Text(actionLabel!),
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(160, 40),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                ),
+              ),
+            ],
           ]),
         ),
       );
