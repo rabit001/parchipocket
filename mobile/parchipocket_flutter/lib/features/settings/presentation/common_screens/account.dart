@@ -280,7 +280,7 @@ class _DeleteAccountConfirmScreenState
     final userPhone =
         state.auth?.currentUser?.phoneNumber ?? state.phoneNumber;
     final maskedPhone = userPhone.length > 4
-        ? '${userPhone.substring(0, userPhone.length - 4).replaceAll(RegExp(r'\\d'), '*')}${userPhone.substring(userPhone.length - 4)}'
+        ? '${userPhone.substring(0, userPhone.length - 4).replaceAll(RegExp(r'\d'), '*')}${userPhone.substring(userPhone.length - 4)}'
         : userPhone;
 
     return PpScaffold(
