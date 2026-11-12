@@ -1,151 +1,186 @@
+<div align="center">
+
 # ParchiPocket
 
-**Owner and project author:** Rabit Mansuri (@rabit001)  
-**Project type:** Flutter mobile-first household spending tracker with voice-assisted purchase entry
+### Everyday spending, easier to track.
 
-ParchiPocket is currently focused on **Home & Family daily expense tracking**: users can record what they bought, the amount, and a spending category, then review daily entries and monthly category totals. The current work adds voice-assisted entry with a review-before-save flow. Firebase Authentication, Cloud Firestore persistence, UID-scoped security rules, and the existing receipt-claim flow remain part of the project. Shop Owner and Street Vendor screens remain in the repository for future work, but their role choices and navigation are paused in the current app experience. This is still a development project, not a production-ready accounting service.
+A Flutter Android app focused on helping households record daily purchases, review spending activity, and understand category-wise totals.
 
-## Latest Android debug preview
+[![Backend validation](https://github.com/rabit001/parchipocket/actions/workflows/backend-validation.yml/badge.svg)](https://github.com/rabit001/parchipocket/actions/workflows/backend-validation.yml)
+[![Flutter](https://img.shields.io/badge/Client-Flutter-02569B?logo=flutter&logoColor=white)](https://flutter.dev/)
+[![Firebase](https://img.shields.io/badge/Backend-Firebase-FFCA28?logo=firebase&logoColor=black)](https://firebase.google.com/)
+[![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?logo=android&logoColor=white)](https://www.android.com/)
 
-The latest published test APK is available from [GitHub Releases](https://github.com/rabit001/parchipocket/releases). It is debug-signed and is not a production Play Store build. New debug release tags are generated from the Flutter app version in `mobile/parchipocket_flutter/pubspec.yaml`.
+**Created by [Rabit Mansuri](https://github.com/rabit001)**
 
-## Current backend
+[View latest debug build](https://github.com/rabit001/parchipocket/releases) · [Report an issue](https://github.com/rabit001/parchipocket/issues)
 
-- Firebase Authentication for account sessions and phone-auth flow.
-- Cloud Firestore for user profiles, bills, expenses, saved shops, and claimed receipt copies.
-- Firestore Security Rules validate user-owned records and constrain financial fields.
-- Receipt claims use a random bearer code, a SHA-256 digest as the document ID, bounded expiry, and an atomic claim/copy/index transaction.
-- Demo mode is designed to use local sample data without cloud reads or writes.
+</div>
 
-**Important:** Pushing code to GitHub does not deploy Firestore rules to Firebase. Review and deploy rules only after emulator tests pass. Never use production bill data for emulator testing.
+---
 
-## Product capabilities
+## Overview
 
-### Shared / onboarding
-- Splash and welcome screens.
-- Explicit local demo mode.
-- Phone / OTP authentication flow.
-- Home & Family profile setup.
-- Profile and settings screens.
+ParchiPocket is a **mobile-first household expense tracker**. The current development focus is the Home & Family experience: record a purchase, review the details, save it, and follow daily spending and monthly category totals.
 
-### Home & Family daily spending (current focus)
-- Daily and current-month spending totals.
-- Manual household purchase entry.
-- Voice-assisted single-purchase entry with transcript, editable fields, and explicit confirmation before saving.
-- Household daily log and category totals calculated from real saved entries.
-- Separate owner-scoped Firestore household expense collection.
-- Existing receipt QR/manual claim remains available as a secondary feature.
+The app supports manual purchase entry and a voice-assisted entry flow. Voice input is transcribed and parsed on-device, then presented for review and confirmation before saving.
 
-### Paused for this iteration
-- Shop Owner and Street Vendor screens remain in the codebase for future development, but their role options and main navigation are hidden.
-- Existing seller bills, expenses, Udhaar, and claimed receipts are not deleted by this change.
+ParchiPocket is actively under development. The available Android APK is a **debug preview**, not a production Play Store release or a production accounting service.
+
+## Current features
+
+| Area | Current implementation |
+| --- | --- |
+| Household purchases | Manual entry with editable fields and confirmation before saving |
+| Voice-assisted entry | Speech recognition and local phrase parsing for one purchase per utterance |
+| Daily spending | Daily log and current-month spending totals |
+| Category insights | Totals calculated from saved household entries |
+| Cloud data | Firebase Authentication and owner-scoped Cloud Firestore records |
+| Demo mode | Explicit local session using in-memory sample data |
+| Receipt sharing | Existing QR/manual receipt-claim flow remains available as a secondary feature |
+
+### Product scope
+
+The current app experience prioritises **Home & Family daily spending**.
+
+Shop Owner and Street Vendor modules remain in the source tree for compatibility and future development, but their role choices and main navigation are paused in the current iteration. Existing legacy seller records have not been removed.
 
 ## Technology
 
-- Flutter / Dart.
-- Firebase Authentication.
-- Cloud Firestore and Firestore Security Rules.
-- Firebase App Check (Android Play Integrity configuration).
-- Local Firebase emulators for rule and integration testing.
+- **App:** Flutter and Dart
+- **Authentication:** Firebase Authentication
+- **Database:** Cloud Firestore
+- **Authorization:** Firestore Security Rules
+- **App integrity:** Firebase App Check configuration
+- **Backend functions:** Firebase Cloud Functions
+- **Validation:** Flutter tests, static analysis, Firebase emulators, and Android emulator integration tests
+- **Automation:** GitHub Actions
 
-## Known limitations
-
-- Google sign-in is a demo flow, not a completed Google OAuth integration.
-- Real SMS OTP delivery depends on Firebase project configuration and the applicable billing plan. Use configured Firebase test phone numbers for development.
-- The demo session uses in-memory sample data and resets when the app process restarts.
-- Receipt claim codes are bearer secrets. Firestore rules enforce a single durable claim and receipt integrity, but rules cannot prove that a client used cryptographically secure randomness or provide robust attempt throttling.
-- User-selected roles were previously app modes, not proof of a real-world business identity. Shop Owner and Street Vendor modes are currently paused in onboarding; their legacy screens and stored records remain for compatibility.
-- Voice-assisted entry uses platform speech recognition plus a conservative local phrase parser. It is not yet an LLM-based assistant and currently targets one household purchase per utterance.
-- Household entries are owner-scoped and immutable after saving in this initial version; an audited correction flow is still needed.
-- Speech recognition availability and Hindi/Hinglish accuracy vary by device and installed speech service. Review extracted text and amount before saving.
-- Firestore rules must be deployed separately; this repository does not prove which rules are active in Firebase Console.
-- PDF generation, thermal printer integration, nearby-shop discovery, push notifications, and robust offline sync/conflict resolution are not production-complete.
-- Do not treat this project as an accounting system until the release gates below are satisfied.
-
-## Repository layout
+## Project structure
 
 ```text
 .
-├── .agents/skills/              # Repository-specific audit/fix guidance
-├── .github/workflows/           # CI, Android validation, debug release publishing
-├── docs/                        # Architecture, setup, roadmap, status, release guides
-├── functions/                   # Firebase Cloud Functions (Node.js)
-├── mobile/parchipocket_flutter/ # Flutter Android app, Dart tests, integration tests
-├── public/delete-account/       # Account-deletion web page
-├── scripts/                     # Verification, Firestore deployment, APK packaging
-├── firebase.json                # Firebase CLI config
+├── .github/workflows/           # CI, validation, debug APK workflow
+├── docs/                        # Architecture, setup, status, and release guides
+├── functions/                   # Firebase Cloud Functions
+├── mobile/
+│   └── parchipocket_flutter/    # Flutter Android application
+├── public/delete-account/       # Account-deletion web page source
+├── scripts/                     # Validation and deployment scripts
+├── firebase.json                # Firebase CLI configuration
 ├── firestore.rules              # Firestore authorization rules
-├── test_deletion.js
-└── test_rules.js
+├── test_deletion.js             # Account-deletion test harness
+└── test_rules.js                # Firestore rules test harness
 ```
 
-Build outputs stay outside the source tree. Local packaged APK/AAB files belong in the ignored root `release-assets/` folder; distributable debug APKs are published as GitHub Release assets.
+Inside the Flutter app:
 
-## Run the app on Windows
+- `lib/core/` – application state, data access, and telemetry.
+- `lib/features/` – authentication, expenses, receipts, settings, account deletion, and retained seller/vendor modules.
+- `lib/shared/` – theme and reusable widgets.
+- `test/` – unit and widget tests.
+- `integration_test/` – Firebase emulator-backed integration tests.
 
-Open `mobile/parchipocket_flutter/` in Android Studio, then run:
+See [Repository Structure](docs/REPOSITORY_STRUCTURE.md) for the detailed map.
+
+## Run locally
+
+### Requirements
+
+- Flutter SDK (stable channel)
+- Android Studio and Android SDK
+- An Android emulator or USB-debugging-enabled Android device
+- Java and Node.js for the Firebase emulator test harness
+
+### Start the Android app
+
+Open `mobile/parchipocket_flutter/` in Android Studio, or open PowerShell in that folder (the one containing `pubspec.yaml`):
 
 ```powershell
+flutter doctor
 flutter pub get
 flutter devices
 flutter run
 ```
 
-For an emulator that shows as `offline`, inspect Android Studio's SDK Location and use its `platform-tools/adb.exe`. Do not wipe emulator data as a first troubleshooting step.
+### Run tests and analysis
 
-## Tests
-
-From the Flutter project folder:
+From `mobile/parchipocket_flutter/`:
 
 ```powershell
-flutter pub get
 flutter test --reporter compact
 flutter analyze
 ```
 
-From the repository root, run the Firestore Rules harness through local emulators:
+Run the Firestore and account-deletion harnesses from the repository root using local emulators and a demo project ID:
 
 ```powershell
-npx firebase-tools emulators:exec --only firestore,auth --project demo-parchipocket-phase4 "node test_rules.js"
+npx firebase-tools emulators:exec --only auth,firestore --project demo-parchipocket-phase4 "node test_rules.js && node test_deletion.js"
 ```
 
-Use scripts/verify-backend.ps1 for Flutter tests, analysis, and rules tests; add -RunAndroidIntegration -DeviceId emulator-5554 only when an Android emulator is online. See docs/BACKEND_RUNBOOK.md for the schema, emulator setup, and the separately gated production-rules deployment procedure.
+For the repository's combined verification workflow, use:
 
-## Production release gate
+```powershell
+.\scripts\verify-backend.ps1
+```
 
-Do not call the app production-ready until:
-1. Rules and Dart integration tests pass against local emulators.
-2. The reviewed rules have been deployed to the intended Firebase project.
-3. Authentication, App Check enforcement, recovery, privacy, and claim-code limitations are reviewed.
-4. Critical account, bill, expense, settlement, and receipt-claim flows are verified on a current Android build.
-5. A backup/retention and incident-response process is documented.
+The GitHub Actions workflow also builds an Android debug APK and runs automated validation. Android emulator integration checks are part of the workflow on the configured CI path.
 
-Maintained under **Rabit Mansuri (@rabit001)**.
+## Latest Android preview
 
-## Assignment 3 submission materials
+The latest published APK is available on the [GitHub Releases page](https://github.com/rabit001/parchipocket/releases).
 
-Assignment 3 evidence and status notes are maintained in [docs/assignment3/README.md](docs/assignment3/README.md).
+> **Build type:** Debug-signed APK for testing. It is not a production-signed app and is not a Play Store release.
 
-- [Automated prototype test results](docs/assignment3/TEST_RESULTS.md) — seven browser-prototype checks passed; these are not Android-device test results.
-- [Peer feedback form](docs/assignment3/PEER_FEEDBACK_TEMPLATE.md) — blank template for collecting real participant feedback.
-- [Deployment status](docs/assignment3/DEPLOYMENT_STATUS.md) — distinguishes the source repository from a verified public app build.
-- [Retrospective and next steps](docs/assignment3/RETROSPECTIVE.md).
+## Backend and security notes
 
-The demo video is intentionally not included. Do not claim Android build/device testing, public deployment, or peer feedback until each has been completed and evidence is available.
+ParchiPocket uses Firebase Authentication and Cloud Firestore. User-owned household records are scoped to the authenticated account, and Firestore Security Rules are maintained and tested with local emulators.
 
+A few important distinctions:
 
-## Repository structure
+- Pushing code to GitHub does **not** deploy Firestore Rules or Cloud Functions to Firebase.
+- Emulator test results do not prove that production Firebase settings or deployed rules match the repository.
+- Real SMS delivery depends on Firebase Phone provider configuration, billing, quotas, and allowed test numbers.
+- The Google sign-in button currently uses a demo route; completed Google OAuth is not yet implemented.
+- Demo mode uses in-memory sample data and is not a cloud account or persistent ledger.
 
-The project is grouped by runtime and feature responsibility:
+Review [Backend Runbook](docs/BACKEND_RUNBOOK.md) before making Firebase deployment changes.
 
-- `mobile/parchipocket_flutter/lib/core/`: application state, Firestore data access, and telemetry.
-- `mobile/parchipocket_flutter/lib/features/`: account deletion, authentication, customer, expenses, receipts, settings, shop-owner, and street-vendor modules.
-- `mobile/parchipocket_flutter/lib/shared/`: theme and reusable widgets.
-- `mobile/parchipocket_flutter/test/`: tests grouped under core, features, and shared.
-- `functions/src/account_deletion/`: Cloud Functions implementation; `functions/index.js` remains the configured package entry point.
-- `docs/`: architecture, setup, backend operations, and release documentation.
-- `public/delete-account/`: public account-deletion page source.
+## Current limitations
 
-Legacy Dart paths under `lib/app_state.dart`, `lib/screens/`, `lib/services/`, `lib/theme.dart`, `lib/telemetry.dart`, `lib/widgets/ui.dart`, and `lib/household_expense_parser.dart` are compatibility export shims. New code should use canonical imports under `core/`, `features/`, or `shared/`.
+The following items are not production-complete:
 
-See [Repository Structure](docs/REPOSITORY_STRUCTURE.md) for the full map.
+- Google OAuth sign-in.
+- Production Firebase configuration and deployment verification.
+- Robust offline sync and conflict resolution.
+- PDF receipt export.
+- Live nearby-shop discovery.
+- Production thermal-printer integration.
+- Push notifications.
+- Audited correction flows for saved household entries.
+
+Voice recognition quality and language support depend on the device and installed speech service. Always review the transcript and extracted amount before saving.
+
+## Documentation
+
+| Guide | What it covers |
+| --- | --- |
+| [Project Overview](docs/PROJECT_OVERVIEW.md) | Product focus, principles, and development direction |
+| [Feature Status](docs/FEATURE_STATUS.md) | Implemented, paused, planned, and incomplete areas |
+| [Setup Guide](docs/SETUP_GUIDE.md) | Windows, Flutter, Android Studio, and Firebase setup |
+| [Architecture](docs/ARCHITECTURE.md) | Application and backend architecture |
+| [Development Roadmap](docs/DEVELOPMENT_ROADMAP.md) | Planned development work |
+| [Backend Runbook](docs/BACKEND_RUNBOOK.md) | Emulator validation and Firebase deployment cautions |
+| [Release Artifacts](docs/RELEASE_ARTIFACTS.md) | Debug build and release details |
+
+## Production readiness
+
+ParchiPocket should not be treated as a production accounting service until the intended Firebase project and deployed rules are verified, App Check and authentication are reviewed, critical flows are tested on current Android devices, production signing is configured, and backup, privacy, and recovery processes are documented.
+
+---
+
+<div align="center">
+
+**ParchiPocket** · Built and maintained by [Rabit Mansuri](https://github.com/rabit001)
+
+</div>
