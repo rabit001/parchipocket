@@ -65,6 +65,7 @@ class AppState extends ChangeNotifier {
   String phoneNumber = '';
   bool isPhoneAuthLoading = false;
   String? phoneAuthError;
+  String? lastAuthErrorCode;
   DateTime? lastOtpSentAt;
 
   int get otpCooldownSecondsRemaining {
@@ -671,6 +672,7 @@ class AppState extends ChangeNotifier {
     phoneNumber = '';
     isPhoneAuthLoading = false;
     phoneAuthError = null;
+    lastAuthErrorCode = null;
     lastOtpSentAt = null;
     selectedBill = null;
     selectedClaimedReceipt = null;
@@ -2275,11 +2277,16 @@ class AppState extends ChangeNotifier {
       }
 
       if (digitsOnly.startsWith('91')) {
-        final indianMobile = digitsOnly.substring(2);
+        var indianMobile = digitsOnly.substring(2);
+        if (indianMobile.startsWith('0') && indianMobile.length == 11) {
+          indianMobile = indianMobile.substring(1);
+        }
 
         if (!RegExp(r'^[6-9]\d{9}$').hasMatch(indianMobile)) {
           return null;
         }
+
+        return '+91$indianMobile';
       }
 
       return '+$digitsOnly';
@@ -2332,6 +2339,7 @@ class AppState extends ChangeNotifier {
     phoneNumber = formatted;
     isPhoneAuthLoading = true;
     phoneAuthError = null;
+    lastAuthErrorCode = null;
     notifyListeners();
 
     try {
@@ -2443,6 +2451,7 @@ class AppState extends ChangeNotifier {
 
     isPhoneAuthLoading = true;
     phoneAuthError = null;
+    lastAuthErrorCode = null;
     notifyListeners();
 
     Future<UserCredential>? pending;
@@ -2485,6 +2494,7 @@ class AppState extends ChangeNotifier {
 
   String _mapAuthException(dynamic e) {
     if (e is FirebaseAuthException) {
+      lastAuthErrorCode = e.code;
       switch (e.code) {
         case 'invalid-phone-number':
           return 'The phone number entered is invalid. Please check the number and try again.';
@@ -2504,6 +2514,16 @@ class AppState extends ChangeNotifier {
           return 'This user account has been disabled.';
         case 'operation-not-allowed':
           return 'Phone authentication is not enabled in Firebase Console.';
+        case 'app-not-authorized':
+          return 'Device app verification failed. Please ensure the app is installed from an authorized source with valid signing certificates registered in Firebase.';
+        case 'captcha-check-failed':
+          return 'reCAPTCHA verification failed or was cancelled. Please try again.';
+        case 'missing-client-identifier':
+          return 'Device verification could not be completed. Ensure Google Play Services are available and up to date.';
+        case 'invalid-app-credential':
+          return 'App verification failed. Please verify that your app is up to date and try again.';
+        case 'billing-not-enabled':
+          return 'SMS service is currently unavailable for this project. Please contact support.';
         default:
           if (e.message != null && e.message!.isNotEmpty) {
             return e.message!;
@@ -2513,6 +2533,9 @@ class AppState extends ChangeNotifier {
     }
     return e.toString();
   }
+
+  @visibleForTesting
+  String mapAuthException(dynamic e) => _mapAuthException(e);
 
   Future<bool> sendDeletionReauthOtp({
     void Function(String verificationId)? onCodeSent,
