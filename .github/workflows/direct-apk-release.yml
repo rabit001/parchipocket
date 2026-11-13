@@ -1,0 +1,170 @@
+name: ParchiPocket direct APK release
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_signing_sha256:
+        description: SHA-256 fingerprint of the expected release signing certificate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: direct-apk-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-signed-apk:
+    name: Build and verify signed release APK
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/full-app-runtime-audit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: direct-apk-release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.9"
+          cache: true
+
+      - name: Fetch Flutter dependencies
+        working-directory: mobile/parchipocket_flutter
+        run: flutter pub get
+
+      - name: Decode upload keystore to runner temp
+        shell: bash
+        env:
+          PP_UPLOAD_KEYSTORE_BASE64: ${{ secrets.PP_UPLOAD_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          encoded = "".join(os.environ.get("PP_UPLOAD_KEYSTORE_BASE64", "").split())
+          if not encoded:
+              raise SystemExit("Required environment secret PP_UPLOAD_KEYSTORE_BASE64 is missing.")
+          try:
+              data = base64.b64decode(encoded, validate=True)
+          except Exception:
+              raise SystemExit("PP_UPLOAD_KEYSTORE_BASE64 is not valid base64.")
+          if len(data) < 4 or data[:4] != bytes.fromhex("feedfeed"):
+              raise SystemExit("Decoded upload keystore is not a JKS file.")
+
+          keystore = Path(os.environ["RUNNER_TEMP"]) / "parchipocket-release.jks"
+          descriptor = os.open(keystore, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+          with os.fdopen(descriptor, "wb") as output:
+              output.write(data)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as github_env:
+              github_env.write(f"PP_UPLOAD_KEYSTORE_PATH={keystore}\n")
+          PY
+
+      - name: Build signed release APK
+        working-directory: mobile/parchipocket_flutter
+        env:
+          PP_UPLOAD_KEYSTORE_PATH: ${{ runner.temp }}/parchipocket-release.jks
+          PP_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.PP_UPLOAD_KEYSTORE_PASSWORD }}
+          PP_UPLOAD_KEY_ALIAS: ${{ secrets.PP_UPLOAD_KEY_ALIAS }}
+          PP_UPLOAD_KEY_PASSWORD: ${{ secrets.PP_UPLOAD_KEY_PASSWORD }}
+        run: flutter build apk --release
+
+      - name: Verify APK signature and report certificate fingerprints
+        shell: bash
+        working-directory: mobile/parchipocket_flutter
+        env:
+          EXPECTED_SIGNING_CERT_SHA256: ${{ inputs.expected_signing_sha256 }}
+        run: |
+          set -euo pipefail
+          apk="build/app/outputs/flutter-apk/app-release.apk"
+          test -f "$apk"
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [[ -z "$sdk_root" ]]; then
+            echo "Android SDK root is not configured; cannot locate apksigner." >&2
+            exit 1
+          fi
+          apksigner="$(find "$sdk_root/build-tools" -mindepth 2 -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+          if [[ -z "$apksigner" ]]; then
+            echo "apksigner was not found in the Android SDK build-tools directory." >&2
+            exit 1
+          fi
+          aapt="$(dirname "$apksigner")/aapt"
+          if [[ ! -x "$aapt" ]]; then
+            echo "aapt was not found alongside apksigner; cannot verify APK package ID." >&2
+            exit 1
+          fi
+          expected_package="com.parchipocket.app.parchipocket"
+          actual_package="$("$aapt" dump badging "$apk" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | sed -n '1p')"
+          if [[ "$actual_package" != "$expected_package" ]]; then
+            echo "Unexpected APK package ID: expected '$expected_package', got '$actual_package'." >&2
+            exit 1
+          fi
+          report="$RUNNER_TEMP/apksigner-verify.txt"
+          "$apksigner" verify --verbose --print-certs "$apk" > "$report"
+          sha1="$(awk -F ': ' '/certificate SHA-1 digest:/ {print $NF; exit}' "$report")"
+          sha256="$(awk -F ': ' '/certificate SHA-256 digest:/ {print $NF; exit}' "$report")"
+          if [[ -z "$sha1" || -z "$sha256" ]]; then
+            echo "apksigner did not report both certificate fingerprints." >&2
+            exit 1
+          fi
+          expected_sha256="$(printf '%s' "$EXPECTED_SIGNING_CERT_SHA256" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          actual_sha256="$(printf '%s' "$sha256" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          if [[ ! "$expected_sha256" =~ ^[a-f0-9]{64}$ ]]; then
+            echo "The expected signing certificate SHA-256 input must contain exactly 64 hexadecimal characters (colons are allowed)." >&2
+            exit 1
+          fi
+          if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+            echo "APK signing certificate SHA-256 does not match the expected certificate." >&2
+            exit 1
+          fi
+          {
+            echo "### Signed APK certificate"
+            echo "- Package ID: `$actual_package`"
+            echo "- SHA-1: `$sha1`"
+            echo "- SHA-256: `$sha256`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Calculate APK SHA-256
+        shell: bash
+        working-directory: mobile/parchipocket_flutter
+        run: |
+          set -euo pipefail
+          apk="build/app/outputs/flutter-apk/app-release.apk"
+          test -f "$apk"
+          sha256sum "$apk" > "$apk.sha256"
+          checksum="$(cut -d ' ' -f 1 "$apk.sha256")"
+          printf '%s\n' '### Release APK checksum' >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "- \`$checksum\`  \`app-release.apk\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload signed APK and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: parchipocket-direct-release-apk
+          path: |
+            mobile/parchipocket_flutter/build/app/outputs/flutter-apk/app-release.apk
+            mobile/parchipocket_flutter/build/app/outputs/flutter-apk/app-release.apk.sha256
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Remove temporary signing keystore
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          keystore="$RUNNER_TEMP/parchipocket-release.jks"
+          if [[ -f "$keystore" ]]; then
+            shred -u "$keystore" 2>/dev/null || rm -f "$keystore"
+          fi
+          rm -f "$RUNNER_TEMP/apksigner-verify.txt"
