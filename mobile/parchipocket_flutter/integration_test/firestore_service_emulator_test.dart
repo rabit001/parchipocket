@@ -57,6 +57,11 @@ void main() {
     }
     _auth = FirebaseAuth.instanceFor(app: _firebaseApp);
     await _auth.useAuthEmulator(_emulatorHost, _authPort);
+    // The Android test app keeps Firebase Auth state across APK installs, but
+    // each emulators:exec run starts with an empty in-memory Auth emulator.
+    // Clear any cached demo identity before signing in to avoid reusing an
+    // orphaned refresh token from the previous emulator process.
+    await _auth.signOut();
 
     _firestore = FirebaseFirestore.instanceFor(app: _firebaseApp);
     _firestore.settings = const Settings(persistenceEnabled: false);
@@ -78,6 +83,7 @@ void main() {
     }
     _claimantAuth = FirebaseAuth.instanceFor(app: _claimantApp);
     await _claimantAuth.useAuthEmulator(_emulatorHost, _authPort);
+    await _claimantAuth.signOut();
     _claimantFirestore = FirebaseFirestore.instanceFor(app: _claimantApp);
     _claimantFirestore.settings = const Settings(persistenceEnabled: false);
     _claimantFirestore.useFirestoreEmulator(_emulatorHost, _firestorePort);

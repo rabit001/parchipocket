@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../../../core/state/app_state.dart';
+import '../../expenses/data/device_speech_recognition.dart';
 import '../../expenses/domain/household_expense_parser.dart';
+import '../../expenses/domain/speech_recognition.dart';
 import '../../../shared/theme/theme.dart';
 import '../../../shared/widgets/ui.dart';
 

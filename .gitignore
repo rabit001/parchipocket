@@ -8,6 +8,7 @@
 
 # Android local build configuration and secrets
 **/android/local.properties
+/packages/speech_to_text/android/gradle/local.properties
 **/android/.gradle/
 **/android/captures/
 **/android/key.properties
