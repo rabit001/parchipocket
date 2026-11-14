@@ -22,7 +22,7 @@ concurrency:
 jobs:
   publish-beta:
     name: Build and publish signed Beta APK
-    if: github.ref == 'refs/heads/fix/full-app-runtime-audit'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment:
@@ -41,7 +41,7 @@ jobs:
           RELEASE_NOTES: ${{ inputs.release_notes }}
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = "refs/heads/fix/full-app-runtime-audit"
+          test "$GITHUB_REF" = "refs/heads/main"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           python3 - <<'PY'
           import json

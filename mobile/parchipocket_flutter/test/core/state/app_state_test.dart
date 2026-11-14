@@ -55,6 +55,63 @@ class ControlledFirebaseAuth extends MockFirebaseAuth {
   }
 }
 
+class FakePhoneAuthCredential extends Fake implements PhoneAuthCredential {}
+
+class FakeUserCredential extends Fake implements UserCredential {
+  FakeUserCredential(this._user);
+  final User _user;
+
+  @override
+  User? get user => _user;
+}
+
+class PhoneAuthMockFirebase extends MockFirebaseAuth {
+  PhoneAuthMockFirebase() {
+    user = null;
+  }
+
+  bool shouldFailVerification = false;
+  String failureCode = 'app-not-authorized';
+  String? failureMessage;
+  bool shouldCompleteImmediately = false;
+  int verifyPhoneNumberCalls = 0;
+
+  @override
+  Stream<User?> authStateChanges() => const Stream<User?>.empty();
+
+  @override
+  Future<void> verifyPhoneNumber({
+    String? phoneNumber,
+    Duration timeout = const Duration(seconds: 60),
+    int? forceResendingToken,
+    required PhoneVerificationCompleted verificationCompleted,
+    required PhoneVerificationFailed verificationFailed,
+    required PhoneCodeSent codeSent,
+    required PhoneCodeAutoRetrievalTimeout codeAutoRetrievalTimeout,
+    String? autoRetrievedSmsCodeForTesting,
+    PhoneMultiFactorInfo? multiFactorInfo,
+    MultiFactorSession? multiFactorSession,
+  }) async {
+    verifyPhoneNumberCalls++;
+    if (shouldFailVerification) {
+      verificationFailed(FirebaseAuthException(
+        code: failureCode,
+        message: failureMessage,
+      ));
+    } else if (shouldCompleteImmediately) {
+      verificationCompleted(FakePhoneAuthCredential());
+    } else {
+      codeSent('test-verification-id-123456', 42);
+    }
+  }
+
+  @override
+  Future<UserCredential> signInWithCredential(AuthCredential credential) async {
+    user = MockUser();
+    return FakeUserCredential(user!);
+  }
+}
+
 class CountingFirestoreService extends FirestoreService {
   int profileReads = 0;
   int billReads = 0;
@@ -153,6 +210,9 @@ class CountingFirestoreService extends FirestoreService {
     required String shopAddress,
     required String vendorName,
     required String vendorCategory,
+    String? mobileNumber,
+    bool updateMobileNumber = false,
+    bool includeBusinessFields = true,
   }) async {
     writes++;
     savedProfile = <String, Object?>{
@@ -160,11 +220,12 @@ class CountingFirestoreService extends FirestoreService {
       'name': name,
       'email': email,
       'city': city,
-      'shopName': shopName,
-      'shopCategory': shopCategory,
-      'shopAddress': shopAddress,
-      'vendorName': vendorName,
-      'vendorCategory': vendorCategory,
+      if (includeBusinessFields) 'shopName': shopName,
+      if (includeBusinessFields) 'shopCategory': shopCategory,
+      if (includeBusinessFields) 'shopAddress': shopAddress,
+      if (includeBusinessFields) 'vendorName': vendorName,
+      if (includeBusinessFields) 'vendorCategory': vendorCategory,
+      if (updateMobileNumber) 'mobileNumber': mobileNumber,
     };
   }
 }
@@ -347,6 +408,9 @@ class FailingFirestoreService extends FirestoreService {
     required String shopAddress,
     required String vendorName,
     required String vendorCategory,
+    String? mobileNumber,
+    bool updateMobileNumber = false,
+    bool includeBusinessFields = true,
   }) async {
     throw Exception('Simulated Firestore write failure');
   }
@@ -470,6 +534,7 @@ void main() {
         profile: <String, dynamic>{
           'role': 'customer',
           'name': 'Cloud Customer',
+          'mobileNumber': '+919876543210',
         },
         loadedBills: <DemoBill>[
           DemoBill(
@@ -500,6 +565,7 @@ void main() {
       await pumpEventQueue();
 
       expect(state.customerName, 'Cloud Customer');
+      expect(state.profileMobileNumber, '+919876543210');
       expect(state.profileStatus, CloudProfileStatus.loaded);
       expect(state.cloudError, contains('permission-denied'));
       expect(state.bills, isEmpty);
@@ -727,10 +793,15 @@ void main() {
       expect(state.formatPhoneNumber('9876543210'), '+919876543210');
       expect(state.formatPhoneNumber('+919876543210'), '+919876543210');
       expect(state.formatPhoneNumber('+91 98765 43210'), '+919876543210');
+      expect(state.formatPhoneNumber('+91-98765-43210'), '+919876543210');
       expect(state.formatPhoneNumber('09876543210'), '+919876543210');
+      expect(state.formatPhoneNumber('+9109876543210'), '+919876543210');
       expect(state.formatPhoneNumber('+16505553434'), '+16505553434');
+      expect(state.formatPhoneNumber('+16505550100'), '+16505550100');
       expect(state.formatPhoneNumber('12345'), isNull);
       expect(state.formatPhoneNumber(''), isNull);
+      expect(state.formatPhoneNumber('5555555555'), isNull);
+      expect(state.formatPhoneNumber('+91 5555555555'), isNull);
 
       state.dispose();
     });
@@ -808,6 +879,179 @@ void main() {
       expect(state.otpCooldownSecondsRemaining, 0);
       state.lastOtpSentAt = DateTime.now();
       expect(state.otpCooldownSecondsRemaining, greaterThan(50));
+      state.dispose();
+    });
+
+    test('maps Firebase Auth exceptions to user-facing diagnostic messages', () {
+      final state = AppState();
+
+      // App verification & integrity codes
+      expect(
+        state.mapAuthException(FirebaseAuthException(code: 'app-not-authorized')),
+        contains('app verification failed'),
+      );
+      expect(state.lastAuthErrorCode, 'app-not-authorized');
+
+      expect(
+        state.mapAuthException(FirebaseAuthException(code: 'captcha-check-failed')),
+        contains('reCAPTCHA'),
+      );
+      expect(state.lastAuthErrorCode, 'captcha-check-failed');
+
+      expect(
+        state.mapAuthException(FirebaseAuthException(code: 'missing-client-identifier')),
+        contains('Device verification'),
+      );
+      expect(state.lastAuthErrorCode, 'missing-client-identifier');
+
+      expect(
+        state.mapAuthException(FirebaseAuthException(code: 'invalid-app-credential')),
+        contains('App verification failed'),
+      );
+      expect(state.lastAuthErrorCode, 'invalid-app-credential');
+
+      // Quota and billing
+      expect(
+        state.mapAuthException(FirebaseAuthException(code: 'quota-exceeded')),
+        contains('quota'),
+      );
+      expect(state.lastAuthErrorCode, 'quota-exceeded');
+
+      expect(
+        state.mapAuthException(FirebaseAuthException(code: 'billing-not-enabled')),
+        contains('SMS service is currently unavailable'),
+      );
+      expect(state.lastAuthErrorCode, 'billing-not-enabled');
+
+      expect(
+        state.mapAuthException(FirebaseAuthException(code: 'too-many-requests')),
+        contains('Too many requests'),
+      );
+      expect(state.lastAuthErrorCode, 'too-many-requests');
+
+      expect(
+        state.mapAuthException(FirebaseAuthException(code: 'operation-not-allowed')),
+        contains('Phone authentication is not enabled'),
+      );
+      expect(state.lastAuthErrorCode, 'operation-not-allowed');
+
+      // OTP & validation codes
+      expect(
+        state.mapAuthException(FirebaseAuthException(code: 'invalid-verification-code')),
+        contains('Invalid OTP'),
+      );
+      expect(
+        state.mapAuthException(FirebaseAuthException(code: 'invalid-verification-id')),
+        contains('session expired'),
+      );
+      expect(
+        state.mapAuthException(FirebaseAuthException(code: 'session-expired')),
+        contains('OTP has expired'),
+      );
+      expect(
+        state.mapAuthException(FirebaseAuthException(code: 'user-disabled')),
+        contains('disabled'),
+      );
+
+      // Fallback preserves error code safely
+      expect(
+        state.mapAuthException(FirebaseAuthException(code: 'unknown-code', message: '')),
+        'Authentication failed (unknown-code). Please try again.',
+      );
+      expect(state.lastAuthErrorCode, 'unknown-code');
+
+      state.dispose();
+    });
+
+    test('sendPhoneOtp executes successfully and invokes onSuccessCodeSent', () async {
+      final mockAuth = PhoneAuthMockFirebase();
+      final state = AppState(auth: mockAuth);
+
+      bool codeSentInvoked = false;
+      String? caughtError;
+
+      await state.sendPhoneOtp(
+        rawPhone: '9876543210',
+        onSuccessCodeSent: () => codeSentInvoked = true,
+        onError: (err) => caughtError = err,
+      );
+
+      expect(codeSentInvoked, isTrue);
+      expect(caughtError, isNull);
+      expect(state.phoneNumber, '+919876543210');
+      expect(state.verificationId, 'test-verification-id-123456');
+      expect(state.resendToken, 42);
+      expect(state.isPhoneAuthLoading, isFalse);
+      expect(state.phoneAuthError, isNull);
+      expect(mockAuth.verifyPhoneNumberCalls, 1);
+
+      state.dispose();
+    });
+
+    test('sendPhoneOtp handles verificationFailed callback and sets diagnostic error', () async {
+      final mockAuth = PhoneAuthMockFirebase()..shouldFailVerification = true;
+      final state = AppState(auth: mockAuth);
+
+      bool codeSentInvoked = false;
+      String? caughtError;
+
+      await state.sendPhoneOtp(
+        rawPhone: '9876543210',
+        onSuccessCodeSent: () => codeSentInvoked = true,
+        onError: (err) => caughtError = err,
+      );
+
+      expect(codeSentInvoked, isFalse);
+      expect(caughtError, contains('app verification failed'));
+      expect(state.phoneAuthError, contains('app verification failed'));
+      expect(state.lastAuthErrorCode, 'app-not-authorized');
+      expect(state.isPhoneAuthLoading, isFalse);
+
+      state.dispose();
+    });
+
+    test('sendPhoneOtp rejects invalid phone number before network call', () async {
+      final mockAuth = PhoneAuthMockFirebase();
+      final state = AppState(auth: mockAuth);
+
+      bool codeSentInvoked = false;
+      String? caughtError;
+
+      await state.sendPhoneOtp(
+        rawPhone: '12345',
+        onSuccessCodeSent: () => codeSentInvoked = true,
+        onError: (err) => caughtError = err,
+      );
+
+      expect(codeSentInvoked, isFalse);
+      expect(caughtError, contains('Please enter a valid 10-digit mobile number'));
+      expect(mockAuth.verifyPhoneNumberCalls, 0);
+
+      state.dispose();
+    });
+
+    test('verifySmsCode rejects invalid OTP lengths before network call', () async {
+      final mockAuth = PhoneAuthMockFirebase();
+      final state = AppState(auth: mockAuth);
+      state.verificationId = 'valid-ver-id';
+
+      String? caughtError;
+      await state.verifySmsCode(
+        smsCode: '123',
+        onError: (err) => caughtError = err,
+      );
+
+      expect(caughtError, 'Please enter a valid 6-digit OTP.');
+
+      caughtError = null;
+      state.verificationId = '';
+      await state.verifySmsCode(
+        smsCode: '123456',
+        onError: (err) => caughtError = err,
+      );
+
+      expect(caughtError, contains('Verification session expired'));
+
       state.dispose();
     });
 
@@ -1006,6 +1250,51 @@ void main() {
       expect(state.customerName, initialName);
       expect(state.cloudError, contains('Simulated Firestore write failure'));
       expect(state.isCloudLoading, isFalse);
+      state.dispose();
+    });
+
+    test('valid profile mobile number is saved without business fields',
+        () async {
+      final service = CountingFirestoreService();
+      final state = AppState()
+        ..auth = MockFirebaseAuth()
+        ..isDemoMode = false
+        ..firestoreService = service;
+
+      final saved = await state.updateProfile(
+        name: 'Test User',
+        email: 'test@example.com',
+        location: 'Ujjain',
+        mobileNumber: '+91 98765 43210',
+        updateMobileNumber: true,
+      );
+
+      expect(saved, isTrue);
+      expect(state.profileMobileNumber, '+919876543210');
+      expect(service.savedProfile?['mobileNumber'], '+919876543210');
+      expect(service.savedProfile?.containsKey('vendorName'), isFalse);
+      state.dispose();
+    });
+
+    test('invalid profile mobile number is rejected before Firestore write',
+        () async {
+      final service = CountingFirestoreService();
+      final state = AppState()
+        ..auth = MockFirebaseAuth()
+        ..isDemoMode = false
+        ..firestoreService = service;
+
+      final saved = await state.updateProfile(
+        name: 'Test User',
+        email: '',
+        location: '',
+        mobileNumber: 'not a phone',
+        updateMobileNumber: true,
+      );
+
+      expect(saved, isFalse);
+      expect(service.writes, 0);
+      expect(state.cloudError, contains('valid mobile number'));
       state.dispose();
     });
 

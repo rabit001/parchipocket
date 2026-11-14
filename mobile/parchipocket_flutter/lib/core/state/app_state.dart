@@ -8,26 +8,45 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../features/account_deletion/data/account_deletion_service.dart';
+import '../../features/customer/data/profile_photo_store.dart';
+import '../../features/auth/data/google_sign_in_service.dart';
 import '../data/firestore_service.dart';
 import '../monitoring/telemetry.dart';
 
 part 'models/app_models.dart';
 part 'models/household_expense.dart';
 
+enum SignInMethod { google, phone }
+
 class AppState extends ChangeNotifier {
   AppState({
     FirebaseAuth? auth,
     SharedPreferences? prefs,
     AccountDeletionService? accountDeletionService,
-  })  : _auth = auth,
-        _prefs = prefs,
-        _accountDeletionService = accountDeletionService {
+    GoogleSignInService? googleSignInService,
+    ProfilePhotoStore? profilePhotoStore,
+    Duration phoneCredentialCleanupNoticeAfter = const Duration(seconds: 8),
+  }) : _auth = auth,
+       _prefs = prefs,
+       _accountDeletionService = accountDeletionService,
+       _googleSignInService = googleSignInService,
+       _profilePhotoStore = profilePhotoStore,
+       _phoneCredentialCleanupNoticeAfter =
+           phoneCredentialCleanupNoticeAfter {
     _loadPersistedTheme();
     _restoreDemoState();
     _initAuthListener();
   }
 
   FirebaseAuth? _auth;
+  GoogleSignInService? _googleSignInService;
+  ProfilePhotoStore? _profilePhotoStore;
+  ProfilePhotoStore get profilePhotoStore =>
+      _profilePhotoStore ??= DeviceProfilePhotoStore();
+  GoogleSignInService get googleSignInService =>
+      _googleSignInService ??= DeviceGoogleSignInService();
+  set googleSignInService(GoogleSignInService service) =>
+      _googleSignInService = service;
   FirebaseAuth? get auth {
     if (_auth != null) return _auth;
     try {
@@ -63,8 +82,13 @@ class AppState extends ChangeNotifier {
   String verificationId = '';
   int? resendToken;
   String phoneNumber = '';
+  String profileMobileNumber = '';
+  String? profilePhotoPath;
+  bool isProfilePhotoLoading = false;
+  String? profilePhotoError;
   bool isPhoneAuthLoading = false;
   String? phoneAuthError;
+  String? lastAuthErrorCode;
   DateTime? lastOtpSentAt;
 
   int get otpCooldownSecondsRemaining {
@@ -77,12 +101,25 @@ class AppState extends ChangeNotifier {
   bool isDemoMode = true;
   bool _explicitDemoSession = false;
   bool _authenticationIntentActive = false;
+  SignInMethod? _authenticationAttemptMethod;
   bool isCloudLoading = false;
   bool isSigningOut = false;
+  bool isGoogleSignInLoading = false;
+  String? googleAuthError;
   bool hasExistingCloudProfile = false;
   CloudProfileStatus profileStatus = CloudProfileStatus.unknown;
   String? cloudError;
   String? signOutError;
+  String? authenticationCleanupStatus;
+  bool isAuthenticationCleanupRetrying = false;
+
+  bool get isAuthenticationCleanupRequired => _authenticationCleanupRequired;
+  bool get isAuthenticationCleanupInProgress =>
+      _phoneCredentialCleanupTask != null ||
+      _demoSignOutTask != null ||
+      _authenticationCleanupRetryTask != null;
+  bool get shouldBlockPhoneAuthentication =>
+      isAuthenticationCleanupInProgress || _authenticationCleanupRequired;
 
   StreamSubscription<User?>? _authSubscription;
   int _authEventGeneration = 0;
@@ -90,9 +127,20 @@ class AppState extends ChangeNotifier {
   int _sessionGeneration = 0;
   Future<bool>? _demoSignOutTask;
   Future<UserCredential>? _pendingCredentialSignIn;
+  Future<bool>? _phoneCredentialCleanupTask;
+  Future<bool>? _authenticationCleanupRetryTask;
+  bool _authenticationCleanupRequired = false;
+  String? _authenticationCleanupTargetUid;
+  final Duration _phoneCredentialCleanupNoticeAfter;
+  Timer? _phoneCredentialCleanupTimer;
+  int _phoneCredentialCleanupGeneration = 0;
+  bool _phoneCredentialCleanupUnderlyingResolved = true;
+  Future<bool>? _googleSignInTask;
   bool _disposed = false;
 
   String page = 'splash';
+  final List<String> _navigationStack = <String>[];
+  bool get canPopPage => _navigationStack.isNotEmpty;
   UserRole role = UserRole.customer;
   String customerName = 'Rabit Mansuri';
   String customerEmail = '';
@@ -116,14 +164,16 @@ class AppState extends ChangeNotifier {
     if (prefs != null) {
       _applyThemeString(prefs.getString(_themePrefKey));
     } else {
-      SharedPreferences.getInstance().then((p) {
-        _prefs = p;
-        final saved = p.getString(_themePrefKey);
-        if (saved != null) {
-          _applyThemeString(saved);
-          notifyListeners();
-        }
-      }).catchError((_) {});
+      SharedPreferences.getInstance()
+          .then((p) {
+            _prefs = p;
+            final saved = p.getString(_themePrefKey);
+            if (saved != null) {
+              _applyThemeString(saved);
+              notifyListeners();
+            }
+          })
+          .catchError((_) {});
     }
   }
 
@@ -176,10 +226,12 @@ class AppState extends ChangeNotifier {
     if (prefs != null) {
       prefs.setString(_themePrefKey, mode.name);
     } else {
-      SharedPreferences.getInstance().then((p) {
-        _prefs = p;
-        p.setString(_themePrefKey, mode.name);
-      }).catchError((_) {});
+      SharedPreferences.getInstance()
+          .then((p) {
+            _prefs = p;
+            p.setString(_themePrefKey, mode.name);
+          })
+          .catchError((_) {});
     }
     notifyListeners();
   }
@@ -213,15 +265,23 @@ class AppState extends ChangeNotifier {
     final authInstance = auth;
     if (authInstance == null) return;
 
+    _navigationStack.clear();
     page = 'authLoading';
     _authSubscription = authInstance.authStateChanges().listen(
       (user) => unawaited(_handleAuthStateChanged(user)),
       onError: (Object error) {
-        if (_disposed || isSigningOut || _explicitDemoSession) return;
+        if (_disposed ||
+            isSigningOut ||
+            _explicitDemoSession ||
+            _authenticationCleanupRequired ||
+            _phoneCredentialCleanupTask != null) {
+          return;
+        }
         isCloudLoading = false;
         profileStatus = CloudProfileStatus.failed;
         cloudError =
             'Unable to check your sign-in session. Check your connection and retry.';
+        _navigationStack.clear();
         page = 'profileLoadError';
         notifyListeners();
       },
@@ -229,14 +289,21 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _handleAuthStateChanged(User? user) async {
-    if (_disposed || isSigningOut) return;
+    if (_disposed ||
+        isSigningOut ||
+        _authenticationCleanupRequired ||
+        _phoneCredentialCleanupTask != null) {
+      return;
+    }
 
     final eventGeneration = ++_authEventGeneration;
     _profileLoadGeneration++;
+    _navigationStack.clear();
     if (_explicitDemoSession) return;
 
     if (user == null) {
       if (_authenticationIntentActive) return;
+      _authenticationAttemptMethod = null;
       _restoreDemoState();
       page = 'splash';
       notifyListeners();
@@ -245,8 +312,10 @@ class AppState extends ChangeNotifier {
     if (auth?.currentUser?.uid != user.uid) return;
 
     _authenticationIntentActive = false;
+    _authenticationAttemptMethod = null;
     _clearCloudAccountState();
     isDemoMode = false;
+    isPhoneAuthLoading = false;
     isCloudLoading = true;
     profileStatus = CloudProfileStatus.loading;
     page = 'authLoading';
@@ -257,6 +326,13 @@ class AppState extends ChangeNotifier {
       expectedAuthGeneration: eventGeneration,
     );
     if (!_isCurrentAuthEvent(eventGeneration, user.uid)) return;
+    if (profileStatus == CloudProfileStatus.missing) {
+      final providerName = user.displayName?.trim();
+      if (providerName != null && providerName.isNotEmpty) {
+        customerName = providerName;
+      }
+      customerEmail = user.email ?? customerEmail;
+    }
     navigateAfterAuth();
   }
 
@@ -310,21 +386,25 @@ class AppState extends ChangeNotifier {
         if (roleValue is! String ||
             !UserRole.values.any((candidate) => candidate.name == roleValue)) {
           throw const FormatException(
-              'The saved account role is missing or invalid.');
+            'The saved account role is missing or invalid.',
+          );
         }
 
         final loadedName = profile['name'];
         if (loadedName is! String || loadedName.trim().isEmpty) {
           throw const FormatException(
-              'The saved account profile is missing a valid name.');
+            'The saved account profile is missing a valid name.',
+          );
         }
 
         hasExistingCloudProfile = true;
-        role = UserRole.values
-            .firstWhere((candidate) => candidate.name == roleValue);
+        role = UserRole.values.firstWhere(
+          (candidate) => candidate.name == roleValue,
+        );
         customerName = loadedName;
         customerEmail = profile['email'] as String? ?? customerEmail;
         city = profile['city'] as String? ?? city;
+        profileMobileNumber = profile['mobileNumber'] as String? ?? '';
         shopName = profile['shopName'] as String? ?? shopName;
         shopCategory = profile['shopCategory'] as String? ?? shopCategory;
         shopAddress = profile['shopAddress'] as String? ?? shopAddress;
@@ -341,9 +421,10 @@ class AppState extends ChangeNotifier {
       if (!isCurrentLoad()) return CloudProfileStatus.unknown;
       hasExistingCloudProfile = false;
       profileStatus = CloudProfileStatus.failed;
-      cloudError = e is FormatException
-          ? e.message
-          : 'Could not read your account profile. Check your connection and try again. ($e)';
+      cloudError =
+          e is FormatException
+              ? e.message
+              : 'Could not read your account profile. Check your connection and try again. ($e)';
       isCloudLoading = false;
       notifyListeners();
       return profileStatus;
@@ -361,18 +442,19 @@ class AppState extends ChangeNotifier {
           if (!isCurrentLoad()) return;
           final now = DateTime.now();
           final startOfMonth = DateTime(now.year, now.month, 1);
-          final initialExpensePage =
-              await firestoreService.loadHouseholdExpensesPage(limit: 50);
+          final initialExpensePage = await firestoreService
+              .loadHouseholdExpensesPage(limit: 50);
           if (!isCurrentLoad()) return;
 
           final cloudHouseholdExpenses = <HouseholdExpense>[
-            ...initialExpensePage.items
+            ...initialExpensePage.items,
           ];
           var lastDoc = initialExpensePage.lastDocument;
           var hasMore = initialExpensePage.hasMore;
 
-          while (
-              hasMore && lastDoc != null && cloudHouseholdExpenses.isNotEmpty) {
+          while (hasMore &&
+              lastDoc != null &&
+              cloudHouseholdExpenses.isNotEmpty) {
             final oldestLoaded = cloudHouseholdExpenses.last.createdAt;
             if (oldestLoaded.isBefore(startOfMonth)) {
               break;
@@ -439,6 +521,7 @@ class AppState extends ChangeNotifier {
 
   void navigateAfterAuth() {
     if (isDemoMode || _explicitDemoSession) return;
+    _navigationStack.clear();
     switch (profileStatus) {
       case CloudProfileStatus.loaded:
         if (!hasExistingCloudProfile) {
@@ -468,6 +551,7 @@ class AppState extends ChangeNotifier {
     if (user == null) {
       profileStatus = CloudProfileStatus.failed;
       cloudError = 'You are signed out. Sign in again to load your account.';
+      _navigationStack.clear();
       page = 'login';
       notifyListeners();
       return;
@@ -482,23 +566,74 @@ class AppState extends ChangeNotifier {
     _sessionGeneration++;
     _authEventGeneration++;
     _profileLoadGeneration++;
+    _navigationStack.clear();
     _authenticationIntentActive = false;
+    _authenticationAttemptMethod = null;
+    isGoogleSignInLoading = false;
     _explicitDemoSession = true;
     isSigningOut = false;
     _restoreDemoState();
     page = landingPage;
     notifyListeners();
 
+    if (_demoSignOutTask != null) return;
     final authInstance = auth;
-    if (authInstance?.currentUser == null) return;
+    final pendingSignIn = _pendingCredentialSignIn;
+    if (authInstance == null ||
+        (authInstance.currentUser == null && pendingSignIn == null)) {
+      return;
+    }
 
-    final task = _finishDemoSignOut(authInstance!);
+    final pendingPhoneCleanup = _phoneCredentialCleanupTask;
+    if (pendingPhoneCleanup != null) {
+      final task = _finishDemoSignOutAfterPhoneCleanup(
+        authInstance,
+        pendingPhoneCleanup,
+      );
+      _demoSignOutTask = task;
+      await _completeDemoSignOut(task);
+      return;
+    }
+
+    final task = _finishDemoSignOut(authInstance, pendingSignIn: pendingSignIn);
     _demoSignOutTask = task;
+    if (pendingSignIn != null) {
+      unawaited(_completeDemoSignOut(task));
+      return;
+    }
+    await _completeDemoSignOut(task);
+  }
+
+  Future<bool> _finishDemoSignOutAfterPhoneCleanup(
+    FirebaseAuth authInstance,
+    Future<bool> pendingPhoneCleanup,
+  ) async {
+    final phoneCleanupSucceeded = await pendingPhoneCleanup;
+    if (!phoneCleanupSucceeded && _authenticationCleanupRequired) {
+      return false;
+    }
+    if (authInstance.currentUser == null) return true;
+    return _finishDemoSignOut(authInstance);
+  }
+
+  Future<void> _completeDemoSignOut(Future<bool> task) async {
     try {
       final signedOut = await task;
+      _authenticationCleanupRequired = !signedOut;
+      if (signedOut) _authenticationCleanupTargetUid = null;
+      if (!signedOut && _authenticationCleanupTargetUid == null) {
+        _authenticationCleanupTargetUid = auth?.currentUser?.uid;
+      }
+      authenticationCleanupStatus =
+          signedOut
+              ? null
+              : 'The previous sign-in could not be closed. Retry cleanup before signing in again.';
       if (!signedOut && !_disposed && _explicitDemoSession) {
         signOutError =
             'Demo mode is active, but the previous Firebase session could not be signed out.';
+        notifyListeners();
+      } else if (signedOut && !_disposed) {
+        signOutError = null;
         notifyListeners();
       }
     } finally {
@@ -506,40 +641,284 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> _finishDemoSignOut(FirebaseAuth authInstance) async {
-    final pendingSignIn = _pendingCredentialSignIn;
+  Future<bool> _finishDemoSignOut(
+    FirebaseAuth authInstance, {
+    Future<UserCredential>? pendingSignIn,
+  }) async {
+    pendingSignIn ??= _pendingCredentialSignIn;
+    String? pendingUserUid;
     if (pendingSignIn != null) {
       try {
-        await pendingSignIn;
+        pendingUserUid = (await pendingSignIn).user?.uid;
       } catch (_) {
         // Sign-out below also cleans up a credential operation that completed
         // successfully after demo mode was selected.
       }
     }
-    if (authInstance.currentUser == null) return true;
+    if (authInstance.currentUser == null) {
+      _authenticationCleanupTargetUid = pendingUserUid;
+      _authenticationCleanupRequired = false;
+      return true;
+    }
+    final targetUid = authInstance.currentUser?.uid ?? pendingUserUid;
     try {
+      await _signOutGoogleProviderIfNeeded(authInstance.currentUser);
       await authInstance.signOut();
-      return authInstance.currentUser == null;
+      final signedOut = authInstance.currentUser == null;
+      _authenticationCleanupRequired = !signedOut;
+      if (signedOut) {
+        _authenticationCleanupTargetUid = null;
+      } else {
+        _authenticationCleanupTargetUid = targetUid;
+      }
+      return signedOut;
     } catch (_) {
+      _authenticationCleanupTargetUid = targetUid;
+      _authenticationCleanupRequired = true;
       return false;
     }
   }
 
+  void _startAbandonedPhoneCredentialCleanup() {
+    if (_phoneCredentialCleanupTask != null) return;
+    final pending = _pendingCredentialSignIn;
+    final authInstance = auth;
+    if (pending == null || authInstance == null) return;
+
+    _authenticationCleanupRequired = true;
+    authenticationCleanupStatus = null;
+    _phoneCredentialCleanupUnderlyingResolved = false;
+    final cleanupGeneration = ++_phoneCredentialCleanupGeneration;
+    final authEventGeneration = _authEventGeneration;
+    final task = _cleanupAbandonedPhoneCredential(authInstance, pending);
+    _phoneCredentialCleanupTask = task;
+    _phoneCredentialCleanupTimer = Timer(
+      _phoneCredentialCleanupNoticeAfter,
+      () {
+        if (_disposed ||
+            cleanupGeneration != _phoneCredentialCleanupGeneration ||
+            authEventGeneration != _authEventGeneration ||
+            !identical(_phoneCredentialCleanupTask, task) ||
+            _phoneCredentialCleanupUnderlyingResolved ||
+            !_authenticationCleanupRequired) {
+          return;
+        }
+        authenticationCleanupStatus =
+            'Your previous sign-in is still finishing. New sign-ins will be available when it completes.';
+        notifyListeners();
+      },
+    );
+    unawaited(
+      _completeAbandonedPhoneCredentialCleanup(task, cleanupGeneration),
+    );
+  }
+
+  Future<bool> _cleanupAbandonedPhoneCredential(
+    FirebaseAuth authInstance,
+    Future<UserCredential> pending,
+  ) async {
+    try {
+      UserCredential? result;
+      try {
+        result = await pending;
+      } catch (_) {
+        // A failed credential exchange cannot create this attempt's session.
+      }
+
+      final currentUser = authInstance.currentUser;
+      final resultUid = result?.user?.uid;
+      if (currentUser == null) {
+        _authenticationCleanupRequired = false;
+        _authenticationCleanupTargetUid = null;
+        return true;
+      }
+      if (resultUid == null || currentUser.uid != resultUid) {
+        // The current account cannot be proven to belong to the abandoned
+        // credential exchange. Preserve it and block this competing attempt.
+        _authenticationCleanupRequired = false;
+        _authenticationCleanupTargetUid = null;
+        return false;
+      }
+
+      _authenticationCleanupTargetUid = currentUser.uid;
+      await _signOutGoogleProviderIfNeeded(currentUser);
+      await authInstance.signOut();
+      if (authInstance.currentUser != null) {
+        throw StateError('Firebase session remained active after sign-out.');
+      }
+      _authenticationCleanupRequired = false;
+      _authenticationCleanupTargetUid = null;
+      return true;
+    } catch (_) {
+      _authenticationCleanupRequired = true;
+      return false;
+    } finally {
+      _phoneCredentialCleanupUnderlyingResolved = true;
+    }
+  }
+
+  Future<void> _completeAbandonedPhoneCredentialCleanup(
+    Future<bool> task,
+    int cleanupGeneration,
+  ) async {
+    bool signedOut;
+    try {
+      signedOut = await task;
+    } catch (_) {
+      _authenticationCleanupRequired = true;
+      signedOut = false;
+    }
+    if (cleanupGeneration != _phoneCredentialCleanupGeneration ||
+        !identical(_phoneCredentialCleanupTask, task)) {
+      return;
+    }
+    _phoneCredentialCleanupTimer?.cancel();
+    _phoneCredentialCleanupTimer = null;
+    _phoneCredentialCleanupTask = null;
+    if (_disposed) return;
+    if (!signedOut && _authenticationCleanupRequired) {
+      signOutError =
+          'Could not close the previous sign-in. Retry before signing in again.';
+      authenticationCleanupStatus =
+          'The previous sign-in could not be closed. Retry cleanup before signing in again.';
+      notifyListeners();
+      return;
+    }
+
+    authenticationCleanupStatus = null;
+    signOutError = null;
+    notifyListeners();
+    final currentUser = auth?.currentUser;
+    if (!_explicitDemoSession && currentUser != null) {
+      // A different current user was preserved; let the normal listener load
+      // that user's profile after the abandoned attempt has been cleaned up.
+      unawaited(_handleAuthStateChanged(currentUser));
+    }
+  }
+
+  Future<bool> _retryRequiredAuthenticationCleanup() async {
+    final authInstance = auth;
+    if (authInstance == null) return false;
+    final currentUser = authInstance.currentUser;
+    final targetUid = _authenticationCleanupTargetUid;
+    if (currentUser != null &&
+        targetUid != null &&
+        currentUser.uid != targetUid) {
+      // A newer session replaced the one whose cleanup failed. Preserve it.
+      _authenticationCleanupRequired = false;
+      _authenticationCleanupTargetUid = null;
+      authenticationCleanupStatus = null;
+      unawaited(_handleAuthStateChanged(currentUser));
+      return false;
+    }
+
+    try {
+      await _signOutGoogleProviderIfNeeded(currentUser);
+      // Retry Firebase signOut even when currentUser is null: the previous
+      // sign-out future failed, so its completion was never confirmed.
+      await authInstance.signOut();
+      if (authInstance.currentUser != null) return false;
+      _authenticationCleanupRequired = false;
+      _authenticationCleanupTargetUid = null;
+      return true;
+    } catch (_) {
+      _authenticationCleanupRequired = true;
+      return false;
+    }
+  }
+
+  Future<bool> retryAuthenticationCleanup() {
+    final phoneCleanup = _phoneCredentialCleanupTask;
+    if (phoneCleanup != null) return phoneCleanup;
+    final demoCleanup = _demoSignOutTask;
+    if (demoCleanup != null) return demoCleanup;
+    final existingRetry = _authenticationCleanupRetryTask;
+    if (existingRetry != null) return existingRetry;
+    if (!_authenticationCleanupRequired) return Future<bool>.value(true);
+
+    isAuthenticationCleanupRetrying = true;
+    authenticationCleanupStatus = 'Retrying previous sign-in cleanup…';
+    notifyListeners();
+
+    late final Future<bool> retryTask;
+    retryTask = _runAuthenticationCleanupRetry().whenComplete(() {
+      if (identical(_authenticationCleanupRetryTask, retryTask)) {
+        _authenticationCleanupRetryTask = null;
+      }
+      isAuthenticationCleanupRetrying = false;
+      notifyListeners();
+    });
+    _authenticationCleanupRetryTask = retryTask;
+    return retryTask;
+  }
+
+  Future<bool> _runAuthenticationCleanupRetry() async {
+    var cleaned = false;
+    try {
+      cleaned = await _retryRequiredAuthenticationCleanup();
+    } catch (_) {
+      _authenticationCleanupRequired = true;
+    }
+    if (cleaned) {
+      authenticationCleanupStatus = null;
+      signOutError = null;
+    } else if (_authenticationCleanupRequired) {
+      authenticationCleanupStatus =
+          'The previous sign-in could not be closed. Retry cleanup before signing in again.';
+      signOutError = 'Could not close the previous session. Retry sign-in.';
+    }
+    return cleaned;
+  }
+
   /// Leaves demo mode only for an explicit sign-in action. A stale session is
   /// signed out first; if that fails, sign-in is blocked and demo remains local.
-  Future<bool> beginAuthentication() async {
-    if (_disposed) return false;
-    if (_authenticationIntentActive && !isDemoMode && !_explicitDemoSession) {
-      return true;
+  Future<bool> beginAuthentication({
+    SignInMethod method = SignInMethod.phone,
+  }) async {
+    if (_disposed || isSigningOut) return false;
+    if (_authenticationIntentActive) {
+      if (isAuthenticationCleanupInProgress ||
+          _authenticationCleanupRequired) {
+        return false;
+      }
+      return _authenticationAttemptMethod == method &&
+          !isDemoMode &&
+          !_explicitDemoSession;
     }
 
     final session = ++_sessionGeneration;
+    _authenticationIntentActive = true;
+    _authenticationAttemptMethod = method;
     final pendingDemoSignOut = _demoSignOutTask;
     if (pendingDemoSignOut != null) {
       final signedOut = await pendingDemoSignOut;
       if (session != _sessionGeneration) return false;
-      if (!signedOut && auth?.currentUser != null) {
+      if (!signedOut) {
         signOutError = 'Could not close the previous session. Retry sign-in.';
+        _releaseAuthenticationAttempt(method);
+        notifyListeners();
+        return false;
+      }
+    }
+
+    final pendingPhoneCleanup = _phoneCredentialCleanupTask;
+    if (pendingPhoneCleanup != null) {
+      final cleaned = await pendingPhoneCleanup;
+      if (session != _sessionGeneration) return false;
+      if (!cleaned) {
+        signOutError = 'Could not close the previous session. Retry sign-in.';
+        _releaseAuthenticationAttempt(method);
+        notifyListeners();
+        return false;
+      }
+    }
+
+    if (_authenticationCleanupRequired) {
+      final cleaned = await retryAuthenticationCleanup();
+      if (session != _sessionGeneration) return false;
+      if (!cleaned) {
+        signOutError = 'Could not close the previous session. Retry sign-in.';
+        _releaseAuthenticationAttempt(method);
         notifyListeners();
         return false;
       }
@@ -551,6 +930,7 @@ class AppState extends ChangeNotifier {
       if (session != _sessionGeneration) return false;
       if (!signedOut) {
         signOutError = 'Could not close the previous session. Retry sign-in.';
+        _releaseAuthenticationAttempt(method);
         notifyListeners();
         return false;
       }
@@ -559,6 +939,7 @@ class AppState extends ChangeNotifier {
     if (session != _sessionGeneration) return false;
     _explicitDemoSession = false;
     _authenticationIntentActive = true;
+    _authenticationAttemptMethod = method;
     _authEventGeneration++;
     _profileLoadGeneration++;
     _clearCloudAccountState();
@@ -567,8 +948,133 @@ class AppState extends ChangeNotifier {
     isCloudLoading = false;
     cloudError = null;
     signOutError = null;
+    googleAuthError = null;
+    authenticationCleanupStatus = null;
     notifyListeners();
     return true;
+  }
+
+  Future<bool> signInWithGoogle() {
+    if (_disposed || _googleSignInTask != null) {
+      return Future<bool>.value(false);
+    }
+    if (_authenticationIntentActive &&
+        _authenticationAttemptMethod != SignInMethod.google) {
+      return Future<bool>.value(false);
+    }
+    googleAuthError = null;
+    isGoogleSignInLoading = true;
+    notifyListeners();
+    final task = _performGoogleSignIn();
+    _googleSignInTask = task;
+    return task.whenComplete(() {
+      if (identical(_googleSignInTask, task)) _googleSignInTask = null;
+    });
+  }
+
+  Future<bool> _performGoogleSignIn() async {
+    int? attemptGeneration;
+    Future<UserCredential>? pending;
+    try {
+      if (!await beginAuthentication(method: SignInMethod.google)) {
+        if (!_disposed && !_explicitDemoSession) {
+          googleAuthError =
+              signOutError ?? 'Could not start sign-in. Please retry.';
+          isGoogleSignInLoading = false;
+          notifyListeners();
+        }
+        return false;
+      }
+      attemptGeneration = _sessionGeneration;
+      final idToken = await googleSignInService.authenticate();
+      if (!_isCurrentAuthenticationGeneration(attemptGeneration)) return false;
+      if (idToken == null) {
+        _finishGoogleSignInFailure(null);
+        return false;
+      }
+      if (idToken.trim().isEmpty) {
+        _finishGoogleSignInFailure(
+          'Google sign-in could not complete. Please try again.',
+        );
+        return false;
+      }
+
+      final authInstance = auth;
+      if (authInstance == null) {
+        _finishGoogleSignInFailure(
+          'Google sign-in is unavailable right now. Please try again.',
+        );
+        return false;
+      }
+      final credential = GoogleAuthProvider.credential(idToken: idToken);
+      pending = authInstance.signInWithCredential(credential);
+      _pendingCredentialSignIn = pending;
+      await pending;
+      if (!_isCurrentAuthenticationGeneration(attemptGeneration)) return false;
+      // The auth-state listener owns profile loading and navigation.
+      isGoogleSignInLoading = false;
+      googleAuthError = null;
+      notifyListeners();
+      return true;
+    } catch (_) {
+      if (_disposed ||
+          _explicitDemoSession ||
+          (attemptGeneration != null &&
+              !_isCurrentAuthenticationGeneration(attemptGeneration))) {
+        return false;
+      }
+      _finishGoogleSignInFailure(
+        'Google sign-in failed. Check your connection and try again.',
+      );
+      return false;
+    } finally {
+      if (identical(_pendingCredentialSignIn, pending)) {
+        _pendingCredentialSignIn = null;
+      }
+      if (!_disposed &&
+          !_explicitDemoSession &&
+          (attemptGeneration == null ||
+              _sessionGeneration == attemptGeneration)) {
+        isGoogleSignInLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  void _finishGoogleSignInFailure(String? message) {
+    _releaseAuthenticationAttempt(SignInMethod.google);
+    _explicitDemoSession = false;
+    _restoreDemoState();
+    _navigationStack.clear();
+    page = 'login';
+    googleAuthError = message;
+    isGoogleSignInLoading = false;
+    notifyListeners();
+  }
+
+  void _releaseAuthenticationAttempt(SignInMethod method) {
+    if (_authenticationAttemptMethod != method) return;
+    _authenticationAttemptMethod = null;
+    _authenticationIntentActive = false;
+  }
+
+  Future<void> _signOutGoogleProviderIfNeeded(User? user) async {
+    bool usesGoogle;
+    try {
+      usesGoogle =
+          user?.providerData.any(
+            (provider) => provider.providerId == GoogleAuthProvider.PROVIDER_ID,
+          ) ??
+          false;
+    } catch (_) {
+      usesGoogle = false;
+    }
+    if (!usesGoogle) return;
+    try {
+      await googleSignInService.signOut();
+    } catch (_) {
+      // Firebase sign-out must continue if provider cleanup fails.
+    }
   }
 
   Future<bool> signOut() async {
@@ -588,15 +1094,47 @@ class AppState extends ChangeNotifier {
 
     try {
       final authInstance = auth;
-      if (authInstance != null && authInstance.currentUser != null) {
+      final pendingPhoneCleanup = _phoneCredentialCleanupTask;
+      if (pendingPhoneCleanup != null && !await pendingPhoneCleanup) {
+        signOutError =
+            'Could not close the previous sign-in. Retry before logging out.';
+        return false;
+      }
+      if (authInstance == null && _authenticationCleanupRequired) {
+        throw StateError('Firebase sign-out is unavailable.');
+      }
+      if (authInstance != null &&
+          (authInstance.currentUser != null ||
+              _authenticationCleanupRequired)) {
+        final targetUid = authInstance.currentUser?.uid ??
+            _authenticationCleanupTargetUid;
+        _authenticationCleanupTargetUid = targetUid;
+        _authenticationCleanupRequired = true;
+        await _signOutGoogleProviderIfNeeded(authInstance.currentUser);
         await authInstance.signOut();
+        if (authInstance.currentUser != null) {
+          throw StateError('Firebase session remained active after sign-out.');
+        }
+        _authenticationCleanupRequired = false;
+        _authenticationCleanupTargetUid = null;
+      } else {
+        _authenticationCleanupRequired = false;
+        _authenticationCleanupTargetUid = null;
       }
       if (_disposed || _authEventGeneration != eventGeneration) return true;
+      _authenticationIntentActive = false;
+      _authenticationAttemptMethod = null;
+      authenticationCleanupStatus = null;
       _restoreDemoState();
+      _navigationStack.clear();
       page = 'splash';
       return true;
     } catch (e) {
       if (_disposed || _authEventGeneration != eventGeneration) return false;
+      _authenticationCleanupRequired = true;
+      _authenticationCleanupTargetUid ??= auth?.currentUser?.uid;
+      authenticationCleanupStatus =
+          'The previous sign-in could not be closed. Retry cleanup before signing in again.';
       signOutError =
           'Could not sign out. Check your connection and try again. ($e)';
       return false;
@@ -616,6 +1154,8 @@ class AppState extends ChangeNotifier {
     profileStatus = CloudProfileStatus.loading;
     customerName = '';
     customerEmail = '';
+    profileMobileNumber = '';
+    profilePhotoPath = null;
     city = '';
     shopName = '';
     shopCategory = '';
@@ -660,6 +1200,8 @@ class AppState extends ChangeNotifier {
     role = UserRole.customer;
     customerName = 'Rabit Mansuri';
     customerEmail = '';
+    profileMobileNumber = '';
+    profilePhotoPath = null;
     city = 'Ujjain, Madhya Pradesh';
     shopName = 'Mansuri General Store';
     shopCategory = 'Kirana';
@@ -671,6 +1213,7 @@ class AppState extends ChangeNotifier {
     phoneNumber = '';
     isPhoneAuthLoading = false;
     phoneAuthError = null;
+    lastAuthErrorCode = null;
     lastOtpSentAt = null;
     selectedBill = null;
     selectedClaimedReceipt = null;
@@ -698,112 +1241,128 @@ class AppState extends ChangeNotifier {
       ..clear()
       ..addAll(<DemoExpense>[
         DemoExpense(
-            title: 'Stock purchase',
-            category: 'Stock',
-            amount: 300,
-            createdAt: DateTime(2026, 10, 19, 10, 30)),
+          title: 'Stock purchase',
+          category: 'Stock',
+          amount: 300,
+          createdAt: DateTime(2026, 10, 19, 10, 30),
+        ),
         DemoExpense(
-            title: 'Transport',
-            category: 'Transport',
-            amount: 150,
-            createdAt: DateTime(2026, 10, 19, 9, 20)),
+          title: 'Transport',
+          category: 'Transport',
+          amount: 150,
+          createdAt: DateTime(2026, 10, 19, 9, 20),
+        ),
       ]);
     householdExpenses
       ..clear()
       ..addAll(<HouseholdExpense>[
         HouseholdExpense(
-            title: 'Vegetables',
-            category: 'Vegetables',
-            amount: 250,
-            createdAt: DateTime.now().subtract(const Duration(hours: 2))),
+          title: 'Vegetables',
+          category: 'Vegetables',
+          amount: 250,
+          createdAt: DateTime.now().subtract(const Duration(hours: 2)),
+        ),
         HouseholdExpense(
-            title: 'Milk',
-            category: 'Dairy',
-            amount: 60,
-            createdAt: DateTime.now().subtract(const Duration(hours: 4))),
+          title: 'Milk',
+          category: 'Dairy',
+          amount: 60,
+          createdAt: DateTime.now().subtract(const Duration(hours: 4)),
+        ),
         HouseholdExpense(
-            title: 'Bus fare',
-            category: 'Transport',
-            amount: 30,
-            createdAt: DateTime.now().subtract(const Duration(days: 1))),
+          title: 'Bus fare',
+          category: 'Transport',
+          amount: 30,
+          createdAt: DateTime.now().subtract(const Duration(days: 1)),
+        ),
       ]);
     savedShops
       ..clear()
-      ..addAll(
-          <String>{'Sharma Kirana Store', 'Gupta General Store', 'Fresh Mart'});
+      ..addAll(<String>{
+        'Sharma Kirana Store',
+        'Gupta General Store',
+        'Fresh Mart',
+      });
   }
 
   List<DemoBill> _demoBills() => <DemoBill>[
-        DemoBill(
-            id: 'PP-10482',
-            store: 'Sharma Kirana Store',
-            items: <BillLine>[
-              BillLine(name: 'Maggi', quantity: 1, unitPrice: 40),
-              BillLine(name: 'Bread', quantity: 1, unitPrice: 30),
-              BillLine(name: 'Milk', quantity: 1, unitPrice: 50),
-              BillLine(name: 'Chips', quantity: 1, unitPrice: 60),
-            ],
-            createdAt: DateTime(2026, 10, 12, 17, 24),
-            paymentMode: 'Cash',
-            isSaved: true),
-        DemoBill(
-            id: 'PP-10481',
-            store: 'Gupta General Store',
-            items: <BillLine>[
-              BillLine(name: 'Household items', quantity: 1, unitPrice: 240),
-            ],
-            createdAt: DateTime(2026, 10, 10, 11, 8),
-            paymentMode: 'UPI',
-            isSaved: true),
-        DemoBill(
-            id: 'PP-10480',
-            store: 'Fresh Mart',
-            items: <BillLine>[
-              BillLine(name: 'Groceries', quantity: 1, unitPrice: 320),
-            ],
-            createdAt: DateTime(2026, 10, 8, 18, 42),
-            paymentMode: 'UPI',
-            isSaved: true),
-        DemoBill(
-            id: 'PP-10470',
-            store: 'Mansuri General Store',
-            items: <BillLine>[
-              BillLine(name: 'Grocery order', quantity: 1, unitPrice: 450),
-            ],
-            createdAt: DateTime(2026, 10, 12, 12),
-            paymentMode: 'Udhaar',
-            customerPhone: '•••• 4421',
-            isUdhaar: true,
-            isSettled: false,
-            isSaved: false),
-        DemoBill(
-            id: 'PP-10462',
-            store: 'Mansuri General Store',
-            items: <BillLine>[
-              BillLine(name: 'Walk-in purchase', quantity: 1, unitPrice: 300),
-            ],
-            createdAt: DateTime(2026, 10, 11, 16),
-            paymentMode: 'Udhaar',
-            isUdhaar: true,
-            isSettled: false,
-            isSaved: false),
-        DemoBill(
-            id: 'PP-10455',
-            store: 'Mansuri General Store',
-            items: <BillLine>[
-              BillLine(name: 'Household order', quantity: 1, unitPrice: 650),
-            ],
-            createdAt: DateTime(2026, 10, 10, 10),
-            paymentMode: 'Udhaar',
-            customerPhone: '•••• 1184',
-            isUdhaar: true,
-            isSettled: false,
-            isSaved: false),
-      ];
+    DemoBill(
+      id: 'PP-10482',
+      store: 'Sharma Kirana Store',
+      items: <BillLine>[
+        BillLine(name: 'Maggi', quantity: 1, unitPrice: 40),
+        BillLine(name: 'Bread', quantity: 1, unitPrice: 30),
+        BillLine(name: 'Milk', quantity: 1, unitPrice: 50),
+        BillLine(name: 'Chips', quantity: 1, unitPrice: 60),
+      ],
+      createdAt: DateTime(2026, 10, 12, 17, 24),
+      paymentMode: 'Cash',
+      isSaved: true,
+    ),
+    DemoBill(
+      id: 'PP-10481',
+      store: 'Gupta General Store',
+      items: <BillLine>[
+        BillLine(name: 'Household items', quantity: 1, unitPrice: 240),
+      ],
+      createdAt: DateTime(2026, 10, 10, 11, 8),
+      paymentMode: 'UPI',
+      isSaved: true,
+    ),
+    DemoBill(
+      id: 'PP-10480',
+      store: 'Fresh Mart',
+      items: <BillLine>[
+        BillLine(name: 'Groceries', quantity: 1, unitPrice: 320),
+      ],
+      createdAt: DateTime(2026, 10, 8, 18, 42),
+      paymentMode: 'UPI',
+      isSaved: true,
+    ),
+    DemoBill(
+      id: 'PP-10470',
+      store: 'Mansuri General Store',
+      items: <BillLine>[
+        BillLine(name: 'Grocery order', quantity: 1, unitPrice: 450),
+      ],
+      createdAt: DateTime(2026, 10, 12, 12),
+      paymentMode: 'Udhaar',
+      customerPhone: '•••• 4421',
+      isUdhaar: true,
+      isSettled: false,
+      isSaved: false,
+    ),
+    DemoBill(
+      id: 'PP-10462',
+      store: 'Mansuri General Store',
+      items: <BillLine>[
+        BillLine(name: 'Walk-in purchase', quantity: 1, unitPrice: 300),
+      ],
+      createdAt: DateTime(2026, 10, 11, 16),
+      paymentMode: 'Udhaar',
+      isUdhaar: true,
+      isSettled: false,
+      isSaved: false,
+    ),
+    DemoBill(
+      id: 'PP-10455',
+      store: 'Mansuri General Store',
+      items: <BillLine>[
+        BillLine(name: 'Household order', quantity: 1, unitPrice: 650),
+      ],
+      createdAt: DateTime(2026, 10, 10, 10),
+      paymentMode: 'Udhaar',
+      customerPhone: '•••• 1184',
+      isUdhaar: true,
+      isSettled: false,
+      isSaved: false,
+    ),
+  ];
 
   @override
   void dispose() {
     _disposed = true;
+    _phoneCredentialCleanupGeneration++;
+    _phoneCredentialCleanupTimer?.cancel();
     _authEventGeneration++;
     _profileLoadGeneration++;
     unawaited(_authSubscription?.cancel());
@@ -811,8 +1370,142 @@ class AppState extends ChangeNotifier {
   }
 
   void go(String nextPage) {
-    page = nextPage;
+    _abandonPhoneAttemptIfLeaving(nextPage);
+    _pushPage(nextPage);
     notifyListeners();
+  }
+
+  void _abandonPhoneAttemptIfLeaving(String destination) {
+    if (_authenticationAttemptMethod != SignInMethod.phone ||
+        destination == 'phoneLogin' ||
+        destination == 'verifyOtp') {
+      return;
+    }
+    _sessionGeneration++;
+    _releaseAuthenticationAttempt(SignInMethod.phone);
+    isPhoneAuthLoading = false;
+    _authEventGeneration++;
+    _profileLoadGeneration++;
+    _startAbandonedPhoneCredentialCleanup();
+  }
+
+  void _pushPage(String nextPage) {
+    if (_isNavigationRoot(nextPage)) {
+      _navigationStack.clear();
+    } else if (page != nextPage) {
+      _navigationStack.add(page);
+    }
+    page = nextPage;
+  }
+
+  bool _isNavigationRoot(String route) => const <String>{
+        'splash',
+        'authLoading',
+        'profileLoadError',
+        'login',
+        'customerHome',
+        'customerSetup',
+      }.contains(route);
+
+  void setRootPage(String route) {
+    _navigationStack.clear();
+    page = route;
+    notifyListeners();
+  }
+
+  void selectTab(String route) {
+    _navigationStack.clear();
+    page = route;
+    notifyListeners();
+  }
+
+  bool popPage({String? fallback}) {
+    if (_navigationStack.isEmpty) {
+      if (fallback == null) return false;
+      _abandonPhoneAttemptIfLeaving(fallback);
+      page = fallback;
+      notifyListeners();
+      return true;
+    }
+    final previousPage = _navigationStack.removeLast();
+    _abandonPhoneAttemptIfLeaving(previousPage);
+    page = previousPage;
+    notifyListeners();
+    return true;
+  }
+
+  String get _profilePhotoScope => auth?.currentUser?.uid ?? 'demo';
+
+  Future<void> loadProfilePhoto() async {
+    if (isProfilePhotoLoading) return;
+    final scope = _profilePhotoScope;
+    isProfilePhotoLoading = true;
+    profilePhotoError = null;
+    notifyListeners();
+    try {
+      final path = await profilePhotoStore.load(scope);
+      if (_disposed || scope != _profilePhotoScope) return;
+      profilePhotoPath = path;
+    } catch (_) {
+      if (_disposed || scope != _profilePhotoScope) return;
+      profilePhotoError = 'Saved profile photo could not be loaded.';
+    } finally {
+      if (!_disposed && scope == _profilePhotoScope) {
+        isProfilePhotoLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<bool> chooseProfilePhoto() async {
+    if (isProfilePhotoLoading || _disposed) return false;
+    final scope = _profilePhotoScope;
+    isProfilePhotoLoading = true;
+    profilePhotoError = null;
+    notifyListeners();
+    try {
+      final path = await profilePhotoStore.pickAndPersist(scope);
+      if (_disposed || scope != _profilePhotoScope) return false;
+      if (path == null) return false;
+      profilePhotoPath = path;
+      return true;
+    } catch (error) {
+      if (_disposed || scope != _profilePhotoScope) return false;
+      profilePhotoError = error is FormatException
+          ? error.message
+          : 'Profile photo could not be saved. Please try again.';
+      return false;
+    } finally {
+      if (!_disposed && scope == _profilePhotoScope) {
+        isProfilePhotoLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<bool> removeProfilePhoto() async {
+    if (isProfilePhotoLoading || _disposed) return false;
+    final scope = _profilePhotoScope;
+    isProfilePhotoLoading = true;
+    profilePhotoError = null;
+    notifyListeners();
+    try {
+      await profilePhotoStore.clear(scope);
+      if (_disposed || scope != _profilePhotoScope) return false;
+      profilePhotoPath = null;
+      return true;
+    } catch (error) {
+      if (_disposed || scope != _profilePhotoScope) return false;
+      profilePhotoError = error is FormatException
+          ? error.message
+          : 'Profile photo could not be removed. Please try again.';
+      return false;
+    } finally {
+      if (!_disposed && scope == _profilePhotoScope) {
+        isProfilePhotoLoading = false;
+        notifyListeners();
+      }
+    }
   }
 
   void openShop(String name) {
@@ -821,6 +1514,7 @@ class AppState extends ChangeNotifier {
   }
 
   void setRole(UserRole value) {
+    _navigationStack.clear();
     if (!isDemoMode && profileStatus != CloudProfileStatus.missing) {
       // Existing cloud profiles retain their stored role to satisfy Firestore security rules
       if (profileStatus == CloudProfileStatus.loaded &&
@@ -857,10 +1551,11 @@ class AppState extends ChangeNotifier {
       bills.where((bill) => bill.isSaved).toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-  List<DemoBill> get shopBills => bills
-      .where((bill) => bill.store == shopName || bill.store == vendorName)
-      .toList()
-    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  List<DemoBill> get shopBills =>
+      bills
+          .where((bill) => bill.store == shopName || bill.store == vendorName)
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
   List<DemoBill> get udhaarBills =>
       bills.where((bill) => bill.isUdhaar && !bill.isSettled).toList();
@@ -876,14 +1571,14 @@ class AppState extends ChangeNotifier {
   void openBill(DemoBill bill) {
     selectedClaimedReceipt = null;
     selectedBill = bill;
-    page = 'billDetail';
+    _pushPage('billDetail');
     notifyListeners();
   }
 
   void openClaimedReceipt(ClaimedReceipt receipt) {
     selectedBill = null;
     selectedClaimedReceipt = receipt;
-    page = 'billDetail';
+    _pushPage('billDetail');
     notifyListeners();
   }
 
@@ -892,11 +1587,13 @@ class AppState extends ChangeNotifier {
   Future<void> issueReceiptClaim(DemoBill bill, String rawCode) async {
     if (isDemoMode || !isAuthenticated) {
       throw StateError(
-          'Sign in with a shop-owner or vendor account to issue a receipt code.');
+        'Sign in with a shop-owner or vendor account to issue a receipt code.',
+      );
     }
     if (isCloudLoading || isSigningOut) {
       throw StateError(
-          'Another account operation is still in progress. Please wait.');
+        'Another account operation is still in progress. Please wait.',
+      );
     }
     isCloudLoading = true;
     cloudError = null;
@@ -930,7 +1627,8 @@ class AppState extends ChangeNotifier {
     }
     if (isCloudLoading || isSigningOut) {
       throw StateError(
-          'Another account operation is still in progress. Please wait.');
+        'Another account operation is still in progress. Please wait.',
+      );
     }
     isCloudLoading = true;
     cloudError = null;
@@ -941,11 +1639,14 @@ class AppState extends ChangeNotifier {
       final receipt = await firestoreService.claimReceipt(rawCode);
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
         throw StateError(
-            'Your sign-in session changed while claiming a receipt.');
+          'Your sign-in session changed while claiming a receipt.',
+        );
       }
-      claimedReceipts.removeWhere((entry) =>
-          entry.ownerUid == receipt.ownerUid &&
-          entry.sourceBillId == receipt.sourceBillId);
+      claimedReceipts.removeWhere(
+        (entry) =>
+            entry.ownerUid == receipt.ownerUid &&
+            entry.sourceBillId == receipt.sourceBillId,
+      );
       claimedReceipts.insert(0, receipt);
       lastNotice = 'Receipt added to your account.';
       return receipt;
@@ -973,7 +1674,8 @@ class AppState extends ChangeNotifier {
   }) async {
     if (isCloudLoading || isSigningOut) {
       throw StateError(
-          'Another account operation is still in progress. Please wait.');
+        'Another account operation is still in progress. Please wait.',
+      );
     }
     if (items.isEmpty) {
       throw Exception('A bill must contain at least 1 item.');
@@ -1022,9 +1724,10 @@ class AppState extends ChangeNotifier {
       bill = _retryableCloudBill!;
     } else {
       bill = DemoBill(
-        id: cloudBill
-            ? firestoreService.newBillId()
-            : vendorMode
+        id:
+            cloudBill
+                ? firestoreService.newBillId()
+                : vendorMode
                 ? 'PP-${_vendorBillSequence++}'
                 : 'PP-${_billSequence++}',
         store: store,
@@ -1058,7 +1761,8 @@ class AppState extends ChangeNotifier {
       await firestoreService.createBill(bill);
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
         throw StateError(
-            'Your sign-in session changed before the bill was saved.');
+          'Your sign-in session changed before the bill was saved.',
+        );
       }
       bills.insert(0, bill);
       if (identical(_retryableCloudBill, bill)) _retryableCloudBill = null;
@@ -1261,7 +1965,8 @@ class AppState extends ChangeNotifier {
 
     final cloudWrite = !isDemoMode && isAuthenticated;
     final pending = _retryableHouseholdExpense;
-    final isRetry = cloudWrite &&
+    final isRetry =
+        cloudWrite &&
         pending != null &&
         pending.title == normalizedTitle &&
         pending.category == normalizedCategory &&
@@ -1288,7 +1993,7 @@ class AppState extends ChangeNotifier {
     if (!cloudWrite) {
       householdExpenses.insert(0, expense);
       lastNotice = 'Household expense recorded in demo mode.';
-      page = 'householdExpenses';
+      _pushPage('householdExpenses');
       cloudError = null;
       _isOffline = false;
       notifyListeners();
@@ -1316,12 +2021,13 @@ class AppState extends ChangeNotifier {
             eff.month == _loadedMonthlyExpensesMonth) {
           _monthlyHouseholdExpenses.removeWhere((e) => e.id == expense.id);
           _monthlyHouseholdExpenses.add(expense);
-          _monthlyHouseholdExpenses
-              .sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+          _monthlyHouseholdExpenses.sort(
+            (a, b) => b.effectiveDate.compareTo(a.effectiveDate),
+          );
         }
       }
       lastNotice = 'Household expense saved to cloud.';
-      page = 'householdExpenses';
+      _pushPage('householdExpenses');
       cloudError = null;
       _isOffline = false;
       return true;
@@ -1399,7 +2105,8 @@ class AppState extends ChangeNotifier {
         _loadedMonthlyExpensesYear == now.year &&
         _loadedMonthlyExpensesMonth == now.month) {
       return List.unmodifiable(
-          _monthlyHouseholdExpenses.where((e) => !e.isVoided));
+        _monthlyHouseholdExpenses.where((e) => !e.isVoided),
+      );
     }
     return List.unmodifiable(
       activeHouseholdExpenses.where((e) {
@@ -1421,17 +2128,20 @@ class AppState extends ChangeNotifier {
 
   /// Household spend on a specific calendar day based on effectiveDate.
   double spentOnDay(DateTime day) {
-    final source = (!isDemoMode &&
-            _loadedMonthlyExpensesYear == day.year &&
-            _loadedMonthlyExpensesMonth == day.month)
-        ? _monthlyHouseholdExpenses.where((e) => !e.isVoided)
-        : activeHouseholdExpenses;
-    return source.where((e) {
-      final date = e.effectiveDate;
-      return date.year == day.year &&
-          date.month == day.month &&
-          date.day == day.day;
-    }).fold<double>(0.0, (sum, e) => sum + e.amount);
+    final source =
+        (!isDemoMode &&
+                _loadedMonthlyExpensesYear == day.year &&
+                _loadedMonthlyExpensesMonth == day.month)
+            ? _monthlyHouseholdExpenses.where((e) => !e.isVoided)
+            : activeHouseholdExpenses;
+    return source
+        .where((e) {
+          final date = e.effectiveDate;
+          return date.year == day.year &&
+              date.month == day.month &&
+              date.day == day.day;
+        })
+        .fold<double>(0.0, (sum, e) => sum + e.amount);
   }
 
   /// Household spend for the current calendar month based on effectiveDate.
@@ -1445,15 +2155,18 @@ class AppState extends ChangeNotifier {
 
   /// Household spend for a specific year and month based on effectiveDate.
   double householdSpendForMonth(int year, int month) {
-    final source = (!isDemoMode &&
-            _loadedMonthlyExpensesYear == year &&
-            _loadedMonthlyExpensesMonth == month)
-        ? _monthlyHouseholdExpenses.where((e) => !e.isVoided)
-        : activeHouseholdExpenses;
-    return source.where((e) {
-      final date = e.effectiveDate;
-      return date.year == year && date.month == month;
-    }).fold<double>(0.0, (sum, e) => sum + e.amount);
+    final source =
+        (!isDemoMode &&
+                _loadedMonthlyExpensesYear == year &&
+                _loadedMonthlyExpensesMonth == month)
+            ? _monthlyHouseholdExpenses.where((e) => !e.isVoided)
+            : activeHouseholdExpenses;
+    return source
+        .where((e) {
+          final date = e.effectiveDate;
+          return date.year == year && date.month == month;
+        })
+        .fold<double>(0.0, (sum, e) => sum + e.amount);
   }
 
   bool _isRefreshingHouseholdExpenses = false;
@@ -1517,13 +2230,11 @@ class AppState extends ChangeNotifier {
     _isRefreshingHouseholdExpenses = true;
     try {
       final now = DateTime.now();
-      final pageResult =
-          await firestoreService.loadHouseholdExpensesPage(limit: 50);
-      final monthlyResult =
-          await firestoreService.loadHouseholdExpensesForMonth(
-        now.year,
-        now.month,
+      final pageResult = await firestoreService.loadHouseholdExpensesPage(
+        limit: 50,
       );
+      final monthlyResult = await firestoreService
+          .loadHouseholdExpensesForMonth(now.year, now.month);
       if (_disposed ||
           isSigningOut ||
           uid == null ||
@@ -1588,8 +2299,9 @@ class AppState extends ChangeNotifier {
     if (index != -1) {
       existing = householdExpenses[index];
     } else {
-      final mIndex =
-          _monthlyHouseholdExpenses.indexWhere((e) => e.id == trimmedId);
+      final mIndex = _monthlyHouseholdExpenses.indexWhere(
+        (e) => e.id == trimmedId,
+      );
       if (mIndex != -1) {
         existing = _monthlyHouseholdExpenses[mIndex];
       } else {
@@ -1647,8 +2359,9 @@ class AppState extends ChangeNotifier {
       if (index != -1) {
         householdExpenses[index] = updatedLocal;
       }
-      final mIndex =
-          _monthlyHouseholdExpenses.indexWhere((e) => e.id == trimmedId);
+      final mIndex = _monthlyHouseholdExpenses.indexWhere(
+        (e) => e.id == trimmedId,
+      );
       if (mIndex != -1) {
         _monthlyHouseholdExpenses[mIndex] = updatedLocal;
       }
@@ -1684,16 +2397,19 @@ class AppState extends ChangeNotifier {
         return false;
       }
 
-      final currentIndex =
-          householdExpenses.indexWhere((e) => e.id == trimmedId);
+      final currentIndex = householdExpenses.indexWhere(
+        (e) => e.id == trimmedId,
+      );
       if (currentIndex != -1) {
         householdExpenses[currentIndex] = updatedLocal;
       }
 
       final eff = updatedLocal.effectiveDate;
-      final mIndex =
-          _monthlyHouseholdExpenses.indexWhere((e) => e.id == trimmedId);
-      final isCurrentMonth = _loadedMonthlyExpensesYear != null &&
+      final mIndex = _monthlyHouseholdExpenses.indexWhere(
+        (e) => e.id == trimmedId,
+      );
+      final isCurrentMonth =
+          _loadedMonthlyExpensesYear != null &&
           _loadedMonthlyExpensesMonth != null &&
           eff.year == _loadedMonthlyExpensesYear &&
           eff.month == _loadedMonthlyExpensesMonth;
@@ -1703,8 +2419,9 @@ class AppState extends ChangeNotifier {
         } else {
           _monthlyHouseholdExpenses.add(updatedLocal);
         }
-        _monthlyHouseholdExpenses
-            .sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+        _monthlyHouseholdExpenses.sort(
+          (a, b) => b.effectiveDate.compareTo(a.effectiveDate),
+        );
       } else if (mIndex != -1) {
         _monthlyHouseholdExpenses.removeAt(mIndex);
       }
@@ -1712,11 +2429,11 @@ class AppState extends ChangeNotifier {
       if (_loadedMonthlyExpensesYear != null &&
           _loadedMonthlyExpensesMonth != null) {
         try {
-          final refreshed =
-              await firestoreService.loadHouseholdExpensesForMonth(
-            _loadedMonthlyExpensesYear!,
-            _loadedMonthlyExpensesMonth!,
-          );
+          final refreshed = await firestoreService
+              .loadHouseholdExpensesForMonth(
+                _loadedMonthlyExpensesYear!,
+                _loadedMonthlyExpensesMonth!,
+              );
           if (_isCurrentAuthenticatedSession(uid, authGeneration)) {
             _monthlyHouseholdExpenses
               ..clear()
@@ -1773,8 +2490,9 @@ class AppState extends ChangeNotifier {
     if (index != -1) {
       existing = householdExpenses[index];
     } else {
-      final mIndex =
-          _monthlyHouseholdExpenses.indexWhere((e) => e.id == trimmedId);
+      final mIndex = _monthlyHouseholdExpenses.indexWhere(
+        (e) => e.id == trimmedId,
+      );
       if (mIndex != -1) {
         existing = _monthlyHouseholdExpenses[mIndex];
       } else {
@@ -1813,15 +2531,18 @@ class AppState extends ChangeNotifier {
     final authGeneration = _authEventGeneration;
 
     try {
-      await firestoreService.voidHouseholdExpense(trimmedId,
-          reason: trimmedReason);
+      await firestoreService.voidHouseholdExpense(
+        trimmedId,
+        reason: trimmedReason,
+      );
 
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
         return false;
       }
 
-      final currentIndex =
-          householdExpenses.indexWhere((e) => e.id == trimmedId);
+      final currentIndex = householdExpenses.indexWhere(
+        (e) => e.id == trimmedId,
+      );
       if (currentIndex != -1) {
         householdExpenses[currentIndex] = voidedLocal;
       }
@@ -1830,11 +2551,11 @@ class AppState extends ChangeNotifier {
       if (_loadedMonthlyExpensesYear != null &&
           _loadedMonthlyExpensesMonth != null) {
         try {
-          final refreshed =
-              await firestoreService.loadHouseholdExpensesForMonth(
-            _loadedMonthlyExpensesYear!,
-            _loadedMonthlyExpensesMonth!,
-          );
+          final refreshed = await firestoreService
+              .loadHouseholdExpensesForMonth(
+                _loadedMonthlyExpensesYear!,
+                _loadedMonthlyExpensesMonth!,
+              );
           if (_isCurrentAuthenticatedSession(uid, authGeneration)) {
             _monthlyHouseholdExpenses
               ..clear()
@@ -1885,7 +2606,8 @@ class AppState extends ChangeNotifier {
         title.trim().isEmpty ? 'Other expense' : title.trim();
     final cloudWrite = !isDemoMode && isAuthenticated;
     final pending = _retryableCloudExpense;
-    final isRetry = cloudWrite &&
+    final isRetry =
+        cloudWrite &&
         pending != null &&
         pending.title == normalizedTitle &&
         pending.category == category &&
@@ -1908,7 +2630,7 @@ class AppState extends ChangeNotifier {
     if (!cloudWrite) {
       expenses.insert(0, expense);
       lastNotice = 'Expense recorded (demo).';
-      page = 'expenseSaved';
+      _pushPage('expenseSaved');
       cloudError = null;
       _isOffline = false;
       notifyListeners();
@@ -1931,7 +2653,7 @@ class AppState extends ChangeNotifier {
         _retryableCloudExpense = null;
       }
       lastNotice = 'Expense saved to cloud.';
-      page = 'expenseSaved';
+      _pushPage('expenseSaved');
       cloudError = null;
       _isOffline = false;
       return true;
@@ -2017,7 +2739,7 @@ class AppState extends ChangeNotifier {
   void submitSupport() {
     supportReference =
         'PP-SUP-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
-    page = 'supportSubmitted';
+    _pushPage('supportSubmitted');
     notifyListeners();
   }
 
@@ -2025,17 +2747,33 @@ class AppState extends ChangeNotifier {
     required String name,
     required String email,
     required String location,
+    String? mobileNumber,
+    bool updateMobileNumber = false,
     String? successPage = 'customerProfile',
   }) async {
     if (isCloudLoading || isSigningOut) return false;
     final newName = name.trim().isEmpty ? customerName : name.trim();
     final newEmail = email.trim();
     final newCity = location.trim().isEmpty ? city : location.trim();
+    final newMobile = updateMobileNumber
+        ? (mobileNumber == null || mobileNumber.trim().isEmpty
+            ? ''
+            : formatPhoneNumber(mobileNumber))
+        : profileMobileNumber;
+    if (updateMobileNumber &&
+        mobileNumber != null &&
+        mobileNumber.trim().isNotEmpty &&
+        newMobile == null) {
+      cloudError = 'Enter a valid mobile number, including its country code.';
+      notifyListeners();
+      return false;
+    }
 
     if (isDemoMode || !isAuthenticated) {
       customerName = newName;
       customerEmail = newEmail;
       city = newCity;
+      if (updateMobileNumber) profileMobileNumber = newMobile ?? '';
       lastNotice = 'Profile updated (demo).';
       if (successPage != null) page = successPage;
       cloudError = null;
@@ -2061,6 +2799,9 @@ class AppState extends ChangeNotifier {
         shopAddress: shopAddress,
         vendorName: vendorName,
         vendorCategory: vendorCategory,
+        mobileNumber: updateMobileNumber ? newMobile : null,
+        updateMobileNumber: updateMobileNumber,
+        includeBusinessFields: false,
       );
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
         return false;
@@ -2068,6 +2809,7 @@ class AppState extends ChangeNotifier {
       customerName = newName;
       customerEmail = newEmail;
       city = newCity;
+      if (updateMobileNumber) profileMobileNumber = newMobile ?? '';
       hasExistingCloudProfile = true;
       profileStatus = CloudProfileStatus.loaded;
       lastNotice = 'Profile updated in cloud.';
@@ -2090,11 +2832,12 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateShop(
-      {required String ownerName,
-      required String name,
-      required String category,
-      required String address}) async {
+  Future<bool> updateShop({
+    required String ownerName,
+    required String name,
+    required String category,
+    required String address,
+  }) async {
     if (isCloudLoading || isSigningOut) return false;
     final newOwnerName = ownerName.trim();
     if (newOwnerName.isEmpty) {
@@ -2165,10 +2908,11 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateVendor(
-      {required String ownerName,
-      required String name,
-      required String category}) async {
+  Future<bool> updateVendor({
+    required String ownerName,
+    required String name,
+    required String category,
+  }) async {
     if (isCloudLoading || isSigningOut) return false;
     final newOwnerName = ownerName.trim();
     if (newOwnerName.isEmpty) {
@@ -2275,11 +3019,16 @@ class AppState extends ChangeNotifier {
       }
 
       if (digitsOnly.startsWith('91')) {
-        final indianMobile = digitsOnly.substring(2);
+        var indianMobile = digitsOnly.substring(2);
+        if (indianMobile.startsWith('0') && indianMobile.length == 11) {
+          indianMobile = indianMobile.substring(1);
+        }
 
         if (!RegExp(r'^[6-9]\d{9}$').hasMatch(indianMobile)) {
           return null;
         }
+
+        return '+91$indianMobile';
       }
 
       return '+$digitsOnly';
@@ -2301,6 +3050,16 @@ class AppState extends ChangeNotifier {
     required void Function(String error) onError,
     bool isResend = false,
   }) async {
+    if (isPhoneAuthLoading) return;
+    if (shouldBlockPhoneAuthentication) {
+      final error =
+          authenticationCleanupStatus ??
+          'Please wait for the previous sign-in cleanup to finish.';
+      phoneAuthError = error;
+      notifyListeners();
+      onError(error);
+      return;
+    }
     final remaining = otpCooldownSecondsRemaining;
     if (remaining > 0 && !isResend) {
       final err = 'Please wait ${remaining}s before requesting another OTP.';
@@ -2320,8 +3079,14 @@ class AppState extends ChangeNotifier {
       return;
     }
 
-    if (!await beginAuthentication()) {
-      final err = signOutError ?? 'Could not start sign-in. Please retry.';
+    isPhoneAuthLoading = true;
+    phoneAuthError = null;
+    notifyListeners();
+    if (!await beginAuthentication(method: SignInMethod.phone)) {
+      isPhoneAuthLoading = false;
+      final err =
+          signOutError ??
+          'Another sign-in is already in progress. Please finish it or retry.';
       phoneAuthError = err;
       notifyListeners();
       onError(err);
@@ -2330,8 +3095,7 @@ class AppState extends ChangeNotifier {
     final authAttemptGeneration = ++_sessionGeneration;
 
     phoneNumber = formatted;
-    isPhoneAuthLoading = true;
-    phoneAuthError = null;
+    lastAuthErrorCode = null;
     notifyListeners();
 
     try {
@@ -2348,6 +3112,9 @@ class AppState extends ChangeNotifier {
           }
           Future<UserCredential>? pending;
           try {
+            if (_pendingCredentialSignIn != null) return;
+            isPhoneAuthLoading = true;
+            notifyListeners();
             pending = auth!.signInWithCredential(credential);
             _pendingCredentialSignIn = pending;
             await pending;
@@ -2415,6 +3182,16 @@ class AppState extends ChangeNotifier {
     required String smsCode,
     required void Function(String error) onError,
   }) async {
+    if (shouldBlockPhoneAuthentication) {
+      final error =
+          authenticationCleanupStatus ??
+          'Please wait for the previous sign-in cleanup to finish.';
+      phoneAuthError = error;
+      notifyListeners();
+      onError(error);
+      return;
+    }
+    if (isPhoneAuthLoading || _pendingCredentialSignIn != null) return;
     final cleanCode = smsCode.trim();
     if (cleanCode.length != 6) {
       const err = 'Please enter a valid 6-digit OTP.';
@@ -2432,8 +3209,14 @@ class AppState extends ChangeNotifier {
       return;
     }
 
-    if (!await beginAuthentication()) {
-      final err = signOutError ?? 'Could not start sign-in. Please retry.';
+    isPhoneAuthLoading = true;
+    phoneAuthError = null;
+    notifyListeners();
+    if (!await beginAuthentication(method: SignInMethod.phone)) {
+      isPhoneAuthLoading = false;
+      final err =
+          signOutError ??
+          'Another sign-in is already in progress. Please finish it or retry.';
       phoneAuthError = err;
       notifyListeners();
       onError(err);
@@ -2441,8 +3224,7 @@ class AppState extends ChangeNotifier {
     }
     final authAttemptGeneration = _sessionGeneration;
 
-    isPhoneAuthLoading = true;
-    phoneAuthError = null;
+    lastAuthErrorCode = null;
     notifyListeners();
 
     Future<UserCredential>? pending;
@@ -2485,6 +3267,7 @@ class AppState extends ChangeNotifier {
 
   String _mapAuthException(dynamic e) {
     if (e is FirebaseAuthException) {
+      lastAuthErrorCode = e.code;
       switch (e.code) {
         case 'invalid-phone-number':
           return 'The phone number entered is invalid. Please check the number and try again.';
@@ -2504,6 +3287,16 @@ class AppState extends ChangeNotifier {
           return 'This user account has been disabled.';
         case 'operation-not-allowed':
           return 'Phone authentication is not enabled in Firebase Console.';
+        case 'app-not-authorized':
+          return 'Device app verification failed. Please ensure the app is installed from an authorized source with valid signing certificates registered in Firebase.';
+        case 'captcha-check-failed':
+          return 'reCAPTCHA verification failed or was cancelled. Please try again.';
+        case 'missing-client-identifier':
+          return 'Device verification could not be completed. Ensure Google Play Services are available and up to date.';
+        case 'invalid-app-credential':
+          return 'App verification failed. Please verify that your app is up to date and try again.';
+        case 'billing-not-enabled':
+          return 'SMS service is currently unavailable for this project. Please contact support.';
         default:
           if (e.message != null && e.message!.isNotEmpty) {
             return e.message!;
@@ -2513,6 +3306,9 @@ class AppState extends ChangeNotifier {
     }
     return e.toString();
   }
+
+  @visibleForTesting
+  String mapAuthException(dynamic e) => _mapAuthException(e);
 
   Future<bool> sendDeletionReauthOtp({
     void Function(String verificationId)? onCodeSent,
@@ -2629,13 +3425,19 @@ class AppState extends ChangeNotifier {
       );
       if (deletionResult['success'] != true ||
           deletionResult['completed'] != true) {
-        deletionError = deletionResult['leaseActive'] == true
-            ? 'Account deletion is already in progress. Keep your session active and try again shortly.'
-            : 'The account deletion service has not confirmed completion. Your session is still active; retry after checking the account status.';
+        deletionError =
+            deletionResult['leaseActive'] == true
+                ? 'Account deletion is already in progress. Keep your session active and try again shortly.'
+                : 'The account deletion service has not confirmed completion. Your session is still active; retry after checking the account status.';
         return false;
       }
 
       _clearCloudAccountState();
+      try {
+        if (_profilePhotoStore != null || profilePhotoPath != null) {
+          await profilePhotoStore.clear(user.uid);
+        }
+      } catch (_) {}
       try {
         await firestoreService.firestore.clearPersistence();
       } catch (_) {}
@@ -2648,6 +3450,7 @@ class AppState extends ChangeNotifier {
       isDemoMode = true;
       deletionSuccessMessage =
           'Your account and personal data have been permanently deleted.';
+      _navigationStack.clear();
       page = 'splash';
       return true;
     } catch (e) {
