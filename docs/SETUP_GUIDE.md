@@ -52,7 +52,7 @@ flutter analyze
 From the repository root, with Java available:
 
 ~~~powershell
-npx firebase-tools emulators:exec --only firestore,auth --project demo-parchipocket-phase2 "node test_rules.js"
+npx firebase-tools emulators:exec --only firestore,auth --project demo-parchipocket-phase4 "node test_rules.js"
 ~~~
 
 Use a demo-* project ID for emulator tests. Never point the test harness at production Firebase.
