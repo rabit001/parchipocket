@@ -14,7 +14,7 @@ android {
     namespace 'com.csdcorp.speech_to_text'
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
-    
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -41,4 +41,3 @@ android {
 dependencies {
     testImplementation 'junit:junit:4.13.2'
 }
-

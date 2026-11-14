@@ -305,7 +305,7 @@ public class SpeechToTextPlugin: NSObject, FlutterPlugin {
     guard !soundKey.isEmpty else {
       return player
     }
-    
+
     if let soundPath = Bundle.main.path(forResource: soundKey, ofType: nil) {
       let soundUrl = URL(fileURLWithPath: soundPath)
       do {
@@ -870,14 +870,14 @@ private class SpeechResultAggregator {
     private var previousTranscriptions: [[SFTranscription]]
     private let isFinal: Bool
     private let interimFinal: Bool
-    
+
     init() {
         speechTranscriptions = []
         previousTranscriptions = []
         isFinal = false
         interimFinal = false
     }
-    
+
     init( withTranscriptions: [SFTranscription], final: Bool, maybeFinal: Bool) {
         speechTranscriptions = []
         speechTranscriptions.append( contentsOf: withTranscriptions)
@@ -885,7 +885,7 @@ private class SpeechResultAggregator {
         isFinal = final
         interimFinal = maybeFinal
     }
-    
+
     init( withTranscriptions: [SFTranscription], existingTranscriptions: [[SFTranscription]], final: Bool, maybeFinal: Bool) {
         speechTranscriptions = []
         speechTranscriptions.append( contentsOf: withTranscriptions)
@@ -894,7 +894,7 @@ private class SpeechResultAggregator {
         isFinal = final
         interimFinal = maybeFinal
     }
-    
+
     /// returns a new SpeechResultAggregator.
     /// If the existing aggregator has no content then return a new aggregator with just the
     /// new content. If the existing is not empty and keepPrevious is true then append the
@@ -909,19 +909,19 @@ private class SpeechResultAggregator {
         }
         return SpeechResultAggregator(withTranscriptions: newResult, existingTranscriptions: previousTranscriptions, final: isFinal, maybeFinal: maybeFinal)
     }
-    
+
     public var isEmpty: Bool {
         get {
             speechTranscriptions.isEmpty
         }
     }
-    
+
     public var hasPreviousTranscriptions: Bool {
         get {
             return !previousTranscriptions.isEmpty
         }
     }
-    
+
     /// If there are previous transcriptions then generate a new transcription and insert it as
     /// the first entry in the returned results.
     /// This behaviour was created to handle an apparent bug in the iOS speech
@@ -965,7 +965,7 @@ private class SpeechResultAggregator {
         return SpeechRecognitionResult(alternates: speechWords, resultType: isFinal ? ResultType.finalResult.rawValue : ResultType.partial.rawValue )
 
     }
-    
+
     private func confidenceIn(_ transcription: SFTranscription) -> Decimal {
       guard transcription.segments.count > 0 else {
         return 0

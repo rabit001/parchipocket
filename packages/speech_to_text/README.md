@@ -25,13 +25,13 @@ _speech: means most speech recognition features work. Platforms with build but n
 ## Recent Updates
 
 7.3.0
-* Now supports speech recognition on Windows with many thanks to @asherchok 
-for the PR! Note that Windows support is currently in beta, if anyone can try 
-it out please provide feedback, there are known issues and this is not yet 
-ready for production use. 
+* Now supports speech recognition on Windows with many thanks to @asherchok
+for the PR! Note that Windows support is currently in beta, if anyone can try
+it out please provide feedback, there are known issues and this is not yet
+ready for production use.
 * iOS and Mac speech recognition does more work in the background avoiding UI pauses
 
-7.0.0 
+7.0.0
 * Now supports speech recognition on MacOS with many thanks to @alexrabin-sentracam for the PR!
 * Now supports WASM compliation for web with many thanks to yeikel16 for the PR!
 
@@ -231,7 +231,7 @@ When running the macOS app through VSCode, the app will crash when requesting pe
 
 You can only request permissions if you run the app directly from Xcode.
 
-If you are upgrading an existing MacOS app to use the new plugin don't forget to update your dependencies 
+If you are upgrading an existing MacOS app to use the new plugin don't forget to update your dependencies
 and the pods by opening the project directory in your terminal and:
 ```
 flutter clean
@@ -322,7 +322,7 @@ Accessibility -> Spoken content -> Voices
 From there select any language and any speaker and it should download to the device. After that speech
 recognition should work on the simulator.
 
-_Using a Bluetooth headset with your Mac may cause an issue with the simulator speech recognition, 
+_Using a Bluetooth headset with your Mac may cause an issue with the simulator speech recognition,
 see: https://github.com/csdcorp/speech_to_text/issues/539 for details._
 
 ### Speech recognition stops after a brief pause on Android
