@@ -2,7 +2,7 @@
 
 ### Everyday spending, easier to track.
 
-![ParchiPocket logo](ParchiPocket_Brand_Assets/parchipocket_logo_horizontal_dark.png)
+![ParchiPocket logo](ParchiPocket_Brand_Assets/parchipocket_logo_horizontal.png)
 
 [![Backend validation](https://github.com/rabit001/parchipocket/actions/workflows/backend-validation.yml/badge.svg)](https://github.com/rabit001/parchipocket/actions/workflows/backend-validation.yml)
 [![Flutter 3.47.9](https://img.shields.io/badge/Flutter-3.47.9-02569B?logo=flutter)](https://flutter.dev/)
