@@ -40,3 +40,26 @@ firestore-debug.log.*
 
 # Local Android APK/AAB artifacts; keep out of Git history
 /release-assets/
+
+# Local environment files and credentials
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+*service-account*.json
+*firebase-adminsdk*.json
+application_default_credentials.json
+functions/.runtimeconfig.json
+
+# Firebase local state and debug output
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+
+# Terraform local state
+.terraform/
+*.tfstate
+*.tfstate.*
