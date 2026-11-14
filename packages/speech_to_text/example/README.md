@@ -1,8 +1,8 @@
 # speech_to_text_example
 
-Demonstrates how to use the speech_to_text plugin. This example requires 
-that the plugin has been installed. It initializes speech recognition, 
-listens for words and prints them.  
+Demonstrates how to use the speech_to_text plugin. This example requires
+that the plugin has been installed. It initializes speech recognition,
+listens for words and prints them.
 
 
 ## Source
@@ -117,21 +117,21 @@ class _MyAppState extends State<MyApp> {
     lastError = "";
     speech.listen(onResult: resultListener );
     setState(() {
-      
+
     });
   }
 
   void stopListening() {
     speech.stop( );
     setState(() {
-      
+
     });
   }
 
   void cancelListening() {
     speech.cancel( );
     setState(() {
-      
+
     });
   }
 
