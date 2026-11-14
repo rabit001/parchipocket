@@ -1,117 +1,122 @@
 # Developer Setup Guide
 
-Instructions target Windows, Flutter, Android Studio, and Firebase CLI.
+These instructions target Windows, Flutter, Android Studio, Java, Node.js, and the Firebase Emulator Suite.
 
 ## 1. Open the project
 
-Open `mobile/parchipocket_flutter/` in Android Studio, the folder containing `pubspec.yaml`.
+Open the repository root in your editor, then open mobile/parchipocket_flutter/ in Android Studio. The Flutter project directory is the one containing pubspec.yaml.
 
-## 2. Verify Flutter and Android tools
+## 2. Install and verify tools
 
-```powershell
+The repository's GitHub Actions workflows pin Flutter 3.47.9 and Java 21. Use the same versions when reproducing CI locally.
+
+~~~powershell
 flutter --version
 flutter doctor
+java -version
+node --version
+npm --version
+~~~
+
+Fetch Flutter dependencies:
+
+~~~powershell
+cd mobile/parchipocket_flutter
 flutter pub get
+~~~
+
+## 3. Run the Android app
+
+From mobile/parchipocket_flutter/:
+
+~~~powershell
 flutter devices
-```
-
-In Android Studio, find the SDK path at **File → Settings → Languages & Frameworks → Android SDK**. ADB is under `<Android SDK Location>\platform-tools\adb.exe`.
-
-If an emulator shows as `offline`:
-1. Do not launch the same AVD again if Android Studio says it is already running.
-2. Use the full path to `adb.exe` for `kill-server`, `start-server`, and `devices -l`.
-3. Stop and cold-boot the existing AVD if it remains offline.
-4. Avoid **Wipe Data** unless you intend to discard virtual-device data.
-
-## 3. Run the app
-
-```powershell
-flutter pub get
 flutter run
-```
+~~~
 
-The Google button is a demo route. Phone sign-in uses Firebase Auth; real SMS delivery depends on Phone provider configuration and the applicable billing plan. Use configured Firebase test numbers during development.
+The app uses Firebase Authentication and Cloud Firestore for supported authenticated sessions. Google Sign-In is integrated through Firebase Authentication. Phone sign-in uses Firebase Phone Auth; real SMS delivery depends on Phone provider configuration, quotas, allowed test numbers, and applicable billing.
 
-## 4. Run unit/widget tests and analysis
+Demo mode is a separate local session with in-memory sample data. It is not a cloud account or persistent ledger.
 
-From `mobile/parchipocket_flutter`:
+## 4. Run Flutter tests and analysis
 
-```powershell
+From mobile/parchipocket_flutter/:
+
+~~~powershell
 flutter test --reporter compact
 flutter analyze
-```
+~~~
 
-## 5. Firestore Rules harness
+## 5. Run Firestore and Auth rules tests
 
 From the repository root, with Java available:
 
-```powershell
-npx firebase-tools emulators:exec --only firestore,auth --project demo-parchipocket-ci "node test_rules.js"
-```
+~~~powershell
+npx firebase-tools emulators:exec --only firestore,auth --project demo-parchipocket-phase2 "node test_rules.js"
+~~~
 
-This harness must use a `demo-*` project ID. Never run it against production Firebase.
+Use a demo-* project ID for emulator tests. Never point the test harness at production Firebase.
 
-## 6. Android emulator integration tests
+For the repository's combined local verification command:
 
-Use the repository-root `firebase.json` to configure local Auth and Firestore emulators, then start an Android emulator. From `mobile/parchipocket_flutter`, run:
+~~~powershell
+.\scripts\verify-backend.ps1
+~~~
 
-```powershell
+## 6. Run Android emulator integration tests
+
+Use the repository-root firebase.json to configure local Auth and Firestore emulators, then start an Android emulator. From mobile/parchipocket_flutter/, run:
+
+~~~powershell
 flutter test integration_test/firestore_service_emulator_test.dart -d emulator-5554 --reporter compact
 flutter test integration_test/daily_log_pagination_emulator_test.dart -d emulator-5554 --reporter compact
-```
+~~~
 
-The Android emulator connects to the host through `10.0.2.2`. If the host machine cannot start Java loopback selectors, do not count the attempt as a pass; use the GitHub Actions workflow or fix the host environment first.
-
-For the same checks in one command, run `.\scripts\verify-backend.ps1` from the repository root for unit/widget tests, analysis, and rules checks. The hosted GitHub Actions workflow additionally runs both Android emulator integration tests.
+The Android emulator connects to the host through 10.0.2.2. If an emulator fails to start or a test cannot reach the emulators, do not count the attempt as a pass. The hosted GitHub Actions workflow runs the configured integration suite for pull requests to main.
 
 ## 7. Firebase configuration and deployment
 
-The Android app config points to Firebase project `parchipocket`. Before production deployment:
-- Confirm the target Firebase project in Firebase Console.
-- Review the `firestore.rules` diff.
-- Run the Rules harness and both Dart integration tests successfully.
-- Confirm Phone provider, App Check providers, and enforcement status separately.
+The Android app is configured for Firebase project parchipocket. Before any production deployment:
 
-Pushing to GitHub does **not** deploy Firestore rules or Functions. A manual deployment command is documented in [BACKEND_RUNBOOK.md](BACKEND_RUNBOOK.md). Do not deploy rules merely to suppress a permission error.
+- Confirm the target project in Firebase Console.
+- Review the complete firestore.rules diff.
+- Run the Rules harness and relevant Dart integration tests.
+- Confirm Phone provider, App Check providers, and enforcement separately.
+- Deploy only the explicitly intended Firebase service.
 
-## Troubleshooting
+Pushing to GitHub does not deploy Firestore rules, Cloud Functions, or Hosting. See Backend Runbook before deployment.
 
-- **Flutter not recognised:** add Flutter's `bin` folder to PATH and reopen Terminal.
-- **ADB not found:** use the full SDK path plus `\platform-tools\adb.exe`.
-- **Emulator offline:** restart ADB and stop/cold-boot the existing device; do not create duplicate AVDs as a first step.
-- **Permission denied on claims index:** verify whether demo mode is accessing the cloud; for an authenticated cloud session, check whether deployed rules match reviewed repository rules.
-- **Data is absent in demo mode after restart:** expected because sample demo state is in memory.
+## 8. Firebase App Check for account deletion
 
-
-## 8. Firebase App Check setup for account deletion
-
-The account-deletion callable is configured with `enforceAppCheck: true`. Do not deploy the updated function until both supported clients are registered and configured in the same Firebase project.
+The account-deletion callable uses App Check enforcement. Both supported clients must be configured in the same Firebase project before deploying the function.
 
 ### Android app
 
-1. In Firebase Console, open **Security → App Check → Apps** and register the Android app with **Play Integrity** for release builds.
-2. Add the SHA-256 signing-certificate fingerprint(s) for the certificates that sign distributed APKs. Link the Play Integrity API to the same Google Cloud project when the Play Console flow requires it.
-3. Debug builds use `AndroidProvider.debug`. Run a debug build, obtain the generated App Check debug token from local device logs, and allowlist it under the Android app's **Manage debug tokens** page.
-4. Treat debug tokens like passwords: keep them private, never commit them, and remove tokens that are no longer needed.
+1. Register the Android app under Firebase Console → App Check.
+2. Configure Play Integrity for release builds and add the SHA-256 signing-certificate fingerprints for distributed APKs.
+3. Debug builds use the App Check debug provider. Allowlist debug tokens only for known development devices.
+4. Treat debug tokens like passwords. Never commit or share them.
 
 ### Web account-deletion portal
 
-The deletion page is a separate Firebase Web app client. Register a Web app in the same Firebase project and register App Check for it with the reCAPTCHA v3 provider. The current portal uses the reCAPTCHA v3 compat activation API and does not support a reCAPTCHA Enterprise site key.
+The deletion page is a separate Firebase Web app client. Register the Web app and configure its App Check provider. The page intentionally disables OTP/deletion actions while required public configuration is missing or still a placeholder.
 
-In `public/delete-account/index.html`, replace these public configuration placeholders with values from the registered Firebase Web app and its App Check registration:
-
-- `__FIREBASE_WEB_APP_ID__`: the Web app ID (not the Android app ID).
-- `__FIREBASE_APP_CHECK_RECAPTCHA_SITE_KEY__`: the matching public reCAPTCHA v3 site key.
-
-The reCAPTCHA secret key belongs only in Firebase/Google Console. Never put it in HTML or Git. The page intentionally disables OTP/deletion actions while either public setting is missing or still a placeholder. The Firebase Functions callable SDK attaches its App Check token automatically after the Web SDK is activated.
+The reCAPTCHA secret key belongs only in Firebase/Google Console. Never place it in HTML or Git.
 
 ### Safe rollout order
 
-1. Register Android and Web apps and finish provider configuration in Firebase Console.
-2. Allowlist debug tokens only for testers, then install a debug APK and verify App Check tokens are issued.
-3. Set the Web app ID and reCAPTCHA site key in the deletion page, deploy Hosting, and test the full web OTP/deletion flow with a disposable test account.
-4. Deploy only the account-deletion function after both clients are ready:
-   `firebase deploy --only functions:deleteUserAccount --project parchipocket`
-5. Monitor App Check metrics and function errors before enabling broader Firestore/Auth enforcement. Do not enable project-wide or unrelated service enforcement as part of this function-only change.
+1. Register Android and Web apps and finish provider configuration.
+2. Allowlist debug tokens only for test devices and verify token issuance.
+3. Configure the deletion page's public Web app/App Check values and test with a disposable account.
+4. Deploy only the intended Cloud Function after both clients are ready.
+5. Monitor App Check metrics and function errors before enabling broader enforcement.
 
-This repository change does not register Firebase apps, create a reCAPTCHA key, allowlist debug tokens, or deploy Hosting/Functions. Those are separate Firebase Console and deployment actions.
+These steps do not register Firebase apps, create reCAPTCHA keys, allowlist debug tokens, or deploy services automatically.
+
+## Troubleshooting
+
+- **Flutter not recognised:** add Flutter's bin directory to PATH and reopen the terminal.
+- **Android SDK tools missing:** verify the SDK path in Android Studio settings.
+- **Emulator offline:** stop and cold-boot the existing AVD; avoid wiping data unless intentional.
+- **Permission denied:** determine whether the request is expected to use demo mode or an authenticated cloud session, then inspect the deployed rules for the intended Firebase project.
+- **Demo data disappears after restart:** expected; demo state is in memory.
