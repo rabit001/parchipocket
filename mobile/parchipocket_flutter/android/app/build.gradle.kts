@@ -11,6 +11,10 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+dependencies {
+    implementation("androidx.core:core-ktx:1.15.0")
+}
+
 // Production release signing configuration loader
 // Reads from android/key.properties (or android/app/key.properties) or environment variables.
 val keystorePropertiesFile = listOf(

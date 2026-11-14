@@ -24,15 +24,7 @@ class CustomerProfileScreen extends StatelessWidget {
         bottomTab: 'customerProfile',
         body: ListView(children: <Widget>[
           const SizedBox(height: 6),
-          Center(
-              child: CircleAvatar(
-                  radius: 35,
-                  backgroundColor: PpColors.soft,
-                  child: Text(initials.isEmpty ? 'PP' : initials,
-                      style: const TextStyle(
-                          color: PpColors.forest,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800)))),
+          Center(child: _ProfilePhotoControl(state: state, initials: initials)),
           const SizedBox(height: 11),
           Center(
               child: Text(state.customerName,
@@ -119,12 +111,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       TextEditingController(text: widget.state.customerEmail);
   late final TextEditingController city =
       TextEditingController(text: widget.state.city);
+  late final TextEditingController mobile = TextEditingController(
+    text: widget.state.profileMobileNumber.isNotEmpty
+        ? widget.state.profileMobileNumber
+        : widget.state.phoneNumber,
+  );
   bool _isSubmitting = false;
   @override
   void dispose() {
     name.dispose();
     email.dispose();
     city.dispose();
+    mobile.dispose();
     super.dispose();
   }
 
@@ -135,12 +133,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       backTo: 'customerProfile',
       body: ListView(children: <Widget>[
         const SizedBox(height: 8),
-        const Center(
-            child: CircleAvatar(
-                radius: 33,
-                backgroundColor: PpColors.soft,
-                child: Icon(Icons.person_outline,
-                    color: PpColors.forest, size: 32))),
+        Center(
+          child: _ProfilePhotoControl(
+            state: widget.state,
+            initials: widget.state.customerName
+                .trim()
+                .split(RegExp(r'\s+'))
+                .where((part) => part.isNotEmpty)
+                .take(2)
+                .map((part) => part[0].toUpperCase())
+                .join(),
+          ),
+        ),
         const SizedBox(height: 16),
         PpField(label: 'Full name', controller: name, hint: 'Enter your name'),
         const SizedBox(height: 15),
@@ -151,11 +155,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 color: PpColors.secondary)),
         const SizedBox(height: 7),
         TextField(
-          readOnly: true,
-          decoration: InputDecoration(
-            hintText: widget.state.phoneNumber.isNotEmpty
-                ? widget.state.phoneNumber
-                : '+91 Verified Number',
+          key: const ValueKey('profile-mobile-number'),
+          controller: mobile,
+          keyboardType: TextInputType.phone,
+          textInputAction: TextInputAction.next,
+          maxLength: 16,
+          decoration: const InputDecoration(
+            hintText: '+91 98765 43210',
+            helperText: 'Optional. This number is not verified by this form.',
           ),
         ),
         const SizedBox(height: 15),
@@ -178,6 +185,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         name: name.text,
                         email: email.text,
                         location: city.text,
+                        mobileNumber: mobile.text,
+                        updateMobileNumber: true,
                         successPage: null,
                       );
                       if (!mounted) return;
@@ -187,7 +196,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               : 'Profile updated in cloud.')
                           : 'Profile was not saved: ${widget.state.cloudError ?? 'Please wait for other account work to finish and retry.'}';
                       messenger.showSnackBar(SnackBar(content: Text(msg)));
-                      if (success) widget.state.go('customerProfile');
+                      if (success) {
+                        widget.state.popPage(fallback: 'customerProfile');
+                      }
                     } catch (error) {
                       if (!mounted) return;
                       messenger.showSnackBar(
@@ -200,4 +211,147 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     }
                   }),
       ]));
+}
+
+class _ProfilePhotoControl extends StatefulWidget {
+  const _ProfilePhotoControl({required this.state, required this.initials});
+
+  final AppState state;
+  final String initials;
+
+  @override
+  State<_ProfilePhotoControl> createState() => _ProfilePhotoControlState();
+}
+
+class _ProfilePhotoControlState extends State<_ProfilePhotoControl> {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(widget.state.loadProfilePhoto());
+  }
+
+  Widget _fallback() => Center(
+        child: Text(
+          widget.initials.isEmpty ? 'PP' : widget.initials,
+          style: const TextStyle(
+            color: PpColors.forest,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+
+  Widget _photo() {
+    final localPath = widget.state.profilePhotoPath;
+    if (localPath != null) {
+      return Image.file(
+        File(localPath),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _fallback(),
+      );
+    }
+    final photoUrl = widget.state.auth?.currentUser?.photoURL;
+    if (photoUrl != null && photoUrl.isNotEmpty) {
+      return Image.network(
+        photoUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _fallback(),
+      );
+    }
+    return _fallback();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: widget.state,
+        builder: (context, _) => Column(
+          children: [
+            ClipOval(
+              child: ColoredBox(
+                color: PpColors.soft,
+                child: SizedBox(width: 70, height: 70, child: _photo()),
+              ),
+            ),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              children: [
+                TextButton.icon(
+                  key: const ValueKey('profile-photo-action'),
+                  onPressed: widget.state.isProfilePhotoLoading
+                      ? null
+                      : () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          final success =
+                              await widget.state.chooseProfilePhoto();
+                          if (!mounted || success) return;
+                          final message = widget.state.profilePhotoError;
+                          if (message != null) {
+                            messenger.showSnackBar(
+                              SnackBar(content: Text(message)),
+                            );
+                          }
+                        },
+                  icon: widget.state.isProfilePhotoLoading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.photo_camera_outlined, size: 17),
+                  label: Text(widget.state.profilePhotoPath == null
+                      ? 'Add photo'
+                      : 'Change photo'),
+                ),
+                if (widget.state.profilePhotoPath != null)
+                  TextButton.icon(
+                    key: const ValueKey('profile-photo-remove-action'),
+                    onPressed: widget.state.isProfilePhotoLoading
+                        ? null
+                        : () async {
+                            final messenger = ScaffoldMessenger.of(context);
+                            final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (dialogContext) => AlertDialog(
+                                title: const Text('Remove photo'),
+                                content: const Text(
+                                  'Are you sure you want to remove your custom profile photo from this device?',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(dialogContext).pop(false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () =>
+                                        Navigator.of(dialogContext).pop(true),
+                                    child: const Text('Remove'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirmed != true || !mounted) return;
+                            final success =
+                                await widget.state.removeProfilePhoto();
+                            if (!mounted || success) return;
+                            final message = widget.state.profilePhotoError;
+                            if (message != null) {
+                              messenger.showSnackBar(
+                                SnackBar(content: Text(message)),
+                              );
+                            }
+                          },
+                    icon: const Icon(Icons.delete_outline_rounded, size: 17),
+                    label: const Text('Remove photo'),
+                  ),
+              ],
+            ),
+            const Text(
+              'Profile photos are saved on this device only.',
+              style: TextStyle(fontSize: 10, color: PpColors.secondary),
+            ),
+          ],
+        ),
+      );
 }

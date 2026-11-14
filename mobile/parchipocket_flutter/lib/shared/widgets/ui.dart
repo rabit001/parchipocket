@@ -2,12 +2,59 @@ import 'package:flutter/material.dart';
 import '../../core/state/app_state.dart';
 import '../theme/theme.dart';
 
+class PpBrandLogo extends StatelessWidget {
+  const PpBrandLogo({super.key, this.height = 56});
+
+  static const imageKey = ValueKey<String>('parchipocket-brand-logo');
+  static const lightAsset = 'assets/branding/parchipocket_logo_horizontal.png';
+  static const darkAsset =
+      'assets/branding/parchipocket_logo_horizontal_dark.png';
+  static const _aspectRatio = 1094 / 300;
+
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final asset =
+        Theme.of(context).brightness == Brightness.dark ? darkAsset : lightAsset;
+    return Image.asset(
+      asset,
+      key: imageKey,
+      width: height * _aspectRatio,
+      height: height,
+      fit: BoxFit.contain,
+      semanticLabel: 'ParchiPocket',
+    );
+  }
+}
+
+class AppBackNavigationHandler extends StatelessWidget {
+  const AppBackNavigationHandler({
+    super.key,
+    required this.state,
+    required this.child,
+  });
+
+  final AppState state;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => PopScope<Object?>(
+        canPop: !state.canPopPage,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) state.popPage();
+        },
+        child: child,
+      );
+}
+
 class PpScaffold extends StatelessWidget {
   const PpScaffold({
     super.key,
     required this.state,
     required this.title,
     required this.body,
+    this.titleWidget,
     this.backTo,
     this.showBack = true,
     this.bottomTab,
@@ -18,6 +65,7 @@ class PpScaffold extends StatelessWidget {
 
   final AppState state;
   final String title;
+  final Widget? titleWidget;
   final Widget body;
   final String? backTo;
   final bool showBack;
@@ -62,10 +110,10 @@ class PpScaffold extends StatelessWidget {
             ? IconButton(
                 tooltip: 'Back',
                 icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
-                onPressed: () => state.go(backTo ?? _homePage),
+                onPressed: () => state.popPage(fallback: backTo ?? _homePage),
               )
             : null,
-        title: Text(title),
+        title: titleWidget ?? Text(title),
         actions: trailing == null ? null : <Widget>[trailing!],
       ),
       body: SafeArea(
@@ -204,7 +252,8 @@ class PpScaffold extends StatelessWidget {
                   .indexWhere((tab) => tab.route == (bottomTab ?? state.page))
                   .clamp(0, _tabs.length - 1)
                   .toInt(),
-              onDestinationSelected: (index) => state.go(_tabs[index].route),
+              onDestinationSelected: (index) =>
+                  state.selectTab(_tabs[index].route),
               destinations: _tabs
                   .map((tab) => NavigationDestination(
                       icon: Icon(tab.icon), label: tab.label))

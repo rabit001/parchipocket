@@ -1,24 +1,35 @@
 # Android Release Artifacts
 
-APK/AAB files are build outputs, not application source. Do not commit them into the Flutter source tree. The local packaging script writes to the root `release-assets/` directory, which is ignored by Git.
+APK/AAB files are build outputs, not application source. Do not commit them into the Flutter source tree. Local packaging scripts write to the ignored root-level release-assets directory.
 
-## Published GitHub debug release
+## Latest signed Beta
 
-The [latest published debug preview](https://github.com/rabit001/parchipocket/releases) is always linked through the Releases page. The preceding published preview was:
+**ParchiPocket Beta 0.1.5+5**
 
-- Release: [ParchiPocket v0.1.1 Debug Preview](https://github.com/rabit001/parchipocket/releases/tag/v0.1.1-debug)
-- APK asset: [app-debug.apk](https://github.com/rabit001/parchipocket/releases/download/v0.1.1-debug/app-debug.apk)
-- APK size: 180,323,122 bytes
-- APK SHA-256: `3cf6327ef7f084ec271f407ce1b5b5a594559095442773e65e0aed3278bfa24a`
-- Checksum asset: `app-debug.apk.sha256`
+- Release: [parchipocket-beta-v0.1.5-5](https://github.com/rabit001/parchipocket/releases/tag/parchipocket-beta-v0.1.5-5)
+- APK: [parchipocket-release.apk](https://github.com/rabit001/parchipocket/releases/download/parchipocket-beta-v0.1.5-5/parchipocket-release.apk)
+- SHA-256: `0bca2356aa0ba24b14310f7196af8793443045630db819e3007f0128bfadeea2`
+- Package ID: `com.parchipocket.app.parchipocket`
+- Version name: `0.1.5`
+- Android version code: `5`
+- Signing certificate SHA-256: `41:26:46:C1:E3:5B:96:22:9F:F4:63:8C:3A:C9:3B:D0:FB:0C:BC:1F:3F:41:27:37:03:B6:CB:90:30:A2:D8:3C`
+- Workflow: [GitHub Actions run 43647296051](https://github.com/rabit001/parchipocket/actions/runs/43647296051)
 
-This is a debug-signed testing build. It is not a production-signed APK or Play Store release.
+The APK is a signed Beta prerelease. It is not a Play Store production release. The Android package installer still requires user approval. Preserve the existing installation if Android reports a signing conflict; do not uninstall without a data-migration plan.
 
-The `v0.1.1-debug` release tag was created while the Flutter package metadata still said `0.1.0+1`. This cleanup updates the app package version to `0.1.2+2`; after this change reaches `main` and all checks pass, the next automatic debug release will be tagged `v0.1.2-debug`.
+## Release assets
+
+Each signed Beta prerelease contains:
+
+- parchipocket-release.apk
+- parchipocket-release.apk.sha256
+- app-update-manifest.json
+
+The manifest declares the Beta channel, Android package ID, version name, version code, APK asset name, SHA-256, release notes, and publication timestamp. The in-app updater checks release metadata, verifies the APK checksum, and hands the verified APK to Android's package installer.
 
 ## Standard local layout
 
-```text
+~~~text
 release-assets/
 └── android/
     ├── debug/
@@ -29,24 +40,31 @@ release-assets/
     │   └── parchipocket-release.aab
     └── checksums/
         └── SHA256SUMS.txt
-```
+~~~
 
-## Package a build on Windows
+## Package a local build on Windows
 
 Run from the repository root after building the app:
 
-```powershell
+~~~powershell
 .\scripts\package-android-artifacts.ps1 -Variant debug -ApkPath ".\mobile\parchipocket_flutter\build\app\outputs\flutter-apk\app-debug.apk"
 
 .\scripts\package-android-artifacts.ps1 -Variant release -ApkPath ".\mobile\parchipocket_flutter\build\app\outputs\flutter-apk\app-release.apk" -AabPath ".\mobile\parchipocket_flutter\build\app\outputs\bundle\release\app-release.aab"
-```
+~~~
 
-The script copies the supplied files, verifies the copy against the source with SHA-256, and regenerates `android/checksums/SHA256SUMS.txt`. It does not build, sign, or modify an APK/AAB.
+The script copies supplied files, verifies copies with SHA-256, and regenerates the checksum list. It does not build or sign APK/AAB files.
 
-## Automatic GitHub publishing
+## Publishing a signed Beta
 
-The `ParchiPocket backend validation` workflow builds the debug APK on pushes to `main`. It publishes the APK and a SHA-256 sidecar to a prerelease GitHub Release only after the Flutter tests, Firestore rules harness, and Android emulator integration job all pass.
+The workflow is .github/workflows/publish-beta-release.yml. After this repository's integration PR is merged, the workflow is intended to be manually dispatched from main using the protected direct-apk-release environment and its existing signing secrets.
 
-The release tag is derived from the app version in `mobile/parchipocket_flutter/pubspec.yaml`, followed by `-debug`. Increment both the semantic version and Android build number before preparing the next app release.
+Before dispatch:
 
-Keep production upload keystores and passwords outside the repository. Never commit signing credentials.
+1. Increment both the semantic version and Android build number in mobile/parchipocket_flutter/pubspec.yaml.
+2. Run Flutter tests, analysis, and relevant Firebase emulator checks.
+3. Review release notes and inspect the exact workflow inputs.
+4. Supply the already-approved release certificate SHA-256 fingerprint.
+5. Dispatch the workflow from main; do not create or reuse a published tag.
+6. Verify the package ID, signing certificate, APK checksum, manifest, prerelease status, and published assets.
+
+Never commit the upload keystore, passwords, private keys, or signing environment files. Keep the direct-apk-release environment protected.

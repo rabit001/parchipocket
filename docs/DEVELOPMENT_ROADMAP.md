@@ -1,26 +1,31 @@
 # Development Roadmap
 
-This roadmap describes the work remaining from the current Home & Family spending MVP. Completed items are based on code and automated checks on `main`; Firebase Console deployment and physical-device behaviour still require separate verification.
+This roadmap reflects the current ParchiPocket Beta direction. Completion is based on implementation and automated checks; Firebase Console configuration and physical-device behaviour require separate verification.
 
 ## Current baseline
 
-- [x] Flutter Android app organised by `core/`, `features/`, and `shared/`.
-- [x] Firebase Authentication phone sign-in flow integrated.
-- [x] Cloud Firestore persistence and owner-scoped security rules implemented for supported records.
+- [x] Flutter Android app organised by core, features, and shared layers.
+- [x] Firebase Authentication integration, including Google Sign-In.
+- [x] Firebase Phone Auth flow integrated; real SMS delivery remains environment-dependent.
+- [x] Cloud Firestore persistence and owner-scoped security rules for supported records.
 - [x] Explicit local demo mode separated from authenticated cloud sessions.
 - [x] Manual and voice-assisted household purchase entry with review-before-save.
-- [x] Household daily log, pagination, and category totals implemented.
+- [x] Household Daily Log, pagination, and category totals.
+- [x] Profile contact-number editing with explicit unverified status.
+- [x] Device-local profile photo selection, replacement, removal, and cleanup.
+- [x] Android launcher icon resources and signed Beta distribution.
+- [x] In-app Beta updater with release metadata and APK checksum verification.
 - [x] Receipt claim/copy flow and account-deletion backend implementation retained.
-- [x] Flutter unit/widget tests, static analysis, Firestore rules emulator harness, Android emulator integration, and debug APK build in GitHub Actions.
-- [x] Debug APK and SHA-256 checksum published through GitHub Releases.
+- [x] Flutter tests, static analysis, Firestore rules harness, Android emulator integration, and Android build validation in GitHub Actions.
 
 ## Stage 1: Stabilise real-device experience
 
-- [ ] Install the latest debug APK on a clean Android device and verify onboarding, phone login, profile setup, purchase entry, Daily Log, and settings.
-- [ ] Capture and resolve any remaining runtime errors from actual device logs/screenshots.
+- [ ] Verify Google Sign-In, profile updates, and account switching across test accounts.
+- [ ] Verify Android Back button and gesture behaviour across supported Android launchers/devices.
+- [ ] Verify photo picker cancellation, replacement, removal, and app-restart behaviour.
+- [ ] Verify Beta update check, Later dismissal, download, installer permission, and in-place update behaviour.
 - [ ] Verify Firebase Phone provider, SMS quota/billing, test numbers, and account recovery in the intended Firebase project.
 - [ ] Verify App Check enforcement and debug-token handling in Firebase Console.
-- [ ] Confirm Firestore rules deployed to the intended project match the reviewed repository rules.
 
 ## Stage 2: Household data reliability
 
@@ -39,11 +44,10 @@ This roadmap describes the work remaining from the current Home & Family spendin
 ## Stage 4: Production readiness
 
 - [ ] Complete privacy/data-retention review and support/incident ownership.
-- [ ] Configure production Android signing outside the repository.
 - [ ] Complete accessibility, performance, security, and recovery checks.
-- [ ] Prepare store listing, release notes, and Play Console compliance.
+- [ ] Prepare store listing and Play Console compliance.
 - [ ] Run a small pilot with consenting users and a documented issue log.
 
-## Not part of the current release
+## Not part of the current Beta
 
-Google OAuth, push notifications, live nearby-shop discovery, production PDF/printer support, and robust offline sync are not currently complete. Do not describe these as implemented until code and tests demonstrate the end-to-end behaviour.
+Push notifications, live nearby-shop discovery, production PDF/printer support, robust offline sync, cloud profile-photo sync, and Play Store production distribution are not currently complete. Do not describe these as implemented until code and tests demonstrate the end-to-end behaviour.

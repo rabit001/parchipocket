@@ -320,6 +320,33 @@ async function runTests() {
     expectedStatus: 200,
   });
 
+  await assertRule({
+    description: '2.2 User A can save a normalized profile mobile number',
+    method: 'PATCH',
+    path: '/users/userA',
+    data: wrapDocument({ ...validProfile, mobileNumber: '+919876543210' }),
+    userId: 'userA',
+    expectedStatus: 200,
+  });
+
+  await assertRule({
+    description: '2.3 User A cannot save a malformed profile mobile number',
+    method: 'PATCH',
+    path: '/users/userA',
+    data: wrapDocument({ ...validProfile, mobileNumber: '9876543210' }),
+    userId: 'userA',
+    expectedStatus: 403,
+  });
+
+  await assertRule({
+    description: '2.4 User A can remove their saved profile mobile number',
+    method: 'PATCH',
+    path: '/users/userA',
+    data: wrapDocument(validProfile),
+    userId: 'userA',
+    expectedStatus: 200,
+  });
+
   // 3. Cross-user access denied
   await assertRule({
     description: '3.1 User B denied read on User A profile',

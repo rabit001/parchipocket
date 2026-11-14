@@ -81,12 +81,13 @@ service cloud.firestore {
 
     function isValidProfile(data) {
       return data.keys().hasAll(['name', 'role', 'updatedAt']) &&
-             data.keys().hasOnly(['name', 'email', 'city', 'role', 'shopName', 'shopCategory', 'shopAddress', 'vendorName', 'vendorCategory', 'updatedAt']) &&
+             data.keys().hasOnly(['name', 'email', 'city', 'mobileNumber', 'role', 'shopName', 'shopCategory', 'shopAddress', 'vendorName', 'vendorCategory', 'updatedAt']) &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
              isValidRole(data.role) &&
              data.updatedAt is timestamp &&
              (!data.keys().hasAny(['email']) || (data.email is string && data.email.size() <= 100)) &&
              (!data.keys().hasAny(['city']) || (data.city is string && data.city.size() <= 100)) &&
+             (!data.keys().hasAny(['mobileNumber']) || (data.mobileNumber is string && data.mobileNumber.matches('^[+][1-9][0-9]{6,14}$'))) &&
              (!data.keys().hasAny(['shopName']) || (data.shopName is string && data.shopName.size() <= 100)) &&
              (!data.keys().hasAny(['shopCategory']) || (data.shopCategory is string && data.shopCategory.size() <= 50)) &&
              (!data.keys().hasAny(['shopAddress']) || (data.shopAddress is string && data.shopAddress.size() <= 200)) &&

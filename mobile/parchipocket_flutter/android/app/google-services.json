@@ -12,7 +12,28 @@
           "package_name": "com.parchipocket.app.parchipocket"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "1090179494873-gp5cvlf1lm64nrdu4shhtoagdpjit03v.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.parchipocket.app.parchipocket",
+            "certificate_hash": "eb4430a03c5813174fd8ebb24bde41b2a35cd5b5"
+          }
+        },
+        {
+          "client_id": "1090179494873-k3ude2ij0clh175a4maep0p6ren71p77.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.parchipocket.app.parchipocket",
+            "certificate_hash": "208f603aab5ef3707fbb91c3cfd558a5a35ebe02"
+          }
+        },
+        {
+          "client_id": "1090179494873-mntee7n1no9ph1afsp7dq0iicikvcot4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBb0yu_-oy8ukeEjGsWyIx69iZqA2sPOIo"
@@ -20,7 +41,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1090179494873-mntee7n1no9ph1afsp7dq0iicikvcot4.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

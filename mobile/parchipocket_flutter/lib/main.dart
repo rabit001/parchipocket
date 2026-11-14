@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/foundation.dart';
@@ -8,12 +10,15 @@ import 'app_check_activation.dart';
 import 'firebase_options.dart';
 import 'core/monitoring/telemetry.dart';
 import 'features/auth/presentation/auth_screens.dart';
+import 'features/app_update/presentation/app_update_manager.dart';
+import 'features/app_update/presentation/app_update_screen.dart';
 import 'features/settings/presentation/common_screens.dart';
 import 'features/customer/presentation/customer_screens.dart';
 import 'features/receipts/presentation/receipt_claim_screens.dart';
 import 'features/shop_owner/presentation/shop_screens.dart';
 import 'features/street_vendor/presentation/vendor_screens.dart';
 import 'shared/theme/theme.dart';
+import 'shared/widgets/ui.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,15 +28,14 @@ Future<void> main() async {
   } catch (e) {
     debugPrint('Could not initialize SharedPreferences: $e');
   }
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   final appCheckProviders = appCheckProvidersFor(debugMode: kDebugMode);
   await activateAppCheckSafely(
-    activate: () => FirebaseAppCheck.instance.activate(
-      androidProvider: appCheckProviders.android,
-      appleProvider: appCheckProviders.apple,
-    ),
+    activate:
+        () => FirebaseAppCheck.instance.activate(
+          androidProvider: appCheckProviders.android,
+          appleProvider: appCheckProviders.apple,
+        ),
     debugMode: kDebugMode,
     debugLog: debugPrint,
   );
@@ -40,18 +44,22 @@ Future<void> main() async {
     debugLog: debugPrint,
   );
   if (telemetryInitialized && kTelemetryDefaultEnabled) {
-    TelemetryService.instance.setupErrorHandlers(
-      telemetryEnabled: true,
-    );
+    TelemetryService.instance.setupErrorHandlers(telemetryEnabled: true);
   }
   runApp(ParchiPocketApp(prefs: prefs));
 }
 
 class ParchiPocketApp extends StatefulWidget {
-  const ParchiPocketApp({super.key, this.prefs, this.appState});
+  const ParchiPocketApp({
+    super.key,
+    this.prefs,
+    this.appState,
+    this.updateManager,
+  });
 
   final SharedPreferences? prefs;
   final AppState? appState;
+  final AppUpdateManager? updateManager;
 
   @override
   State<ParchiPocketApp> createState() => _ParchiPocketAppState();
@@ -60,6 +68,9 @@ class ParchiPocketApp extends StatefulWidget {
 class _ParchiPocketAppState extends State<ParchiPocketApp>
     with WidgetsBindingObserver {
   late final AppState state = widget.appState ?? AppState(prefs: widget.prefs);
+  late final AppUpdateManager updateManager =
+      widget.updateManager ??
+      AppUpdateManager.forAndroid(preferences: widget.prefs);
 
   @override
   void initState() {
@@ -70,6 +81,7 @@ class _ParchiPocketAppState extends State<ParchiPocketApp>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (widget.updateManager == null) updateManager.dispose();
     state.dispose();
     super.dispose();
   }
@@ -77,6 +89,7 @@ class _ParchiPocketAppState extends State<ParchiPocketApp>
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
     if (lifecycleState == AppLifecycleState.resumed) {
+      unawaited(updateManager.onAppResumed());
       if (state.isAuthenticated && !state.isDemoMode) {
         state.refreshHouseholdExpenses();
       }
@@ -84,78 +97,91 @@ class _ParchiPocketAppState extends State<ParchiPocketApp>
   }
 
   Widget _screenForCurrentPage() => switch (state.page) {
-        'authLoading' => AuthSessionLoadingScreen(state: state),
-        'profileLoadError' => ProfileLoadErrorScreen(state: state),
-        'splash' => SplashScreen(state: state),
-        'login' => LoginScreen(state: state),
-        'phoneLogin' => PhoneLoginScreen(state: state),
-        'verifyOtp' => OtpScreen(state: state),
-        'roleSelection' => RoleSelectionScreen(state: state),
-        'customerSetup' => CustomerSetupScreen(state: state),
-        'shopSetup' => ShopSetupScreen(state: state),
-        'vendorSetup' => VendorSetupScreen(state: state),
-        'customerHome' => CustomerHomeScreen(state: state),
-        'householdExpenses' => HouseholdExpensesScreen(state: state),
-        'householdExpenseEntry' => HouseholdExpenseEntryScreen(state: state),
-        'householdExpenseEntryManual' =>
-          HouseholdExpenseEntryScreen(state: state, initialMode: 'manual'),
-        'bills' => BillsScreen(state: state),
-        'billDetail' => BillDetailScreen(state: state),
-        'scan' => ScanBillScreen(state: state),
-        'issueReceiptClaim' => ReceiptClaimIssueScreen(state: state),
-        'insights' => InsightsScreen(state: state),
-        'nearbyShops' => NearbyShopsScreen(state: state),
-        'shopDetails' => ShopDetailsScreen(state: state),
-        'savedShops' => SavedShopsScreen(state: state),
-        'customerProfile' => CustomerProfileScreen(state: state),
-        'editProfile' => EditProfileScreen(state: state),
-        'shopHome' => ShopHomeScreen(state: state),
-        'createBill' => CreateBillScreen(state: state),
-        'receipt' => ReceiptScreen(state: state),
-        'billHistory' => BillHistoryScreen(state: state),
-        'expenses' => ExpensesScreen(state: state),
-        'expenseSaved' => ExpenseSavedScreen(state: state),
-        'udhaar' => UdhaarScreen(state: state),
-        'confirmSettlement' => ConfirmSettlementScreen(state: state),
-        'salesReports' => SalesReportsScreen(state: state),
-        'exportPreview' => ExportReportPreviewScreen(state: state),
-        'customers' => CustomerDirectoryScreen(state: state),
-        'printerSettings' => PrinterSettingsScreen(state: state),
-        'printerTest' => PrinterTestScreen(state: state),
-        'vendorHome' => VendorHomeScreen(state: state),
-        'vendorBill' => CreateBillScreen(state: state, vendorMode: true),
-        'vendorReceipt' => ReceiptScreen(state: state, vendorMode: true),
-        'vendorSales' => VendorSalesScreen(state: state),
-        'vendorProfile' => VendorProfileScreen(state: state),
-        'settings' => SettingsScreen(state: state),
-        'shopSettings' => ShopSettingsScreen(state: state),
-        'notifications' => NotificationsScreen(state: state),
-        'help' => HelpScreen(state: state),
-        'faqs' => FaqScreen(state: state),
-        'support' => SupportScreen(state: state),
-        'supportSubmitted' => SupportSubmittedScreen(state: state),
-        'shareReceipt' => ShareReceiptScreen(state: state),
-        'sharePreview' => SharePreviewScreen(state: state),
-        'logout' => LogoutScreen(state: state),
-        'privacy' => PrivacyScreen(state: state),
-        'deleteReview' => DeleteAccountReviewScreen(state: state),
-        'deleteConfirm' => DeleteAccountConfirmScreen(state: state),
-        'language' => LanguageScreen(state: state),
-        'about' => AboutScreen(state: state),
-        'search' => SearchScreen(state: state),
-        _ => SplashScreen(state: state),
-      };
+    'authLoading' => AuthSessionLoadingScreen(state: state),
+    'profileLoadError' => ProfileLoadErrorScreen(state: state),
+    'splash' => SplashScreen(state: state),
+    'login' => LoginScreen(state: state),
+    'phoneLogin' => PhoneLoginScreen(state: state),
+    'verifyOtp' => OtpScreen(state: state),
+    'roleSelection' => RoleSelectionScreen(state: state),
+    'customerSetup' => CustomerSetupScreen(state: state),
+    'shopSetup' => ShopSetupScreen(state: state),
+    'vendorSetup' => VendorSetupScreen(state: state),
+    'customerHome' => CustomerHomeScreen(state: state),
+    'householdExpenses' => HouseholdExpensesScreen(state: state),
+    'householdExpenseEntry' => HouseholdExpenseEntryScreen(state: state),
+    'householdExpenseEntryManual' => HouseholdExpenseEntryScreen(
+      state: state,
+      initialMode: 'manual',
+    ),
+    'bills' => BillsScreen(state: state),
+    'billDetail' => BillDetailScreen(state: state),
+    'scan' => ScanBillScreen(state: state),
+    'issueReceiptClaim' => ReceiptClaimIssueScreen(state: state),
+    'insights' => InsightsScreen(state: state),
+    'nearbyShops' => NearbyShopsScreen(state: state),
+    'shopDetails' => ShopDetailsScreen(state: state),
+    'savedShops' => SavedShopsScreen(state: state),
+    'customerProfile' => CustomerProfileScreen(state: state),
+    'editProfile' => EditProfileScreen(state: state),
+    'shopHome' => ShopHomeScreen(state: state),
+    'createBill' => CreateBillScreen(state: state),
+    'receipt' => ReceiptScreen(state: state),
+    'billHistory' => BillHistoryScreen(state: state),
+    'expenses' => ExpensesScreen(state: state),
+    'expenseSaved' => ExpenseSavedScreen(state: state),
+    'udhaar' => UdhaarScreen(state: state),
+    'confirmSettlement' => ConfirmSettlementScreen(state: state),
+    'salesReports' => SalesReportsScreen(state: state),
+    'exportPreview' => ExportReportPreviewScreen(state: state),
+    'customers' => CustomerDirectoryScreen(state: state),
+    'printerSettings' => PrinterSettingsScreen(state: state),
+    'printerTest' => PrinterTestScreen(state: state),
+    'vendorHome' => VendorHomeScreen(state: state),
+    'vendorBill' => CreateBillScreen(state: state, vendorMode: true),
+    'vendorReceipt' => ReceiptScreen(state: state, vendorMode: true),
+    'vendorSales' => VendorSalesScreen(state: state),
+    'vendorProfile' => VendorProfileScreen(state: state),
+    'settings' => SettingsScreen(state: state),
+    'appUpdates' => AppUpdateScreen(state: state, manager: updateManager),
+    'shopSettings' => ShopSettingsScreen(state: state),
+    'notifications' => NotificationsScreen(state: state),
+    'help' => HelpScreen(state: state),
+    'faqs' => FaqScreen(state: state),
+    'support' => SupportScreen(state: state),
+    'supportSubmitted' => SupportSubmittedScreen(state: state),
+    'shareReceipt' => ShareReceiptScreen(state: state),
+    'sharePreview' => SharePreviewScreen(state: state),
+    'logout' => LogoutScreen(state: state),
+    'privacy' => PrivacyScreen(state: state),
+    'deleteReview' => DeleteAccountReviewScreen(state: state),
+    'deleteConfirm' => DeleteAccountConfirmScreen(state: state),
+    'language' => LanguageScreen(state: state),
+    'about' => AboutScreen(state: state),
+    'search' => SearchScreen(state: state),
+    _ => SplashScreen(state: state),
+  };
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-        animation: state,
-        builder: (context, _) => MaterialApp(
+    animation: state,
+    builder:
+        (context, _) => MaterialApp(
           title: 'ParchiPocket',
           debugShowCheckedModeBanner: false,
           theme: buildPpTheme(),
           darkTheme: buildPpDarkTheme(),
           themeMode: state.themeMode,
-          home: _screenForCurrentPage(),
+          home: AppBackNavigationHandler(
+            state: state,
+            child: AppUpdatePromptHost(
+              manager: updateManager,
+              navigationReady:
+                  state.page != 'splash' && state.page != 'authLoading',
+              onOpenUpdates: () => state.go('appUpdates'),
+              child: _screenForCurrentPage(),
+            ),
+          ),
         ),
-      );
+  );
 }

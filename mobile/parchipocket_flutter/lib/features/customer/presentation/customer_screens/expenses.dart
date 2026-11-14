@@ -238,109 +238,117 @@ class _HouseholdExpensesScreenState extends State<HouseholdExpensesScreen> {
       body: RefreshIndicator(
         onRefresh: () => widget.state.refreshHouseholdExpenses(),
         child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          children: <Widget>[
-        PpMetricCard(
-          label: 'Recorded household spending',
-          value: money(total),
-          subtitle:
-              '${activeEntries.length} purchase entries${_showVoided && voidedCount > 0 ? ' · $voidedCount voided' : ''}',
-        ),
-        const SizedBox(height: 14),
-        PpPrimaryButton('Add a purchase',
-            icon: Icons.add_rounded,
-            onPressed: () => widget.state.go('householdExpenseEntry')),
-        const SizedBox(height: 18),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: <Widget>[
-            Expanded(
-              child: Builder(
-                builder: (ctx) {
-                  final isDark = Theme.of(ctx).brightness == Brightness.dark;
-                  return Text(
-                    'All entries',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: isDark ? const Color(0xFFE8EDE9) : PpColors.ink,
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: <Widget>[
+              PpMetricCard(
+                label: 'Recorded household spending',
+                value: money(total),
+                subtitle:
+                    '${activeEntries.length} purchase entries${_showVoided && voidedCount > 0 ? ' · $voidedCount voided' : ''}',
+              ),
+              const SizedBox(height: 14),
+              PpPrimaryButton('Add a purchase',
+                  icon: Icons.add_rounded,
+                  onPressed: () => widget.state.go('householdExpenseEntry')),
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: <Widget>[
+                  Expanded(
+                    child: Builder(
+                      builder: (ctx) {
+                        final isDark =
+                            Theme.of(ctx).brightness == Brightness.dark;
+                        return Text(
+                          'All entries',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color:
+                                isDark ? const Color(0xFFE8EDE9) : PpColors.ink,
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
-            ),
-            FilterChip(
-              label: Text(
-                _showVoided ? 'Showing voided' : 'Show voided entries',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: _showVoided ? FontWeight.w700 : FontWeight.w500,
-                  color: _showVoided ? PpColors.forest : PpColors.secondary,
-                ),
-              ),
-              selected: _showVoided,
-              onSelected: (val) => setState(() => _showVoided = val),
-              selectedColor: Theme.of(context).brightness == Brightness.dark
-                  ? const Color(0xFF243026)
-                  : PpColors.soft,
-              checkmarkColor: Theme.of(context).brightness == Brightness.dark
-                  ? PpColors.forestLight
-                  : PpColors.forest,
-            ),
-          ],
-        ),
-        const SizedBox(height: 7),
-        if (visibleEntries.isEmpty)
-          PpEmptyState(
-            icon: Icons.receipt_long_outlined,
-            title: 'Your daily log is empty',
-            message: _showVoided
-                ? 'No voided purchases found in your log.'
-                : 'Your saved purchases will appear here.',
-            actionLabel: _showVoided ? null : 'Add a purchase',
-            onAction: _showVoided
-                ? null
-                : () => widget.state.go('householdExpenseEntry'),
-          )
-        else
-          for (final entry in visibleEntries)
-            PpTransactionTile(
-              title: entry.title,
-              subtitle:
-                  '${entry.category} · ${formatShortDate(entry.effectiveDate)} · ${entry.source == 'voice' ? 'Voice' : 'Manual'}${entry.history.isNotEmpty ? ' · Edited' : ''}${entry.isVoided ? ' · Voided' : ''}',
-              trailing: money(entry.amount),
-              icon: entry.isVoided
-                  ? Icons.block_rounded
-                  : Icons.shopping_bag_outlined,
-              onTap: () => showDialog<void>(
-                context: context,
-                builder: (dialogContext) => HouseholdExpenseDetailDialog(
-                  state: widget.state,
-                  expense: entry,
-                ),
-              ),
-            ),
-        if (widget.state.hasMoreHouseholdExpenses) ...<Widget>[
-          const SizedBox(height: 12),
-          Center(
-            child: widget.state.isLoadingMoreHouseholdExpenses
-                ? const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                : TextButton.icon(
-                    onPressed: () => widget.state.loadMoreHouseholdExpenses(),
-                    icon: const Icon(Icons.expand_more, size: 18),
-                    label: const Text('Load older purchases'),
                   ),
-          ),
-        ],
-      ]),
-    ),);
+                  FilterChip(
+                    label: Text(
+                      _showVoided ? 'Showing voided' : 'Show voided entries',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight:
+                            _showVoided ? FontWeight.w700 : FontWeight.w500,
+                        color:
+                            _showVoided ? PpColors.forest : PpColors.secondary,
+                      ),
+                    ),
+                    selected: _showVoided,
+                    onSelected: (val) => setState(() => _showVoided = val),
+                    selectedColor:
+                        Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xFF243026)
+                            : PpColors.soft,
+                    checkmarkColor:
+                        Theme.of(context).brightness == Brightness.dark
+                            ? PpColors.forestLight
+                            : PpColors.forest,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 7),
+              if (visibleEntries.isEmpty)
+                PpEmptyState(
+                  icon: Icons.receipt_long_outlined,
+                  title: 'Your daily log is empty',
+                  message: _showVoided
+                      ? 'No voided purchases found in your log.'
+                      : 'Your saved purchases will appear here.',
+                  actionLabel: _showVoided ? null : 'Add a purchase',
+                  onAction: _showVoided
+                      ? null
+                      : () => widget.state.go('householdExpenseEntry'),
+                )
+              else
+                for (final entry in visibleEntries)
+                  PpTransactionTile(
+                    title: entry.title,
+                    subtitle:
+                        '${entry.category} · ${formatShortDate(entry.effectiveDate)} · ${entry.source == 'voice' ? 'Voice' : 'Manual'}${entry.history.isNotEmpty ? ' · Edited' : ''}${entry.isVoided ? ' · Voided' : ''}',
+                    trailing: money(entry.amount),
+                    icon: entry.isVoided
+                        ? Icons.block_rounded
+                        : Icons.shopping_bag_outlined,
+                    onTap: () => showDialog<void>(
+                      context: context,
+                      builder: (dialogContext) => HouseholdExpenseDetailDialog(
+                        state: widget.state,
+                        expense: entry,
+                      ),
+                    ),
+                  ),
+              if (widget.state.hasMoreHouseholdExpenses) ...<Widget>[
+                const SizedBox(height: 12),
+                Center(
+                  child: widget.state.isLoadingMoreHouseholdExpenses
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : TextButton.icon(
+                          onPressed: () =>
+                              widget.state.loadMoreHouseholdExpenses(),
+                          icon: const Icon(Icons.expand_more, size: 18),
+                          label: const Text('Load older purchases'),
+                        ),
+                ),
+              ],
+            ]),
+      ),
+    );
   }
 }
 
@@ -476,8 +484,7 @@ class HouseholdExpenseDetailDialog extends StatelessWidget {
               _buildDetailRow(
                   'Expense Date', formatExpenseDate(expense.effectiveDate)),
               const SizedBox(height: 8),
-              _buildDetailRow(
-                  'Recorded On', formatDateTime(expense.createdAt)),
+              _buildDetailRow('Recorded On', formatDateTime(expense.createdAt)),
               const SizedBox(height: 8),
               _buildDetailRow(
                 'Source',
@@ -506,8 +513,7 @@ class HouseholdExpenseDetailDialog extends StatelessWidget {
                     index: i + 1,
                     snapshot: expense.history[i],
                   ),
-                  if (i < expense.history.length - 1)
-                    const SizedBox(height: 6),
+                  if (i < expense.history.length - 1) const SizedBox(height: 6),
                 ],
               ],
             ],
@@ -523,8 +529,7 @@ class HouseholdExpenseDetailDialog extends StatelessWidget {
           TextButton.icon(
             icon: const Icon(Icons.delete_outline_rounded,
                 size: 16, color: PpColors.error),
-            label: const Text('Void',
-                style: TextStyle(color: PpColors.error)),
+            label: const Text('Void', style: TextStyle(color: PpColors.error)),
             onPressed: () async {
               Navigator.of(context).pop();
               await showDialog<bool>(
@@ -566,13 +571,16 @@ class HouseholdExpenseDetailDialog extends StatelessWidget {
         Builder(
           builder: (ctx) {
             final isDark = Theme.of(ctx).brightness == Brightness.dark;
-            final regularColor = isDark ? const Color(0xFFE8EDE9) : PpColors.ink;
+            final regularColor =
+                isDark ? const Color(0xFFE8EDE9) : PpColors.ink;
             return Text(
               value,
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
-                color: bold ? (isDark ? PpColors.forestLight : PpColors.forest) : regularColor,
+                color: bold
+                    ? (isDark ? PpColors.forestLight : PpColors.forest)
+                    : regularColor,
               ),
             );
           },
@@ -614,24 +622,24 @@ class HouseholdExpenseDetailDialog extends StatelessWidget {
                       color: isDark ? const Color(0xFFE8EDE9) : PpColors.ink,
                     ),
                   ),
+                  Text(
+                    money(snapshot.amount),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: PpColors.forest,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
               Text(
-                money(snapshot.amount),
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: PpColors.forest,
-                ),
+                '${snapshot.category} · $dateStr · $modStr',
+                style: const TextStyle(fontSize: 10, color: PpColors.secondary),
               ),
             ],
           ),
-          const SizedBox(height: 2),
-          Text(
-            '${snapshot.category} · $dateStr · $modStr',
-            style: const TextStyle(fontSize: 10, color: PpColors.secondary),
-          ),
-        ],
-      ),
-    );
+        );
       },
     );
   }
@@ -673,7 +681,10 @@ class _EditHouseholdExpenseDialogState
     final rawCategory = widget.expense.category.trim();
     if (rawCategory.isNotEmpty &&
         !kHouseholdExpenseCategories.contains(rawCategory)) {
-      _availableCategories = <String>[rawCategory, ...kHouseholdExpenseCategories];
+      _availableCategories = <String>[
+        rawCategory,
+        ...kHouseholdExpenseCategories
+      ];
       _category = rawCategory;
     } else {
       _availableCategories = kHouseholdExpenseCategories;
@@ -811,8 +822,8 @@ class _EditHouseholdExpenseDialogState
                       textInputAction: TextInputAction.done,
                       enabled: !_isSaving,
                       onChanged: (_) => setState(() => _error = null),
-                      keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true),
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
                       decoration: const InputDecoration(
                         labelText: 'Amount (₹)',
                         prefixIcon: Icon(Icons.currency_rupee_rounded),
@@ -1025,20 +1036,19 @@ class _VoidExpenseConfirmationDialogState
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w800,
-                            color: isDark
-                                ? const Color(0xFFE8EDE9)
-                                : PpColors.ink,
+                            color:
+                                isDark ? const Color(0xFFE8EDE9) : PpColors.ink,
                           ),
                         ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${widget.expense.category} · ${money(widget.expense.amount)} · ${formatShortDate(widget.expense.effectiveDate)}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: PpColors.forest,
-                      ),
-                    ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${widget.expense.category} · ${money(widget.expense.amount)} · ${formatShortDate(widget.expense.effectiveDate)}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: PpColors.forest,
+                          ),
+                        ),
                       ],
                     ),
                   );
@@ -1050,8 +1060,8 @@ class _VoidExpenseConfirmationDialogState
                 decoration: BoxDecoration(
                   color: PpColors.errorSoft,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                      color: PpColors.error.withValues(alpha: 0.25)),
+                  border:
+                      Border.all(color: PpColors.error.withValues(alpha: 0.25)),
                 ),
                 child: const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1150,9 +1160,11 @@ class HouseholdExpenseEntryScreen extends StatefulWidget {
     super.key,
     required this.state,
     this.initialMode = 'voice',
+    this.speechRecognition,
   });
   final AppState state;
   final String initialMode;
+  final SpeechRecognition? speechRecognition;
 
   @override
   State<HouseholdExpenseEntryScreen> createState() =>
@@ -1160,12 +1172,14 @@ class HouseholdExpenseEntryScreen extends StatefulWidget {
 }
 
 class _HouseholdExpenseEntryScreenState
-    extends State<HouseholdExpenseEntryScreen>
-    with WidgetsBindingObserver {
+    extends State<HouseholdExpenseEntryScreen> with WidgetsBindingObserver {
   static const List<String> _categories = kHouseholdExpenseCategories;
+  static const Duration _speechStartupTimeout = Duration(seconds: 8);
+  static const Duration _speechCleanupTimeout = Duration(seconds: 8);
   final TextEditingController _title = TextEditingController();
   final TextEditingController _amount = TextEditingController();
-  final stt.SpeechToText _speech = stt.SpeechToText();
+  late final SpeechRecognition _speech =
+      widget.speechRecognition ?? DeviceSpeechRecognition();
   String _category = 'Groceries';
   late String _entryMode;
   late DateTime _expenseDate;
@@ -1175,9 +1189,19 @@ class _HouseholdExpenseEntryScreenState
   String? _error;
   bool _voiceDraftReviewed = false;
   bool _speechAvailable = false;
+  bool _speechReady = false;
   bool _initializingSpeech = false;
   bool _isListening = false;
+  bool _startingListening = false;
+  bool _speechSessionLocked = false;
+  bool _speechCleanupBlocked = false;
+  bool _speechListenInvoked = false;
   bool _isSaving = false;
+  bool _disposingSpeech = false;
+  Timer? _speechStartupTimer;
+  Timer? _speechCleanupTimer;
+  Future<bool>? _speechInitialization;
+  int _speechSessionId = 0;
 
   @override
   void initState() {
@@ -1191,11 +1215,25 @@ class _HouseholdExpenseEntryScreenState
 
   @override
   void dispose() {
+    _disposingSpeech = true;
+    _speechStartupTimer?.cancel();
+    _speechCleanupTimer?.cancel();
+    _speechSessionId++;
     WidgetsBinding.instance.removeObserver(this);
     _title.dispose();
     _amount.dispose();
-    unawaited(_speech.stop());
+    unawaited(_cancelSpeech());
     super.dispose();
+  }
+
+  Future<void> _cancelSpeech() async {
+    try {
+      await _speech.cancel();
+    } catch (_) {
+      if (mounted && !_disposingSpeech) {
+        setState(() => _error = 'Could not cancel speech recognition.');
+      }
+    }
   }
 
   @override
@@ -1207,23 +1245,25 @@ class _HouseholdExpenseEntryScreenState
     }
   }
 
-  Future<void> _initializeSpeech() async {
-    if (_initializingSpeech || _speechAvailable) return;
+  Future<bool> _initializeSpeech() {
+    if (!mounted || _disposingSpeech) return Future<bool>.value(false);
+    if (_speechReady) return Future<bool>.value(_speechAvailable);
+    final inFlight = _speechInitialization;
+    if (inFlight != null) return inFlight;
+
+    final attempt = _performSpeechInitialization();
+    _speechInitialization = attempt;
+    return attempt;
+  }
+
+  Future<bool> _performSpeechInitialization() async {
     setState(() => _initializingSpeech = true);
     try {
       final available = await _speech.initialize(
-        onStatus: (status) {
-          if (mounted) setState(() => _isListening = status == 'listening');
-        },
-        onError: (error) {
-          if (mounted) {
-            setState(() {
-              _isListening = false;
-              _error = 'Voice recognition error: ${error.errorMsg}';
-            });
-          }
-        },
+        onStatus: _handleSpeechStatus,
+        onError: _handleSpeechError,
       );
+      if (available) _speechReady = true;
       var localeId = 'hi_IN';
       if (available) {
         final locales = await _speech.locales();
@@ -1236,7 +1276,7 @@ class _HouseholdExpenseEntryScreenState
         }
       }
       final hasPerm = await _speech.hasPermission;
-      if (!mounted) return;
+      if (!mounted || _disposingSpeech) return false;
       setState(() {
         _speechAvailable = available;
         _localeId = localeId;
@@ -1244,24 +1284,32 @@ class _HouseholdExpenseEntryScreenState
           _error = !hasPerm
               ? 'Microphone permission is required for voice entry. Enable microphone access in settings or switch to manual entry.'
               : 'Speech recognition is unavailable on this device. You can still type the entry.';
+        } else {
+          _error = null;
         }
       });
-    } catch (_) {
-      if (mounted) {
+      return available;
+    } on Exception catch (error) {
+      if (mounted && !_disposingSpeech) {
         setState(() {
-          _speechAvailable = false;
-          _error =
-              'Could not start speech recognition. You can still type the entry.';
+          _speechAvailable = _speechReady;
+          _error = _speechReady
+              ? 'Speech recognition is initialized, but device details could not be loaded: $error. You can type the entry or retry voice entry.'
+              : 'Could not initialize speech recognition: $error. You can still type the entry.';
         });
       }
+      return _speechReady;
     } finally {
-      if (mounted) setState(() => _initializingSpeech = false);
+      _speechInitialization = null;
+      if (mounted && !_disposingSpeech) {
+        setState(() => _initializingSpeech = false);
+      }
     }
   }
 
   void _onSpeechResult(String recognizedWords) {
     final heard = recognizedWords.trim();
-    if (heard.isEmpty || !mounted) return;
+    if (heard.isEmpty || !mounted || _disposingSpeech) return;
     final parsed = parseHouseholdExpense(heard);
     setState(() {
       _transcript = heard;
@@ -1282,42 +1330,172 @@ class _HouseholdExpenseEntryScreenState
     });
   }
 
-  Future<void> _toggleListening() async {
-    if (_speech.isListening) {
-      await _speech.stop();
-      if (mounted) setState(() => _isListening = false);
+  void _handleSpeechStatus(String status) {
+    if (!mounted || _disposingSpeech) return;
+    if (_initializingSpeech && !_speechListenInvoked) return;
+    if (!_speechSessionLocked) return; // Initialization status has no session.
+    switch (status) {
+      case 'listening':
+        _speechCleanupTimer?.cancel();
+        _speechCleanupTimer = null;
+        setState(() {
+          _isListening = true;
+          _startingListening = false;
+          _speechCleanupBlocked = false;
+        });
+        _speechStartupTimer?.cancel();
+        _speechStartupTimer = null;
+        break;
+      case 'notListening':
+        setState(() => _isListening = false);
+        break;
+      case 'done':
+        _completeSpeechLifecycle();
+        break;
+    }
+  }
+
+  void _handleSpeechError(String message) {
+    if (!mounted || _disposingSpeech) return;
+    if (!_speechSessionLocked) {
+      setState(
+          () => _error = 'Could not initialize speech recognition: $message');
       return;
     }
-    if (!_speechAvailable) {
-      await _initializeSpeech();
-      if (!_speechAvailable) return;
+    if (_initializingSpeech && !_speechListenInvoked) {
+      setState(
+          () => _error = 'Could not initialize speech recognition: $message');
+      return;
     }
+    _beginSpeechCleanup('Voice recognition error: $message');
+  }
+
+  void _onSpeechStartupTimeout(int sessionId) {
+    if (!mounted ||
+        _disposingSpeech ||
+        sessionId != _speechSessionId ||
+        !_startingListening) {
+      return;
+    }
+    _speechStartupTimer = null;
+    _beginSpeechCleanup(
+      'Speech recognition did not start. Cancelling the pending session.',
+    );
+  }
+
+  void _completeSpeechLifecycle() {
+    _speechStartupTimer?.cancel();
+    _speechCleanupTimer?.cancel();
+    _speechStartupTimer = null;
+    _speechCleanupTimer = null;
+    _speechSessionLocked = false;
+    _speechListenInvoked = false;
+    _speechCleanupBlocked = false;
+    _speechSessionId++;
+    if (mounted && !_disposingSpeech) {
+      setState(() {
+        _isListening = false;
+        _startingListening = false;
+      });
+    }
+  }
+
+  void _beginSpeechCleanup(String message) {
+    if (!mounted || _disposingSpeech) return;
+    _speechStartupTimer?.cancel();
+    _speechStartupTimer = null;
+    setState(() {
+      _isListening = false;
+      _startingListening = false;
+      _error = message;
+    });
+    _speechCleanupTimer?.cancel();
+    _speechCleanupTimer = Timer(_speechCleanupTimeout, () {
+      if (!mounted || _disposingSpeech || !_speechSessionLocked) return;
+      setState(() {
+        _speechCleanupBlocked = true;
+        _error = 'Voice recognition is unavailable until the app is fully '
+            'restarted because native cleanup was not confirmed. You can '
+            'still switch to manual entry.';
+      });
+    });
+    unawaited(_cancelSpeech());
+  }
+
+  Future<void> _toggleListening() async {
+    if (_disposingSpeech || _startingListening || _speechCleanupBlocked) return;
+    if (_speech.isListening) {
+      try {
+        await _speech.stop();
+      } catch (_) {
+        if (mounted && !_disposingSpeech) {
+          setState(() => _error = 'Could not stop speech recognition. Retry.');
+        }
+      }
+      return;
+    }
+    if (_speechSessionLocked) return;
+    final sessionId = ++_speechSessionId;
+    _speechSessionLocked = true;
+    _startingListening = true;
+    _speechStartupTimer?.cancel();
+    _speechStartupTimer = Timer(
+      _speechStartupTimeout,
+      () => _onSpeechStartupTimeout(sessionId),
+    );
     setState(() {
       _error = null;
       _transcript = '';
     });
     try {
+      if (!_speechAvailable) {
+        await _initializeSpeech();
+        if (!_speechAvailable) {
+          _releaseSpeechStart(sessionId);
+          return;
+        }
+      }
+      _speechListenInvoked = true;
       await _speech.listen(
-        onResult: (result) => _onSpeechResult(result.recognizedWords),
-        listenOptions: stt.SpeechListenOptions(
-          localeId: _localeId,
-          listenFor: const Duration(seconds: 25),
-          pauseFor: const Duration(seconds: 4),
-          partialResults: false,
-        ),
+        localeId: _localeId,
+        onResult: (words, _) {
+          if (!mounted || _disposingSpeech || sessionId != _speechSessionId) {
+            return;
+          }
+          _onSpeechResult(words);
+        },
       );
-      if (mounted) setState(() => _isListening = true);
     } catch (_) {
-      final hasPerm = await _speech.hasPermission;
-      if (mounted) {
-        setState(() {
-          _isListening = false;
-          _error = !hasPerm
-              ? 'Microphone permission denied. Grant permission in app settings or switch to manual entry.'
-              : 'Could not start the microphone. Check its permission and retry.';
-        });
+      var hasPerm = false;
+      try {
+        hasPerm = await _speech.hasPermission;
+      } catch (_) {}
+      if (mounted && !_disposingSpeech && sessionId == _speechSessionId) {
+        _beginSpeechCleanup(!hasPerm
+            ? 'Microphone permission denied. Grant permission in app settings or switch to manual entry.'
+            : 'Could not start the microphone. Check its permission and retry.');
       }
     }
+  }
+
+  void _releaseSpeechStart(int sessionId) {
+    if (!mounted ||
+        _disposingSpeech ||
+        sessionId != _speechSessionId ||
+        !_startingListening) {
+      return;
+    }
+    _speechStartupTimer?.cancel();
+    _speechStartupTimer = null;
+    if (!_speechListenInvoked) {
+      _speechSessionLocked = false;
+      _speechStartupTimer?.cancel();
+      _speechStartupTimer = null;
+      setState(() => _startingListening = false);
+      return;
+    }
+    _beginSpeechCleanup(
+        'Speech recognition could not start. Cancelling the pending session.');
   }
 
   Future<void> _save() async {
@@ -1372,7 +1550,8 @@ class _HouseholdExpenseEntryScreenState
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final modeSelectedBg = isDark ? const Color(0xFF1A221C) : PpColors.card;
-    final modeSelectedBorder = isDark ? const Color(0xFF2C392F) : PpColors.border;
+    final modeSelectedBorder =
+        isDark ? const Color(0xFF2C392F) : PpColors.border;
 
     Widget modeOption({
       required String label,
@@ -1384,8 +1563,9 @@ class _HouseholdExpenseEntryScreenState
         child: InkWell(
           borderRadius: BorderRadius.circular(11),
           onTap: () {
-            if (value == 'manual' && _speech.isListening) {
-              unawaited(_speech.stop());
+            if (value == 'manual' &&
+                (_speech.isListening || _startingListening)) {
+              unawaited(_cancelSpeech());
             }
             setState(() {
               _entryMode = value;
@@ -1464,12 +1644,13 @@ class _HouseholdExpenseEntryScreenState
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1A221C) : const Color(0xFFF0F7F0),
+                      color: isDark
+                          ? const Color(0xFF1A221C)
+                          : const Color(0xFFF0F7F0),
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(
-                          color: isDark
-                              ? const Color(0xFF2C392F)
-                              : PpColors.soft),
+                          color:
+                              isDark ? const Color(0xFF2C392F) : PpColors.soft),
                     ),
                     child: Column(
                       children: <Widget>[
@@ -1529,7 +1710,9 @@ class _HouseholdExpenseEntryScreenState
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton.icon(
-                            onPressed: _isSaving || _initializingSpeech
+                            onPressed: _isSaving ||
+                                    _initializingSpeech ||
+                                    _startingListening
                                 ? null
                                 : _toggleListening,
                             icon: Icon(_isListening
@@ -1539,7 +1722,9 @@ class _HouseholdExpenseEntryScreenState
                                 ? 'Stop listening'
                                 : _initializingSpeech
                                     ? 'Preparing microphone…'
-                                    : 'Start voice entry'),
+                                    : _startingListening
+                                        ? 'Starting voice entry…'
+                                        : 'Start voice entry'),
                           ),
                         ),
                         if (!_speechAvailable && !_initializingSpeech)
@@ -1595,9 +1780,8 @@ class _HouseholdExpenseEntryScreenState
                     style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
-                        color: isDark
-                            ? const Color(0xFFE8EDE9)
-                            : PpColors.ink)),
+                        color:
+                            isDark ? const Color(0xFFE8EDE9) : PpColors.ink)),
                 const SizedBox(height: 4),
                 const Text('Check the item, category and amount before saving.',
                     style: TextStyle(
