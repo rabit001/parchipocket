@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - ci
+
+  - package-ecosystem: npm
+    directory: /functions
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - backend
+
+  - package-ecosystem: pub
+    directory: /mobile/parchipocket_flutter
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - flutter
