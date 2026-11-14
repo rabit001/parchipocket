@@ -1,10 +1,10 @@
 # ParchiPocket: Project Overview
 
-**Maintainer:** Rabit Mansuri ([rabit001](https://github.com/rabit001))  
-**Platform:** Android  
-**Client:** Flutter and Dart  
-**Backend:** Firebase Authentication, Cloud Firestore, Firestore Security Rules, and Cloud Functions  
-**Distribution:** Signed Beta APK through GitHub Releases  
+**Maintainer:** Rabit Mansuri ([rabit001](https://github.com/rabit001))
+**Platform:** Android
+**Client:** Flutter and Dart
+**Backend:** Firebase Authentication, Cloud Firestore, Firestore Security Rules, and Cloud Functions
+**Distribution:** Signed Beta APK through GitHub Releases
 **Current status:** Active Beta; not a Play Store or production financial-service release.
 
 ## 1. Product focus
