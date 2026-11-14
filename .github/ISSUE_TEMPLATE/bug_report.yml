@@ -1,0 +1,50 @@
+name: Bug report
+description: Report a reproducible problem in ParchiPocket.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: "Do not include passwords, access tokens, phone numbers, email addresses, financial records, or other personal data."
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: For example, 0.1.5+5.
+      placeholder: 0.1.5+5
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version
+      placeholder: Galaxy device, Android version
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Open… 2. Tap… 3. Observe…"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitised logs or screenshots
+      description: Remove account identifiers, tokens, contact details, and personal financial information before attaching.
+    validations:
+      required: false
