@@ -12,7 +12,7 @@
 
 **Maintainer:** [Rabit Mansuri](https://github.com/rabit001)
 
-[Download latest Beta](https://github.com/rabit001/parchipocket/releases/latest) · [All releases](https://github.com/rabit001/parchipocket/releases) · [Report a bug](https://github.com/rabit001/parchipocket/issues/new?template=bug_report.yml)
+[Download latest Beta](https://github.com/rabit001/parchipocket/releases) · [All releases](https://github.com/rabit001/parchipocket/releases) · [Report a bug](https://github.com/rabit001/parchipocket/issues/new?template=bug_report.yml)
 
 ---
 
