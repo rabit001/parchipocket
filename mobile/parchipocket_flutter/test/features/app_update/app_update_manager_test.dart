@@ -76,7 +76,7 @@ void main() {
     },
   );
 
-  test('automatic checks are limited to once per 24 hours', () async {
+  test('automatic checks run on fresh launch even when previous check was recent', () async {
     expect(await manager.checkAutomatically(), isTrue);
     expect(repository.calls, 1);
     expect(
@@ -86,27 +86,47 @@ void main() {
       now.millisecondsSinceEpoch,
     );
 
-    now = now.add(const Duration(hours: 23));
-    expect(await manager.checkAutomatically(), isFalse);
-    expect(repository.calls, 1);
-
-    now = now.add(const Duration(hours: 1));
+    // Only 10 minutes later (well under 24 hours) - fresh check still queries GitHub
+    now = now.add(const Duration(minutes: 10));
     expect(await manager.checkAutomatically(), isTrue);
     expect(repository.calls, 2);
   });
 
   test(
-    'Later defers automatic prompts while manual checking remains available',
+    'Later dismisses prompt for current launch and does not persist 7-day deferral',
     () async {
       await manager.checkForUpdates();
       expect(await manager.shouldShowAutomaticPrompt(), isTrue);
+      expect(manager.isPromptDismissedForSession, isFalse);
+
       await manager.deferAutomaticPrompt();
+      expect(manager.isPromptDismissedForSession, isTrue);
       expect(await manager.shouldShowAutomaticPrompt(), isFalse);
 
-      now = now.add(const Duration(days: 7));
-      expect(await manager.shouldShowAutomaticPrompt(), isTrue);
-      await manager.checkForUpdates();
-      expect(manager.status, AppUpdateStatus.available);
+      // Verify no persistent 7-day deferral key remains in SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt('app_update.beta.deferred_until_ms'), isNull);
+
+      // Returning from background during same session maintains session dismissal
+      await manager.onAppResumed();
+      expect(manager.isPromptDismissedForSession, isTrue);
+      expect(await manager.shouldShowAutomaticPrompt(), isFalse);
+
+      // Next fresh launch (new AppUpdateManager instance) re-prompts for the available update
+      final nextLaunchManager = AppUpdateManager(
+        releaseRepository: repository,
+        downloader: downloader,
+        platform: platform,
+        preferences: prefs,
+        clock: () => now,
+        isAndroid: true,
+      );
+      addTearDown(nextLaunchManager.dispose);
+
+      await nextLaunchManager.checkForUpdates();
+      expect(nextLaunchManager.status, AppUpdateStatus.available);
+      expect(nextLaunchManager.isPromptDismissedForSession, isFalse);
+      expect(await nextLaunchManager.shouldShowAutomaticPrompt(), isTrue);
     },
   );
 

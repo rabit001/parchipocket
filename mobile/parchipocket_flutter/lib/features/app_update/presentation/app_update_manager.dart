@@ -81,11 +81,13 @@ class AppUpdateManager extends ChangeNotifier {
   Future<void>? _checkFuture;
   Future<void>? _downloadFuture;
   Future<void>? _resumeFuture;
+  bool _sessionPromptDismissed = false;
   bool _isDisposed = false;
 
   bool get isChecking => status == AppUpdateStatus.checking;
   bool get isDownloading => status == AppUpdateStatus.downloading;
   bool get canInstall => verifiedApk != null;
+  bool get isPromptDismissedForSession => _sessionPromptDismissed;
 
   Future<SharedPreferences?> get _prefs async {
     if (_preferences != null) return _preferences;
@@ -101,15 +103,6 @@ class AppUpdateManager extends ChangeNotifier {
       _setStatus(AppUpdateStatus.unsupported);
       return false;
     }
-    final prefs = await _prefs;
-    final lastAttempt = prefs?.getInt(_lastAttemptKey);
-    final now = _clock();
-    if (lastAttempt != null &&
-        now.difference(DateTime.fromMillisecondsSinceEpoch(lastAttempt)) <
-            automaticCheckInterval) {
-      return false;
-    }
-    await prefs?.setInt(_lastAttemptKey, now.millisecondsSinceEpoch);
     await checkForUpdates();
     return true;
   }
@@ -168,13 +161,15 @@ class AppUpdateManager extends ChangeNotifier {
 
   Future<bool> shouldShowAutomaticPrompt() async {
     if (status != AppUpdateStatus.available) return false;
-    final deferred = (await _prefs)?.getInt(_deferredUntilKey);
-    return deferred == null || deferred <= _clock().millisecondsSinceEpoch;
+    if (_sessionPromptDismissed) return false;
+    return true;
   }
 
   Future<void> deferAutomaticPrompt() async {
-    final until = _clock().add(promptDeferral).millisecondsSinceEpoch;
-    await (await _prefs)?.setInt(_deferredUntilKey, until);
+    _sessionPromptDismissed = true;
+    final prefs = await _prefs;
+    await prefs?.remove(_deferredUntilKey);
+    await prefs?.remove(_lastAttemptKey);
   }
 
   Future<void> downloadAndInstall() {

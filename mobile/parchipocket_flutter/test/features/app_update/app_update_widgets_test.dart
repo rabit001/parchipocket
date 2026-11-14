@@ -160,14 +160,14 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('startup prompt waits for navigation and Later defers it', (
+  testWidgets('startup prompt waits for navigation and Later defers it for the current launch', (
     tester,
   ) async {
     var ready = false;
     var openUpdates = 0;
-    Widget buildHost() => MaterialApp(
+    Widget buildHost({AppUpdateManager? hostManager}) => MaterialApp(
       home: AppUpdatePromptHost(
-        manager: manager,
+        manager: hostManager ?? manager,
         navigationReady: ready,
         onOpenUpdates: () => openUpdates++,
         child: const Scaffold(body: Text('First screen')),
@@ -178,17 +178,100 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Download & Install'), findsNothing);
 
+    // Navigation becomes ready: dialog displays all required elements
     ready = true;
     await tester.pumpWidget(buildHost());
     await tester.pumpAndSettle();
+    expect(find.text('ParchiPocket 0.1.3 is available'), findsOneWidget);
+    expect(find.text('Improved household expense tracking.'), findsOneWidget);
     expect(find.text('Download & Install'), findsOneWidget);
+    expect(find.text('Later'), findsOneWidget);
+
+    // Tapping Later dismisses dialog
     await tester.tap(find.text('Later'));
     await tester.pumpAndSettle();
 
     expect(openUpdates, 0);
+    expect(manager.isPromptDismissedForSession, isTrue);
     expect(await manager.shouldShowAutomaticPrompt(), isFalse);
     expect(find.text('Download & Install'), findsNothing);
+
+    // Returning from background during the same launch does not reopen prompt
+    await manager.onAppResumed();
+    await tester.pumpWidget(buildHost());
+    await tester.pumpAndSettle();
+    expect(find.text('Download & Install'), findsNothing);
+
+    // Next fresh app launch with same available update displays prompt again
+    final freshManager = AppUpdateManager(
+      releaseRepository: repository,
+      downloader: downloader,
+      platform: platform,
+      preferences: await SharedPreferences.getInstance(),
+      isAndroid: true,
+    );
+    addTearDown(freshManager.dispose);
+
+    await freshManager.checkAutomatically();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppUpdatePromptHost(
+          key: const ValueKey<String>('fresh-launch-host'),
+          manager: freshManager,
+          navigationReady: true,
+          onOpenUpdates: () => openUpdates++,
+          child: const Scaffold(body: Text('Second launch screen')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Download & Install'), findsOneWidget);
+    expect(find.text('Later'), findsOneWidget);
   });
+
+  testWidgets(
+    'no update available opens app normally without any update prompt',
+    (tester) async {
+      repository.release = null; // Up-to-date
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppUpdatePromptHost(
+            manager: manager,
+            navigationReady: true,
+            onOpenUpdates: () {},
+            child: const Scaffold(body: Text('Main app screen')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Main app screen'), findsOneWidget);
+      expect(find.text('Download & Install'), findsNothing);
+      expect(find.text('Later'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'network failure during update check does not block normal app usage',
+    (tester) async {
+      repository.error = const SocketException('No route to host');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppUpdatePromptHost(
+            manager: manager,
+            navigationReady: true,
+            onOpenUpdates: () {},
+            child: const Scaffold(body: Text('Offline usable screen')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Offline usable screen'), findsOneWidget);
+      expect(find.text('Download & Install'), findsNothing);
+      expect(manager.status, AppUpdateStatus.error);
+    },
+  );
 
   testWidgets(
     'download prompt opens the update screen only after explicit choice',

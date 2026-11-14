@@ -105,9 +105,79 @@ void main() {
 
   test('Android launcher declares standard and round icon resources', () {
     final manifest =
-        File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+        File('android/app/src/main/AndroidManifest.xml')
+            .readAsStringSync()
+            .replaceAll('\r\n', '\n');
 
     expect(manifest, contains('android:icon="@mipmap/ic_launcher"'));
-    expect(manifest, contains('android:roundIcon="@mipmap/ic_launcher"'));
+    expect(manifest, contains('android:roundIcon="@mipmap/ic_launcher_round"'));
+
+    // Both application and main launcher activity declare the icon resources
+    expect(
+      manifest,
+      contains(
+        '<activity\n'
+        '            android:name=".MainActivity"\n'
+        '            android:exported="true"\n'
+        '            android:launchMode="singleTop"\n'
+        '            android:icon="@mipmap/ic_launcher"\n'
+        '            android:roundIcon="@mipmap/ic_launcher_round"',
+      ),
+    );
+
+    // Verify adaptive icon XML definitions
+    final anyDpiLauncher =
+        File('android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml')
+            .readAsStringSync();
+    expect(anyDpiLauncher, contains('<adaptive-icon'));
+    expect(anyDpiLauncher, contains('@color/ic_launcher_background'));
+    expect(anyDpiLauncher, contains('@drawable/ic_launcher_foreground_inset'));
+
+    final anyDpiRound =
+        File('android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml')
+            .readAsStringSync();
+    expect(anyDpiRound, contains('<adaptive-icon'));
+    expect(anyDpiRound, contains('@color/ic_launcher_background'));
+    expect(anyDpiRound, contains('@drawable/ic_launcher_foreground_inset'));
+
+    // Verify foreground inset drawable
+    final foregroundInset =
+        File('android/app/src/main/res/drawable/ic_launcher_foreground_inset.xml')
+            .readAsStringSync();
+    expect(foregroundInset, contains('<inset'));
+    expect(foregroundInset, contains('@drawable/ic_launcher_foreground'));
+    expect(foregroundInset, contains('android:inset="16%"'));
+
+    // Verify density resources exist and are non-empty for standard and round icons
+    const densities = <String>[
+      'mipmap-mdpi',
+      'mipmap-hdpi',
+      'mipmap-xhdpi',
+      'mipmap-xxhdpi',
+      'mipmap-xxxhdpi',
+    ];
+
+    for (final d in densities) {
+      final std = File('android/app/src/main/res/$d/ic_launcher.png');
+      final round = File('android/app/src/main/res/$d/ic_launcher_round.png');
+      expect(std.existsSync(), isTrue, reason: '$d/ic_launcher.png exists');
+      expect(std.lengthSync(), greaterThan(1000), reason: '$d/ic_launcher.png non-trivial');
+      expect(round.existsSync(), isTrue, reason: '$d/ic_launcher_round.png exists');
+      expect(round.lengthSync(), equals(std.lengthSync()), reason: '$d/ic_launcher_round matches standard size');
+    }
+
+    const foregroundDensities = <String>[
+      'drawable-mdpi',
+      'drawable-hdpi',
+      'drawable-xhdpi',
+      'drawable-xxhdpi',
+      'drawable-xxxhdpi',
+    ];
+
+    for (final d in foregroundDensities) {
+      final fg = File('android/app/src/main/res/$d/ic_launcher_foreground.png');
+      expect(fg.existsSync(), isTrue, reason: '$d/ic_launcher_foreground.png exists');
+      expect(fg.lengthSync(), greaterThan(1000), reason: '$d/ic_launcher_foreground.png non-trivial');
+    }
   });
 }

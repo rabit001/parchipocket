@@ -276,11 +276,14 @@ class _AppUpdatePromptHostState extends State<AppUpdatePromptHost> {
         widget.manager.status != AppUpdateStatus.available ||
         _dialogOpen ||
         _promptShown ||
+        widget.manager.isPromptDismissedForSession ||
         !mounted) {
       return;
     }
-    _promptShown = true;
-    _dialogOpen = true;
+    setState(() {
+      _promptShown = true;
+      _dialogOpen = true;
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _showPrompt());
   }
 
