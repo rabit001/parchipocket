@@ -12,21 +12,8 @@ class LoginScreen extends StatelessWidget {
     body: ListView(
       children: <Widget>[
         const SizedBox(height: 28),
-        const Center(
-          child: CircleAvatar(
-            radius: 30,
-            backgroundColor: PpColors.forest,
-            child: Text(
-              'P',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 30,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 15),
+          const Center(child: PpBrandLogo(height: 62)),
+          const SizedBox(height: 15),
         const Text(
           'Your daily spending, in one place.',
           textAlign: TextAlign.center,

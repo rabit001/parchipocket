@@ -44,6 +44,7 @@ class CustomerHomeScreen extends StatelessWidget {
     return PpScaffold(
       state: state,
       title: 'ParchiPocket',
+      titleWidget: const PpBrandLogo(height: 28),
       showBack: false,
       bottomNav: true,
       bottomTab: 'customerHome',

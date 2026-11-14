@@ -5,47 +5,21 @@ class AuthSessionLoadingScreen extends StatelessWidget {
   final AppState state;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) => const Scaffold(
         body: SafeArea(
           child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Container(
-                  width: 68,
-                  height: 68,
-                  decoration: const BoxDecoration(
-                    color: PpColors.forest,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'P',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 36,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'ParchiPocket',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                const SizedBox(
+                PpBrandLogo(height: 58),
+                SizedBox(height: 24),
+                SizedBox(
                   width: 24,
                   height: 24,
                   child: CircularProgressIndicator(strokeWidth: 2.5),
                 ),
-                const SizedBox(height: 12),
-                const Text(
+                SizedBox(height: 12),
+                Text(
                   'Checking your account…',
                   style: TextStyle(
                     fontSize: 12,
@@ -118,24 +92,7 @@ class SplashScreen extends StatelessWidget {
                     child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: <Widget>[
-                          Container(
-                              width: 76,
-                              height: 76,
-                              decoration: const BoxDecoration(
-                                  color: PpColors.forest,
-                                  shape: BoxShape.circle),
-                              child: const Center(
-                                  child: Text('P',
-                                      style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 40,
-                                          fontWeight: FontWeight.w800)))),
-                          const SizedBox(height: 16),
-                          Text('ParchiPocket',
-                              style: TextStyle(
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.w800,
-                                  color: Theme.of(context).colorScheme.onSurface)),
+                          const PpBrandLogo(height: 68),
                           const SizedBox(height: 10),
                           const Text('Every small purchase, properly recorded.',
                               textAlign: TextAlign.center,
