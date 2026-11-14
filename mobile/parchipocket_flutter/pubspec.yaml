@@ -1,7 +1,7 @@
 name: parchipocket
 description: ParchiPocket household expense and digital billing app.
 publish_to: 'none'
-version: 0.1.3+3
+version: 0.1.4+4
 environment:
   sdk: '>=3.7.0 <4.0.0'
 dependencies:
