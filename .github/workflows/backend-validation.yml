@@ -203,14 +203,17 @@ jobs:
         id: release-meta
         shell: bash
         run: |
+          set -euo pipefail
           version="$(awk '/^version:/ { value=$2; sub(/[+].*/, "", value); print value; exit }' mobile/parchipocket_flutter/pubspec.yaml)"
           if [[ -z "$version" ]]; then
             echo "Could not read the Flutter app version from pubspec.yaml." >&2
             exit 1
           fi
-          echo "tag=v${version}-debug" >> "$GITHUB_OUTPUT"
-          echo "name=ParchiPocket v${version} Debug Preview" >> "$GITHUB_OUTPUT"
-      - name: Publish GitHub Release
+          # A fresh tag for every workflow attempt avoids collisions with immutable releases.
+          tag="v${version}-debug-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "name=ParchiPocket v${version} Debug Preview (run ${GITHUB_RUN_NUMBER}, attempt ${GITHUB_RUN_ATTEMPT})" >> "$GITHUB_OUTPUT"
+      - name: Create draft release and upload verified APK
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.release-meta.outputs.tag }}
@@ -218,11 +221,47 @@ jobs:
           target_commitish: ${{ github.sha }}
           body: |
             Debug build for testing only. This APK is not a production-signed release.
-            Published automatically after the main-branch Flutter tests, Firestore rules checks, and Android emulator integration tests pass.
+
+            Published only after the main-branch Flutter tests, Firestore rules checks, and Android emulator integration tests pass.
+            Source commit: ${{ github.sha }}
+            Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           prerelease: true
-          draft: false
-          overwrite_files: true
+          draft: true
           fail_on_unmatched_files: true
           files: |
             release-assets/app-debug.apk
             release-assets/app-debug.apk.sha256
+      - name: Verify draft assets and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release-meta.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          api_base="${GITHUB_API_URL}"
+          release_url="${api_base}/repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}"
+          release_json="$(curl --fail --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${release_url}")"
+
+          release_id="$(jq -er '.id' <<< "${release_json}")"
+          jq -e '
+            .draft == true and
+            ([.assets[].name] | index("app-debug.apk") != null) and
+            ([.assets[].name] | index("app-debug.apk.sha256") != null)
+          ' <<< "${release_json}" >/dev/null
+
+          published_json="$(curl --fail --silent --show-error \
+            -X PATCH \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -H "Content-Type: application/json" \
+            --data '{"draft":false}' \
+            "${api_base}/repos/${GITHUB_REPOSITORY}/releases/${release_id}")"
+
+          jq -e '.draft == false and .prerelease == true' <<< "${published_json}" >/dev/null
+          echo "Published verified debug release: $(jq -r '.html_url' <<< "${published_json}")"
