@@ -210,6 +210,9 @@ class CountingFirestoreService extends FirestoreService {
     required String shopAddress,
     required String vendorName,
     required String vendorCategory,
+    String? mobileNumber,
+    bool updateMobileNumber = false,
+    bool includeBusinessFields = true,
   }) async {
     writes++;
     savedProfile = <String, Object?>{
@@ -217,11 +220,12 @@ class CountingFirestoreService extends FirestoreService {
       'name': name,
       'email': email,
       'city': city,
-      'shopName': shopName,
-      'shopCategory': shopCategory,
-      'shopAddress': shopAddress,
-      'vendorName': vendorName,
-      'vendorCategory': vendorCategory,
+      if (includeBusinessFields) 'shopName': shopName,
+      if (includeBusinessFields) 'shopCategory': shopCategory,
+      if (includeBusinessFields) 'shopAddress': shopAddress,
+      if (includeBusinessFields) 'vendorName': vendorName,
+      if (includeBusinessFields) 'vendorCategory': vendorCategory,
+      if (updateMobileNumber) 'mobileNumber': mobileNumber,
     };
   }
 }
@@ -404,6 +408,9 @@ class FailingFirestoreService extends FirestoreService {
     required String shopAddress,
     required String vendorName,
     required String vendorCategory,
+    String? mobileNumber,
+    bool updateMobileNumber = false,
+    bool includeBusinessFields = true,
   }) async {
     throw Exception('Simulated Firestore write failure');
   }
@@ -527,6 +534,7 @@ void main() {
         profile: <String, dynamic>{
           'role': 'customer',
           'name': 'Cloud Customer',
+          'mobileNumber': '+919876543210',
         },
         loadedBills: <DemoBill>[
           DemoBill(
@@ -557,6 +565,7 @@ void main() {
       await pumpEventQueue();
 
       expect(state.customerName, 'Cloud Customer');
+      expect(state.profileMobileNumber, '+919876543210');
       expect(state.profileStatus, CloudProfileStatus.loaded);
       expect(state.cloudError, contains('permission-denied'));
       expect(state.bills, isEmpty);
@@ -1241,6 +1250,51 @@ void main() {
       expect(state.customerName, initialName);
       expect(state.cloudError, contains('Simulated Firestore write failure'));
       expect(state.isCloudLoading, isFalse);
+      state.dispose();
+    });
+
+    test('valid profile mobile number is saved without business fields',
+        () async {
+      final service = CountingFirestoreService();
+      final state = AppState()
+        ..auth = MockFirebaseAuth()
+        ..isDemoMode = false
+        ..firestoreService = service;
+
+      final saved = await state.updateProfile(
+        name: 'Test User',
+        email: 'test@example.com',
+        location: 'Ujjain',
+        mobileNumber: '+91 98765 43210',
+        updateMobileNumber: true,
+      );
+
+      expect(saved, isTrue);
+      expect(state.profileMobileNumber, '+919876543210');
+      expect(service.savedProfile?['mobileNumber'], '+919876543210');
+      expect(service.savedProfile?.containsKey('vendorName'), isFalse);
+      state.dispose();
+    });
+
+    test('invalid profile mobile number is rejected before Firestore write',
+        () async {
+      final service = CountingFirestoreService();
+      final state = AppState()
+        ..auth = MockFirebaseAuth()
+        ..isDemoMode = false
+        ..firestoreService = service;
+
+      final saved = await state.updateProfile(
+        name: 'Test User',
+        email: '',
+        location: '',
+        mobileNumber: 'not a phone',
+        updateMobileNumber: true,
+      );
+
+      expect(saved, isFalse);
+      expect(service.writes, 0);
+      expect(state.cloudError, contains('valid mobile number'));
       state.dispose();
     });
 

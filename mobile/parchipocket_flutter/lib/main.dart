@@ -18,6 +18,7 @@ import 'features/receipts/presentation/receipt_claim_screens.dart';
 import 'features/shop_owner/presentation/shop_screens.dart';
 import 'features/street_vendor/presentation/vendor_screens.dart';
 import 'shared/theme/theme.dart';
+import 'shared/widgets/ui.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -171,12 +172,15 @@ class _ParchiPocketAppState extends State<ParchiPocketApp>
           theme: buildPpTheme(),
           darkTheme: buildPpDarkTheme(),
           themeMode: state.themeMode,
-          home: AppUpdatePromptHost(
-            manager: updateManager,
-            navigationReady:
-                state.page != 'splash' && state.page != 'authLoading',
-            onOpenUpdates: () => state.go('appUpdates'),
-            child: _screenForCurrentPage(),
+          home: AppBackNavigationHandler(
+            state: state,
+            child: AppUpdatePromptHost(
+              manager: updateManager,
+              navigationReady:
+                  state.page != 'splash' && state.page != 'authLoading',
+              onOpenUpdates: () => state.go('appUpdates'),
+              child: _screenForCurrentPage(),
+            ),
           ),
         ),
   );

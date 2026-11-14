@@ -150,6 +150,47 @@ void main() {
     expect((await reference.get()).data()!['isSaved'], isTrue);
   });
 
+  testWidgets('profile mobile updates stay within the authenticated UID profile',
+      (tester) async {
+    final uid = _auth.currentUser!.uid;
+    await _service.saveUserProfile(
+      role: UserRole.shopOwner,
+      name: 'Emulator Shop',
+      email: '',
+      city: 'Test City',
+      shopName: 'Emulator Shop',
+      shopCategory: 'Kirana',
+      shopAddress: 'Test Address',
+      vendorName: 'Test Vendor',
+      vendorCategory: 'Tea',
+      mobileNumber: '+919876543210',
+      updateMobileNumber: true,
+    );
+
+    final profile = await _service.loadUserProfile();
+    expect(profile?['mobileNumber'], '+919876543210');
+    expect(
+      (await _firestore.collection('users').doc(uid).get())
+          .data()?['mobileNumber'],
+      '+919876543210',
+    );
+
+    await _service.saveUserProfile(
+      role: UserRole.shopOwner,
+      name: 'Emulator Shop',
+      email: '',
+      city: 'Test City',
+      shopName: 'Emulator Shop',
+      shopCategory: 'Kirana',
+      shopAddress: 'Test Address',
+      vendorName: 'Test Vendor',
+      vendorCategory: 'Tea',
+      mobileNumber: '',
+      updateMobileNumber: true,
+    );
+    expect((await _service.loadUserProfile())!.containsKey('mobileNumber'), false);
+  });
+
   testWidgets(
       'identical create retry is idempotent and conflicting ID cannot overwrite',
       (tester) async {

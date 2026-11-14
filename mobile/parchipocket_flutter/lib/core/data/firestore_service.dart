@@ -455,21 +455,34 @@ class FirestoreService {
     required String shopAddress,
     required String vendorName,
     required String vendorCategory,
+    String? mobileNumber,
+    bool updateMobileNumber = false,
+    bool includeBusinessFields = true,
   }) async {
     final doc = _userDoc;
     if (doc == null) throw Exception('User not authenticated.');
-    await doc.set({
+    final profile = <String, Object?>{
       'role': role.name,
       'name': name,
       'email': email,
       'city': city,
-      'shopName': shopName,
-      'shopCategory': shopCategory,
-      'shopAddress': shopAddress,
-      'vendorName': vendorName,
-      'vendorCategory': vendorCategory,
       'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    };
+    if (includeBusinessFields) {
+      profile.addAll({
+        'shopName': shopName,
+        'shopCategory': shopCategory,
+        'shopAddress': shopAddress,
+        'vendorName': vendorName,
+        'vendorCategory': vendorCategory,
+      });
+    }
+    if (updateMobileNumber) {
+      profile['mobileNumber'] = mobileNumber == null || mobileNumber.isEmpty
+          ? FieldValue.delete()
+          : mobileNumber;
+    }
+    await doc.set(profile, SetOptions(merge: true));
   }
 
   Future<Map<String, dynamic>?> loadUserProfile() async {

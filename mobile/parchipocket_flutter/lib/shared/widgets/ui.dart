@@ -28,6 +28,26 @@ class PpBrandLogo extends StatelessWidget {
   }
 }
 
+class AppBackNavigationHandler extends StatelessWidget {
+  const AppBackNavigationHandler({
+    super.key,
+    required this.state,
+    required this.child,
+  });
+
+  final AppState state;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => PopScope<Object?>(
+        canPop: !state.canPopPage,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) state.popPage();
+        },
+        child: child,
+      );
+}
+
 class PpScaffold extends StatelessWidget {
   const PpScaffold({
     super.key,
@@ -90,7 +110,7 @@ class PpScaffold extends StatelessWidget {
             ? IconButton(
                 tooltip: 'Back',
                 icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
-                onPressed: () => state.go(backTo ?? _homePage),
+                onPressed: () => state.popPage(fallback: backTo ?? _homePage),
               )
             : null,
         title: titleWidget ?? Text(title),
@@ -232,7 +252,8 @@ class PpScaffold extends StatelessWidget {
                   .indexWhere((tab) => tab.route == (bottomTab ?? state.page))
                   .clamp(0, _tabs.length - 1)
                   .toInt(),
-              onDestinationSelected: (index) => state.go(_tabs[index].route),
+              onDestinationSelected: (index) =>
+                  state.selectTab(_tabs[index].route),
               destinations: _tabs
                   .map((tab) => NavigationDestination(
                       icon: Icon(tab.icon), label: tab.label))

@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../features/account_deletion/data/account_deletion_service.dart';
+import '../../features/customer/data/profile_photo_store.dart';
 import '../../features/auth/data/google_sign_in_service.dart';
 import '../data/firestore_service.dart';
 import '../monitoring/telemetry.dart';
@@ -23,11 +24,13 @@ class AppState extends ChangeNotifier {
     SharedPreferences? prefs,
     AccountDeletionService? accountDeletionService,
     GoogleSignInService? googleSignInService,
+    ProfilePhotoStore? profilePhotoStore,
     Duration phoneCredentialCleanupNoticeAfter = const Duration(seconds: 8),
   }) : _auth = auth,
        _prefs = prefs,
        _accountDeletionService = accountDeletionService,
        _googleSignInService = googleSignInService,
+       _profilePhotoStore = profilePhotoStore,
        _phoneCredentialCleanupNoticeAfter =
            phoneCredentialCleanupNoticeAfter {
     _loadPersistedTheme();
@@ -37,6 +40,9 @@ class AppState extends ChangeNotifier {
 
   FirebaseAuth? _auth;
   GoogleSignInService? _googleSignInService;
+  ProfilePhotoStore? _profilePhotoStore;
+  ProfilePhotoStore get profilePhotoStore =>
+      _profilePhotoStore ??= DeviceProfilePhotoStore();
   GoogleSignInService get googleSignInService =>
       _googleSignInService ??= DeviceGoogleSignInService();
   set googleSignInService(GoogleSignInService service) =>
@@ -76,6 +82,10 @@ class AppState extends ChangeNotifier {
   String verificationId = '';
   int? resendToken;
   String phoneNumber = '';
+  String profileMobileNumber = '';
+  String? profilePhotoPath;
+  bool isProfilePhotoLoading = false;
+  String? profilePhotoError;
   bool isPhoneAuthLoading = false;
   String? phoneAuthError;
   String? lastAuthErrorCode;
@@ -129,6 +139,8 @@ class AppState extends ChangeNotifier {
   bool _disposed = false;
 
   String page = 'splash';
+  final List<String> _navigationStack = <String>[];
+  bool get canPopPage => _navigationStack.isNotEmpty;
   UserRole role = UserRole.customer;
   String customerName = 'Rabit Mansuri';
   String customerEmail = '';
@@ -253,6 +265,7 @@ class AppState extends ChangeNotifier {
     final authInstance = auth;
     if (authInstance == null) return;
 
+    _navigationStack.clear();
     page = 'authLoading';
     _authSubscription = authInstance.authStateChanges().listen(
       (user) => unawaited(_handleAuthStateChanged(user)),
@@ -268,6 +281,7 @@ class AppState extends ChangeNotifier {
         profileStatus = CloudProfileStatus.failed;
         cloudError =
             'Unable to check your sign-in session. Check your connection and retry.';
+        _navigationStack.clear();
         page = 'profileLoadError';
         notifyListeners();
       },
@@ -284,6 +298,7 @@ class AppState extends ChangeNotifier {
 
     final eventGeneration = ++_authEventGeneration;
     _profileLoadGeneration++;
+    _navigationStack.clear();
     if (_explicitDemoSession) return;
 
     if (user == null) {
@@ -389,6 +404,7 @@ class AppState extends ChangeNotifier {
         customerName = loadedName;
         customerEmail = profile['email'] as String? ?? customerEmail;
         city = profile['city'] as String? ?? city;
+        profileMobileNumber = profile['mobileNumber'] as String? ?? '';
         shopName = profile['shopName'] as String? ?? shopName;
         shopCategory = profile['shopCategory'] as String? ?? shopCategory;
         shopAddress = profile['shopAddress'] as String? ?? shopAddress;
@@ -505,6 +521,7 @@ class AppState extends ChangeNotifier {
 
   void navigateAfterAuth() {
     if (isDemoMode || _explicitDemoSession) return;
+    _navigationStack.clear();
     switch (profileStatus) {
       case CloudProfileStatus.loaded:
         if (!hasExistingCloudProfile) {
@@ -534,6 +551,7 @@ class AppState extends ChangeNotifier {
     if (user == null) {
       profileStatus = CloudProfileStatus.failed;
       cloudError = 'You are signed out. Sign in again to load your account.';
+      _navigationStack.clear();
       page = 'login';
       notifyListeners();
       return;
@@ -548,6 +566,7 @@ class AppState extends ChangeNotifier {
     _sessionGeneration++;
     _authEventGeneration++;
     _profileLoadGeneration++;
+    _navigationStack.clear();
     _authenticationIntentActive = false;
     _authenticationAttemptMethod = null;
     isGoogleSignInLoading = false;
@@ -1026,6 +1045,7 @@ class AppState extends ChangeNotifier {
     _releaseAuthenticationAttempt(SignInMethod.google);
     _explicitDemoSession = false;
     _restoreDemoState();
+    _navigationStack.clear();
     page = 'login';
     googleAuthError = message;
     isGoogleSignInLoading = false;
@@ -1106,6 +1126,7 @@ class AppState extends ChangeNotifier {
       _authenticationAttemptMethod = null;
       authenticationCleanupStatus = null;
       _restoreDemoState();
+      _navigationStack.clear();
       page = 'splash';
       return true;
     } catch (e) {
@@ -1133,6 +1154,8 @@ class AppState extends ChangeNotifier {
     profileStatus = CloudProfileStatus.loading;
     customerName = '';
     customerEmail = '';
+    profileMobileNumber = '';
+    profilePhotoPath = null;
     city = '';
     shopName = '';
     shopCategory = '';
@@ -1177,6 +1200,8 @@ class AppState extends ChangeNotifier {
     role = UserRole.customer;
     customerName = 'Rabit Mansuri';
     customerEmail = '';
+    profileMobileNumber = '';
+    profilePhotoPath = null;
     city = 'Ujjain, Madhya Pradesh';
     shopName = 'Mansuri General Store';
     shopCategory = 'Kirana';
@@ -1345,18 +1370,142 @@ class AppState extends ChangeNotifier {
   }
 
   void go(String nextPage) {
-    if (_authenticationAttemptMethod == SignInMethod.phone &&
-        nextPage != 'phoneLogin' &&
-        nextPage != 'verifyOtp') {
-      _sessionGeneration++;
-      _releaseAuthenticationAttempt(SignInMethod.phone);
-      isPhoneAuthLoading = false;
-      _authEventGeneration++;
-      _profileLoadGeneration++;
-      _startAbandonedPhoneCredentialCleanup();
+    _abandonPhoneAttemptIfLeaving(nextPage);
+    _pushPage(nextPage);
+    notifyListeners();
+  }
+
+  void _abandonPhoneAttemptIfLeaving(String destination) {
+    if (_authenticationAttemptMethod != SignInMethod.phone ||
+        destination == 'phoneLogin' ||
+        destination == 'verifyOtp') {
+      return;
+    }
+    _sessionGeneration++;
+    _releaseAuthenticationAttempt(SignInMethod.phone);
+    isPhoneAuthLoading = false;
+    _authEventGeneration++;
+    _profileLoadGeneration++;
+    _startAbandonedPhoneCredentialCleanup();
+  }
+
+  void _pushPage(String nextPage) {
+    if (_isNavigationRoot(nextPage)) {
+      _navigationStack.clear();
+    } else if (page != nextPage) {
+      _navigationStack.add(page);
     }
     page = nextPage;
+  }
+
+  bool _isNavigationRoot(String route) => const <String>{
+        'splash',
+        'authLoading',
+        'profileLoadError',
+        'login',
+        'customerHome',
+        'customerSetup',
+      }.contains(route);
+
+  void setRootPage(String route) {
+    _navigationStack.clear();
+    page = route;
     notifyListeners();
+  }
+
+  void selectTab(String route) {
+    _navigationStack.clear();
+    page = route;
+    notifyListeners();
+  }
+
+  bool popPage({String? fallback}) {
+    if (_navigationStack.isEmpty) {
+      if (fallback == null) return false;
+      _abandonPhoneAttemptIfLeaving(fallback);
+      page = fallback;
+      notifyListeners();
+      return true;
+    }
+    final previousPage = _navigationStack.removeLast();
+    _abandonPhoneAttemptIfLeaving(previousPage);
+    page = previousPage;
+    notifyListeners();
+    return true;
+  }
+
+  String get _profilePhotoScope => auth?.currentUser?.uid ?? 'demo';
+
+  Future<void> loadProfilePhoto() async {
+    if (isProfilePhotoLoading) return;
+    final scope = _profilePhotoScope;
+    isProfilePhotoLoading = true;
+    profilePhotoError = null;
+    notifyListeners();
+    try {
+      final path = await profilePhotoStore.load(scope);
+      if (_disposed || scope != _profilePhotoScope) return;
+      profilePhotoPath = path;
+    } catch (_) {
+      if (_disposed || scope != _profilePhotoScope) return;
+      profilePhotoError = 'Saved profile photo could not be loaded.';
+    } finally {
+      if (!_disposed && scope == _profilePhotoScope) {
+        isProfilePhotoLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<bool> chooseProfilePhoto() async {
+    if (isProfilePhotoLoading || _disposed) return false;
+    final scope = _profilePhotoScope;
+    isProfilePhotoLoading = true;
+    profilePhotoError = null;
+    notifyListeners();
+    try {
+      final path = await profilePhotoStore.pickAndPersist(scope);
+      if (_disposed || scope != _profilePhotoScope) return false;
+      if (path == null) return false;
+      profilePhotoPath = path;
+      return true;
+    } catch (error) {
+      if (_disposed || scope != _profilePhotoScope) return false;
+      profilePhotoError = error is FormatException
+          ? error.message
+          : 'Profile photo could not be saved. Please try again.';
+      return false;
+    } finally {
+      if (!_disposed && scope == _profilePhotoScope) {
+        isProfilePhotoLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<bool> removeProfilePhoto() async {
+    if (isProfilePhotoLoading || _disposed) return false;
+    final scope = _profilePhotoScope;
+    isProfilePhotoLoading = true;
+    profilePhotoError = null;
+    notifyListeners();
+    try {
+      await profilePhotoStore.clear(scope);
+      if (_disposed || scope != _profilePhotoScope) return false;
+      profilePhotoPath = null;
+      return true;
+    } catch (error) {
+      if (_disposed || scope != _profilePhotoScope) return false;
+      profilePhotoError = error is FormatException
+          ? error.message
+          : 'Profile photo could not be removed. Please try again.';
+      return false;
+    } finally {
+      if (!_disposed && scope == _profilePhotoScope) {
+        isProfilePhotoLoading = false;
+        notifyListeners();
+      }
+    }
   }
 
   void openShop(String name) {
@@ -1365,6 +1514,7 @@ class AppState extends ChangeNotifier {
   }
 
   void setRole(UserRole value) {
+    _navigationStack.clear();
     if (!isDemoMode && profileStatus != CloudProfileStatus.missing) {
       // Existing cloud profiles retain their stored role to satisfy Firestore security rules
       if (profileStatus == CloudProfileStatus.loaded &&
@@ -1421,14 +1571,14 @@ class AppState extends ChangeNotifier {
   void openBill(DemoBill bill) {
     selectedClaimedReceipt = null;
     selectedBill = bill;
-    page = 'billDetail';
+    _pushPage('billDetail');
     notifyListeners();
   }
 
   void openClaimedReceipt(ClaimedReceipt receipt) {
     selectedBill = null;
     selectedClaimedReceipt = receipt;
-    page = 'billDetail';
+    _pushPage('billDetail');
     notifyListeners();
   }
 
@@ -1843,7 +1993,7 @@ class AppState extends ChangeNotifier {
     if (!cloudWrite) {
       householdExpenses.insert(0, expense);
       lastNotice = 'Household expense recorded in demo mode.';
-      page = 'householdExpenses';
+      _pushPage('householdExpenses');
       cloudError = null;
       _isOffline = false;
       notifyListeners();
@@ -1877,7 +2027,7 @@ class AppState extends ChangeNotifier {
         }
       }
       lastNotice = 'Household expense saved to cloud.';
-      page = 'householdExpenses';
+      _pushPage('householdExpenses');
       cloudError = null;
       _isOffline = false;
       return true;
@@ -2480,7 +2630,7 @@ class AppState extends ChangeNotifier {
     if (!cloudWrite) {
       expenses.insert(0, expense);
       lastNotice = 'Expense recorded (demo).';
-      page = 'expenseSaved';
+      _pushPage('expenseSaved');
       cloudError = null;
       _isOffline = false;
       notifyListeners();
@@ -2503,7 +2653,7 @@ class AppState extends ChangeNotifier {
         _retryableCloudExpense = null;
       }
       lastNotice = 'Expense saved to cloud.';
-      page = 'expenseSaved';
+      _pushPage('expenseSaved');
       cloudError = null;
       _isOffline = false;
       return true;
@@ -2589,7 +2739,7 @@ class AppState extends ChangeNotifier {
   void submitSupport() {
     supportReference =
         'PP-SUP-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
-    page = 'supportSubmitted';
+    _pushPage('supportSubmitted');
     notifyListeners();
   }
 
@@ -2597,17 +2747,33 @@ class AppState extends ChangeNotifier {
     required String name,
     required String email,
     required String location,
+    String? mobileNumber,
+    bool updateMobileNumber = false,
     String? successPage = 'customerProfile',
   }) async {
     if (isCloudLoading || isSigningOut) return false;
     final newName = name.trim().isEmpty ? customerName : name.trim();
     final newEmail = email.trim();
     final newCity = location.trim().isEmpty ? city : location.trim();
+    final newMobile = updateMobileNumber
+        ? (mobileNumber == null || mobileNumber.trim().isEmpty
+            ? ''
+            : formatPhoneNumber(mobileNumber))
+        : profileMobileNumber;
+    if (updateMobileNumber &&
+        mobileNumber != null &&
+        mobileNumber.trim().isNotEmpty &&
+        newMobile == null) {
+      cloudError = 'Enter a valid mobile number, including its country code.';
+      notifyListeners();
+      return false;
+    }
 
     if (isDemoMode || !isAuthenticated) {
       customerName = newName;
       customerEmail = newEmail;
       city = newCity;
+      if (updateMobileNumber) profileMobileNumber = newMobile ?? '';
       lastNotice = 'Profile updated (demo).';
       if (successPage != null) page = successPage;
       cloudError = null;
@@ -2633,6 +2799,9 @@ class AppState extends ChangeNotifier {
         shopAddress: shopAddress,
         vendorName: vendorName,
         vendorCategory: vendorCategory,
+        mobileNumber: updateMobileNumber ? newMobile : null,
+        updateMobileNumber: updateMobileNumber,
+        includeBusinessFields: false,
       );
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
         return false;
@@ -2640,6 +2809,7 @@ class AppState extends ChangeNotifier {
       customerName = newName;
       customerEmail = newEmail;
       city = newCity;
+      if (updateMobileNumber) profileMobileNumber = newMobile ?? '';
       hasExistingCloudProfile = true;
       profileStatus = CloudProfileStatus.loaded;
       lastNotice = 'Profile updated in cloud.';
@@ -3264,6 +3434,11 @@ class AppState extends ChangeNotifier {
 
       _clearCloudAccountState();
       try {
+        if (_profilePhotoStore != null || profilePhotoPath != null) {
+          await profilePhotoStore.clear(user.uid);
+        }
+      } catch (_) {}
+      try {
         await firestoreService.firestore.clearPersistence();
       } catch (_) {}
 
@@ -3275,6 +3450,7 @@ class AppState extends ChangeNotifier {
       isDemoMode = true;
       deletionSuccessMessage =
           'Your account and personal data have been permanently deleted.';
+      _navigationStack.clear();
       page = 'splash';
       return true;
     } catch (e) {
