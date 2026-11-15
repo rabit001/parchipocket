@@ -276,5 +276,3 @@ jobs:
             .draft == false and .prerelease == true and .tag_name == $tag
           ' <<< "${published_json}" >/dev/null
           echo "Published verified debug release: $(jq -r '.html_url' <<< "${published_json}")"
-
-          echo "Published verified debug release: $(jq -r '.html_url' <<< "${published_json}")"
