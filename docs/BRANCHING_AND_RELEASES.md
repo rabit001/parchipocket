@@ -1,59 +1,68 @@
 # Branching and Release Workflow
 
-This document describes the intended Git workflow after the current integration pull request is merged.
+This repository intentionally keeps a small branch model for a solo-maintained project.
 
 ## Branch model
 
-- `main` is the canonical integration branch and source of reviewed releases.
-- Short-lived `feat/*`, `fix/*`, `docs/*`, and `chore/*` branches hold focused work.
-- All application and backend changes enter `main` through pull requests.
-- Do not force-push or develop directly on `main`.
+Only two long-lived branches should remain:
 
-Create a branch from an up-to-date main:
+- `main` is the canonical, reviewed branch used for official Beta releases and public source.
+- `develop` is the single active working branch for application, backend, documentation, and maintenance changes.
+
+Do day-to-day work on `develop`. When a set of changes is ready, open one pull request from `develop` to `main`. Wait for the complete backend-validation workflow to pass, review the diff, then merge it. After the merge, bring `develop` up to date with `main` before starting the next batch of work.
+
+Do not create a separate long-lived branch for each task. When a short-lived experiment is genuinely necessary, merge it back into `develop` and remove it after integration.
+
+Example local workflow:
 
 ```powershell
-git switch main
+git switch develop
 git pull --ff-only
-git switch -c fix/short-description
+# Make and verify the changes
+git add .
+git commit -m "feat: describe the change"
+git push origin develop
 ```
 
-After implementation and local verification:
+When the work is ready, open a pull request:
 
-```powershell
-git push -u origin fix/short-description
-```
+- **Base:** `main`
+- **Compare:** `develop`
 
-Open a pull request targeting `main`. Keep the PR focused, explain the user impact, list test commands/results, and call out Firebase deployment requirements.
+Do not push routine development work directly to `main`, and do not force-push either long-lived branch.
 
-## Required review gates
+## Review and protection
 
-The repository owner should configure GitHub branch protection or a ruleset for `main`:
+Configure GitHub rules for `main`:
 
 - Require pull requests before merging.
-- Require the backend-validation workflow's relevant checks to pass.
-- Require conversations to be resolved.
+- Require the backend-validation checks to pass.
+- Require review conversations to be resolved.
 - Block force pushes and branch deletion.
-- Require at least one independent approval when another maintainer/reviewer is available.
+- Require an independent approval only when another maintainer is available; do not make the solo-maintainer workflow impossible.
 
-Do not make a required approval impossible for a single-maintainer repository. Review settings should match the actual team size.
+Keep `develop` as the only active working branch. Old merged task branches and obsolete automation branches should be deleted after confirming their changes are already in `main` or intentionally abandoned.
 
 ## Beta release process
 
-The signed Beta workflow is `.github/workflows/publish-beta-release.yml`. It is intended to run from `main` after this integration PR is merged.
+The signed Beta workflow is `.github/workflows/publish-beta-release.yml`. It must be manually dispatched from `main` after a reviewed merge.
 
-1. Implement and review the change through a pull request.
-2. Run Flutter tests, static analysis, Firestore/Auth emulator tests, and applicable Android build checks.
-3. Increment the semantic version and Android build number in the Flutter pubspec.
-4. Review the release notes and the exact workflow inputs.
-5. Manually dispatch the signed Beta workflow from `main`.
-6. Verify the GitHub Actions run, APK package ID, approved signing certificate, SHA-256 checksum, update manifest, prerelease assets, and immutability.
-7. Install and test the Beta on supported Android devices; do not claim device verification from CI alone.
+1. Implement and verify the changes on `develop`.
+2. Open the `develop` → `main` pull request.
+3. Wait for Flutter tests, static analysis, Firestore/Auth emulator checks, Android build, and applicable integration tests.
+4. Increment the semantic version and Android build number in the Flutter pubspec only when preparing a new signed Beta.
+5. Review release notes and workflow inputs.
+6. Manually dispatch the signed Beta workflow from `main`.
+7. Verify the package ID, approved signing certificate, APK checksum, update manifest, release assets, and immutability.
+8. Test the Beta on supported Android devices; CI does not prove physical-device verification.
 
-The workflow uses the protected `direct-apk-release` environment. Signing secrets and keystore material must remain outside Git.
+The repository also publishes a separate unsigned debug preview after successful main-branch CI. Debug previews are not production-signed releases and must not be distributed as the official Beta.
+
+The signed workflow uses the protected `direct-apk-release` environment. Signing secrets and keystore material must remain outside Git.
 
 ## Versioning
 
-The Flutter package version uses `versionName+versionCode`, for example `0.1.5+5`. Increase the Android version code for every distributable APK. The Beta workflow derives the tag from both values and refuses to overwrite an existing tag or reuse a version code.
+The Flutter package version uses `versionName+versionCode`, for example `0.1.5+5`. Increase the Android version code for every distributable signed APK. Never overwrite a published immutable release or reuse its tag.
 
 ## Firebase deployment
 

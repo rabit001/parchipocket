@@ -1,0 +1,92 @@
+name: Clean up integrated branches
+
+on:
+  workflow_run:
+    workflows:
+      - ParchiPocket backend validation
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  cleanup:
+    name: Delete reviewed and closed task branches
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete branches already consolidated into main
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const keep = new Set(["main", "develop"]);
+            const staleBranches = [
+              "chore/professionalize-repository",
+              "chore/repository-structure-and-release-cleanup",
+              "ci/direct-apk-release-workflow",
+              "dependabot/github_actions/actions/checkout-7",
+              "dependabot/github_actions/actions/download-artifact-8",
+              "dependabot/github_actions/actions/setup-node-7",
+              "dependabot/github_actions/actions/upload-artifact-7",
+              "dependabot/npm_and_yarn/functions/firebase-admin-14.5.0",
+              "dependabot/npm_and_yarn/functions/firebase-functions-7.4.0",
+              "dependabot/npm_and_yarn/functions/mocha-12.0.3",
+              "dependabot/pub/mobile/parchipocket_flutter/crypto-3.0.8",
+              "dependabot/pub/mobile/parchipocket_flutter/cupertino_icons-2.0.0",
+              "dependabot/pub/mobile/parchipocket_flutter/flutter_lints-6.0.0",
+              "dependabot/pub/mobile/parchipocket_flutter/mobile_scanner-7.5.0",
+              "dependabot/pub/mobile/parchipocket_flutter/multi-d82fa78240",
+              "feature/daily-expense-tracker",
+              "fix/daily-log-integration-and-telemetry",
+              "fix/full-app-runtime-audit",
+              "fix/input-validation-edge-cases",
+              "fix/logout-state-race",
+              "fix/pin-flutter-ci-toolchain",
+              "security/app-check-and-deletion-ci"
+            ];
+
+            for (const branch of staleBranches) {
+              if (keep.has(branch)) continue;
+
+              const openPulls = await github.paginate(github.rest.pulls.list, {
+                owner,
+                repo,
+                state: "open",
+                head: `${owner}:${branch}`,
+                per_page: 100
+              });
+
+              if (openPulls.length > 0) {
+                core.warning(`Keeping ${branch}: it still has ${openPulls.length} open pull request(s).`);
+                continue;
+              }
+
+              try {
+                await github.rest.git.getRef({
+                  owner,
+                  repo,
+                  ref: `heads/${branch}`
+                });
+              } catch (error) {
+                if (error.status === 404) {
+                  core.info(`Already absent: ${branch}`);
+                  continue;
+                }
+                throw error;
+              }
+
+              await github.rest.git.deleteRef({
+                owner,
+                repo,
+                ref: `heads/${branch}`
+              });
+              core.info(`Deleted integrated branch: ${branch}`);
+            }
+
+            core.info("Cleanup complete. main and develop are preserved.");
