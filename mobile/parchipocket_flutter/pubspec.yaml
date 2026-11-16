@@ -7,14 +7,14 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
+  cupertino_icons: ^2.0.0
   firebase_core: ^3.6.0
   firebase_auth: ^5.3.1
   cloud_firestore: ^5.4.4
   firebase_app_check: ^0.3.1+6
   firebase_crashlytics: ^4.3.0
   firebase_performance: ^0.10.1
-  crypto: 3.0.7
+  crypto: 3.0.8
   qr_flutter: 4.1.0
   mobile_scanner: 7.4.2
   speech_to_text:

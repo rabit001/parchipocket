@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
       - name: Set up Java
         uses: actions/setup-java@v5
         with:
@@ -50,7 +50,7 @@ jobs:
         working-directory: mobile/parchipocket_flutter
         run: test -f build/app/outputs/flutter-apk/app-debug.apk
       - name: Upload debug APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: parchipocket-debug-apk
           path: mobile/parchipocket_flutter/build/app/outputs/flutter-apk/app-debug.apk
@@ -62,7 +62,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Set up Java
@@ -71,7 +71,7 @@ jobs:
           distribution: temurin
           java-version: "21"
       - name: Set up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
       - name: Set up Flutter
@@ -99,7 +99,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Set up Java
@@ -108,7 +108,7 @@ jobs:
           distribution: temurin
           java-version: "21"
       - name: Set up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
       - name: Install Cloud Functions test dependencies
@@ -135,7 +135,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Set up Java
@@ -144,7 +144,7 @@ jobs:
           distribution: temurin
           java-version: "21"
       - name: Set up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
       - name: Set up Flutter
@@ -191,9 +191,9 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
       - name: Download verified debug APK
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: parchipocket-debug-apk
           path: release-assets
@@ -275,6 +275,4 @@ jobs:
           jq -e --arg tag "${RELEASE_TAG}" '
             .draft == false and .prerelease == true and .tag_name == $tag
           ' <<< "${published_json}" >/dev/null
-          echo "Published verified debug release: $(jq -r '.html_url' <<< "${published_json}")"
-
           echo "Published verified debug release: $(jq -r '.html_url' <<< "${published_json}")"
