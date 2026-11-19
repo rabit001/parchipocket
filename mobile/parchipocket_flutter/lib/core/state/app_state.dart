@@ -18,6 +18,8 @@ part 'models/household_expense.dart';
 
 enum SignInMethod { google, phone }
 
+enum DeletionAuthProvider { google, phone, unsupported }
+
 class AppState extends ChangeNotifier {
   AppState({
     FirebaseAuth? auth,
@@ -3310,6 +3312,39 @@ class AppState extends ChangeNotifier {
   @visibleForTesting
   String mapAuthException(dynamic e) => _mapAuthException(e);
 
+  DeletionAuthProvider get deletionAuthProvider {
+    if (isDemoMode || _explicitDemoSession) return DeletionAuthProvider.unsupported;
+    final user = auth?.currentUser;
+    if (user == null) return DeletionAuthProvider.unsupported;
+
+    final providers = user.providerData.map((p) => p.providerId).toSet();
+    final phone = user.phoneNumber?.trim() ?? '';
+    final hasPhone = phone.isNotEmpty ||
+        providers.contains(PhoneAuthProvider.PROVIDER_ID);
+    final hasGoogle = providers.contains(GoogleAuthProvider.PROVIDER_ID);
+
+    if (user.providerData.isNotEmpty) {
+      final primary = user.providerData.first.providerId;
+      if (primary == GoogleAuthProvider.PROVIDER_ID) {
+        return DeletionAuthProvider.google;
+      }
+      if (primary == PhoneAuthProvider.PROVIDER_ID && hasPhone) {
+        return DeletionAuthProvider.phone;
+      }
+    }
+
+    if (hasGoogle && !hasPhone) {
+      return DeletionAuthProvider.google;
+    }
+    if (hasPhone) {
+      return DeletionAuthProvider.phone;
+    }
+    if (hasGoogle) {
+      return DeletionAuthProvider.google;
+    }
+    return DeletionAuthProvider.unsupported;
+  }
+
   Future<bool> sendDeletionReauthOtp({
     void Function(String verificationId)? onCodeSent,
     void Function(String error)? onError,
@@ -3385,6 +3420,72 @@ class AppState extends ChangeNotifier {
     return completer.future;
   }
 
+  Future<bool> deleteAccountWithGoogle({
+    bool skipFreshnessCheckForTest = false,
+  }) async {
+    if (isDemoMode || _explicitDemoSession) {
+      deletionError =
+          'Demo mode sessions cannot perform server-side account deletion.';
+      notifyListeners();
+      return false;
+    }
+
+    final user = auth?.currentUser;
+    if (user == null) {
+      deletionError = 'You must be signed in to delete your account.';
+      notifyListeners();
+      return false;
+    }
+
+    final hasGoogle = user.providerData.any(
+      (p) => p.providerId == GoogleAuthProvider.PROVIDER_ID,
+    );
+    if (!hasGoogle) {
+      deletionError =
+          'Google re-authentication is not available for this account.';
+      notifyListeners();
+      return false;
+    }
+
+    if (isDeletingAccount) return false;
+
+    isDeletingAccount = true;
+    deletionError = null;
+    notifyListeners();
+
+    try {
+      final idToken = await googleSignInService.authenticate();
+      if (idToken == null) {
+        // User cancelled account selection; leave account untouched.
+        return false;
+      }
+
+      if (idToken.trim().isEmpty) {
+        deletionError =
+            'Google re-authentication could not obtain a valid token. Please try again.';
+        return false;
+      }
+
+      final credential = GoogleAuthProvider.credential(idToken: idToken);
+      await user.reauthenticateWithCredential(credential);
+
+      return await _completeAccountDeletion(
+        user,
+        skipFreshnessCheckForTest: skipFreshnessCheckForTest,
+      );
+    } on FirebaseAuthException catch (e) {
+      deletionError =
+          e.message ?? 'Google re-authentication failed. Please try again.';
+      return false;
+    } catch (e) {
+      deletionError = 'Account deletion failed: $e';
+      return false;
+    } finally {
+      isDeletingAccount = false;
+      notifyListeners();
+    }
+  }
+
   Future<bool> deleteAccountWithOtp(
     String smsCode, {
     bool skipFreshnessCheckForTest = false,
@@ -3409,6 +3510,8 @@ class AppState extends ChangeNotifier {
       return false;
     }
 
+    if (isDeletingAccount) return false;
+
     isDeletingAccount = true;
     deletionError = null;
     notifyListeners();
@@ -3420,39 +3523,14 @@ class AppState extends ChangeNotifier {
       );
       await user.reauthenticateWithCredential(credential);
 
-      final deletionResult = await accountDeletionService.invokeDeletion(
+      return await _completeAccountDeletion(
+        user,
         skipFreshnessCheckForTest: skipFreshnessCheckForTest,
       );
-      if (deletionResult['success'] != true ||
-          deletionResult['completed'] != true) {
-        deletionError =
-            deletionResult['leaseActive'] == true
-                ? 'Account deletion is already in progress. Keep your session active and try again shortly.'
-                : 'The account deletion service has not confirmed completion. Your session is still active; retry after checking the account status.';
-        return false;
-      }
-
-      _clearCloudAccountState();
-      try {
-        if (_profilePhotoStore != null || profilePhotoPath != null) {
-          await profilePhotoStore.clear(user.uid);
-        }
-      } catch (_) {}
-      try {
-        await firestoreService.firestore.clearPersistence();
-      } catch (_) {}
-
-      try {
-        await auth?.signOut();
-      } catch (_) {}
-
-      _restoreDemoState();
-      isDemoMode = true;
-      deletionSuccessMessage =
-          'Your account and personal data have been permanently deleted.';
-      _navigationStack.clear();
-      page = 'splash';
-      return true;
+    } on FirebaseAuthException catch (e) {
+      deletionError =
+          e.message ?? 'SMS re-authentication failed. Check your code and try again.';
+      return false;
     } catch (e) {
       deletionError = 'Account deletion failed: $e';
       return false;
@@ -3460,6 +3538,48 @@ class AppState extends ChangeNotifier {
       isDeletingAccount = false;
       notifyListeners();
     }
+  }
+
+  Future<bool> _completeAccountDeletion(
+    User user, {
+    bool skipFreshnessCheckForTest = false,
+  }) async {
+    final deletionResult = await accountDeletionService.invokeDeletion(
+      skipFreshnessCheckForTest: skipFreshnessCheckForTest,
+    );
+    if (deletionResult['success'] != true ||
+        deletionResult['completed'] != true) {
+      deletionError =
+          deletionResult['leaseActive'] == true
+              ? 'Account deletion is already in progress. Keep your session active and try again shortly.'
+              : 'The account deletion service has not confirmed completion. Your session is still active; retry after checking the account status.';
+      return false;
+    }
+
+    _clearCloudAccountState();
+    try {
+      if (_profilePhotoStore != null || profilePhotoPath != null) {
+        await profilePhotoStore.clear(user.uid);
+      }
+    } catch (_) {}
+    try {
+      await firestoreService.firestore.clearPersistence();
+    } catch (_) {}
+
+    try {
+      await _signOutGoogleProviderIfNeeded(user);
+      await auth?.signOut();
+    } catch (_) {}
+
+    _restoreDemoState();
+    isDemoMode = true;
+    deletionVerificationId = null;
+    deletionResendToken = null;
+    deletionSuccessMessage =
+        'Your account and personal data have been permanently deleted.';
+    _navigationStack.clear();
+    page = 'splash';
+    return true;
   }
 
   void resetDemoData() {

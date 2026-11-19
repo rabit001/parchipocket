@@ -278,11 +278,13 @@ class _DeleteAccountConfirmScreenState
       );
     }
 
-    final userPhone =
-        state.auth?.currentUser?.phoneNumber ?? state.phoneNumber;
+    final provider = state.deletionAuthProvider;
+    final user = state.auth?.currentUser;
+    final userPhone = user?.phoneNumber ?? state.phoneNumber;
     final maskedPhone = userPhone.length > 4
         ? '${userPhone.substring(0, userPhone.length - 4).replaceAll(RegExp(r'\d'), '*')}${userPhone.substring(userPhone.length - 4)}'
         : userPhone;
+    final userEmail = user?.email ?? '';
 
     return PpScaffold(
       state: state,
@@ -306,11 +308,27 @@ class _DeleteAccountConfirmScreenState
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 8),
-          Text(
-            'To protect your data, re-verify ownership of registered phone number $maskedPhone via SMS OTP.',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12, color: PpColors.secondary),
-          ),
+          if (provider == DeletionAuthProvider.google) ...<Widget>[
+            Text(
+              userEmail.isNotEmpty
+                  ? 'To protect your data, re-authenticate with your Google account ($userEmail) before permanently deleting your account.'
+                  : 'To protect your data, re-authenticate with your linked Google account before permanently deleting your account.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: PpColors.secondary),
+            ),
+          ] else if (provider == DeletionAuthProvider.phone) ...<Widget>[
+            Text(
+              'To protect your data, re-verify ownership of registered phone number $maskedPhone via SMS OTP.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: PpColors.secondary),
+            ),
+          ] else ...<Widget>[
+            const Text(
+              'Account deletion requires identity re-authentication. Your account does not have a supported re-authentication provider configured. Please contact support.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: PpColors.secondary),
+            ),
+          ],
           const SizedBox(height: 20),
           if (state.deletionError != null) ...<Widget>[
             PpCard(
@@ -334,72 +352,92 @@ class _DeleteAccountConfirmScreenState
             ),
             const SizedBox(height: 16),
           ],
-          if (!_otpSent) ...<Widget>[
-            PpPrimaryButton(
-              _isSendingOtp
-                  ? 'Sending SMS OTP...'
-                  : 'Send SMS Verification Code',
-              onPressed: _isSendingOtp
-                  ? null
-                  : () async {
-                      setState(() => _isSendingOtp = true);
-                      final sent = await state.sendDeletionReauthOtp(
-                        onCodeSent: (_) {
-                          if (mounted) setState(() => _otpSent = true);
-                        },
-                      );
-                      if (mounted) {
-                        setState(() {
-                          _isSendingOtp = false;
-                          if (sent) _otpSent = true;
-                        });
-                      }
-                    },
-            ),
-          ] else ...<Widget>[
-            TextField(
-              controller: _otpController,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                labelText: '6-digit SMS OTP',
-                hintText: 'Enter code received via SMS',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
+          if (provider == DeletionAuthProvider.google) ...<Widget>[
             PpPrimaryButton(
               state.isDeletingAccount
-                  ? 'Deleting Account & Data...'
-                  : 'Permanently Delete Account',
-              onPressed: state.isDeletingAccount ||
-                      _otpController.text.trim().length != 6
-                  ? null
-                  : () async {
-                      await state.deleteAccountWithOtp(
-                        _otpController.text.trim(),
-                      );
-                    },
-            ),
-            const SizedBox(height: 8),
-            TextButton(
+                  ? 'Re-authenticating & Deleting...'
+                  : 'Re-authenticate with Google & Delete',
               onPressed: state.isDeletingAccount
                   ? null
                   : () async {
-                      setState(() => _isSendingOtp = true);
-                      await state.sendDeletionReauthOtp();
-                      if (mounted) setState(() => _isSendingOtp = false);
+                      await state.deleteAccountWithGoogle();
                     },
-              child: const Text('Resend Verification SMS'),
+            ),
+          ] else if (provider == DeletionAuthProvider.phone) ...<Widget>[
+            if (!_otpSent) ...<Widget>[
+              PpPrimaryButton(
+                _isSendingOtp
+                    ? 'Sending SMS OTP...'
+                    : 'Send SMS Verification Code',
+                onPressed: _isSendingOtp
+                    ? null
+                    : () async {
+                        setState(() => _isSendingOtp = true);
+                        final sent = await state.sendDeletionReauthOtp(
+                          onCodeSent: (_) {
+                            if (mounted) setState(() => _otpSent = true);
+                          },
+                        );
+                        if (mounted) {
+                          setState(() {
+                            _isSendingOtp = false;
+                            if (sent) _otpSent = true;
+                          });
+                        }
+                      },
+              ),
+            ] else ...<Widget>[
+              TextField(
+                controller: _otpController,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  labelText: '6-digit SMS OTP',
+                  hintText: 'Enter code received via SMS',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              PpPrimaryButton(
+                state.isDeletingAccount
+                    ? 'Deleting Account & Data...'
+                    : 'Permanently Delete Account',
+                onPressed: state.isDeletingAccount ||
+                        _otpController.text.trim().length != 6
+                    ? null
+                    : () async {
+                        await state.deleteAccountWithOtp(
+                          _otpController.text.trim(),
+                        );
+                      },
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: state.isDeletingAccount
+                    ? null
+                    : () async {
+                        setState(() => _isSendingOtp = true);
+                        await state.sendDeletionReauthOtp();
+                        if (mounted) setState(() => _isSendingOtp = false);
+                      },
+                child: const Text('Resend Verification SMS'),
+              ),
+            ],
+          ] else ...<Widget>[
+            PpSecondaryButton(
+              'Back to Privacy',
+              onPressed: () => state.go('privacy'),
             ),
           ],
-          const SizedBox(height: 14),
-          PpSecondaryButton(
-            'Cancel and Go Back',
-            onPressed:
-                state.isDeletingAccount ? null : () => state.go('privacy'),
-          ),
+          if (provider != DeletionAuthProvider.unsupported) ...<Widget>[
+            const SizedBox(height: 14),
+            PpSecondaryButton(
+              'Cancel and Go Back',
+              onPressed:
+                  state.isDeletingAccount ? null : () => state.go('privacy'),
+            ),
+          ],
         ],
       ),
     );

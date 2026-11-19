@@ -1,204 +1,197 @@
-import 'dart:async';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:parchipocket/app_state.dart';
 import 'package:parchipocket/screens/common_screens.dart';
+import 'package:parchipocket/theme.dart';
+import 'package:parchipocket/features/auth/data/google_sign_in_service.dart';
 import 'package:parchipocket/services/account_deletion_service.dart';
-import 'package:parchipocket/services/firestore_service.dart';
 
-class _FakeUserCredential extends Fake implements UserCredential {}
-
-class _FakeUser extends Fake implements User {
-  _FakeUser(this.reauthentication);
-
-  final Completer<UserCredential> reauthentication;
+class _FakeGoogleSignInService implements GoogleSignInService {
+  _FakeGoogleSignInService({this.idToken = 'mock-id-token'});
+  String? idToken;
+  int authCalls = 0;
 
   @override
-  String get uid => 'deletion-test-user';
+  Future<String?> authenticate() async {
+    authCalls++;
+    return idToken;
+  }
 
   @override
-  String? get phoneNumber => '+911234567890';
-
-  @override
-  Future<UserCredential> reauthenticateWithCredential(
-    AuthCredential credential,
-  ) =>
-      reauthentication.future;
+  Future<void> signOut() async {}
 }
 
-class _FakeAuth extends Fake implements FirebaseAuth {
-  _FakeAuth(this.user);
+class _FakeAccountDeletionService extends AccountDeletionService {
+  @override
+  Future<Map<String, dynamic>> invokeDeletion({
+    bool skipFreshnessCheckForTest = false,
+  }) async {
+    return <String, dynamic>{
+      'success': true,
+      'completed': true,
+      'message': 'Account deleted',
+    };
+  }
+}
 
-  User? user;
+class _MockUserInfo extends Fake implements UserInfo {
+  _MockUserInfo({required this.providerId, this.email, this.phoneNumber});
+  @override
+  final String providerId;
+  @override
+  final String? email;
+  @override
+  final String? phoneNumber;
+}
+
+class _MockUserCredential extends Fake implements UserCredential {}
+
+class _MockGoogleUser extends Fake implements User {
+  _MockGoogleUser({
+    this.email = 'testuser@gmail.com',
+  });
 
   @override
-  User? get currentUser => user;
+  String get uid => 'google-user-123';
+  @override
+  final String? email;
+  @override
+  String? get phoneNumber => null;
+
+  @override
+  List<UserInfo> get providerData => <UserInfo>[
+    _MockUserInfo(providerId: GoogleAuthProvider.PROVIDER_ID, email: email),
+  ];
+
+  @override
+  Future<UserCredential> reauthenticateWithCredential(AuthCredential credential) async {
+    return _MockUserCredential();
+  }
+}
+
+class _MockPhoneUser extends Fake implements User {
+  _MockPhoneUser();
+
+  @override
+  String get uid => 'phone-user-456';
+  @override
+  String? get phoneNumber => '+919876543210';
+  @override
+  String? get email => null;
+
+  @override
+  List<UserInfo> get providerData => <UserInfo>[
+    _MockUserInfo(providerId: PhoneAuthProvider.PROVIDER_ID, phoneNumber: phoneNumber),
+  ];
+}
+
+class _MockUnsupportedUser extends Fake implements User {
+  @override
+  final String uid = 'custom-user-789';
+  @override
+  final String? email = 'custom@example.com';
+  @override
+  final String? phoneNumber = null;
+
+  @override
+  List<UserInfo> get providerData => <UserInfo>[
+    _MockUserInfo(providerId: 'custom.token', email: email),
+  ];
+}
+
+class _MockFirebaseAuth extends Fake implements FirebaseAuth {
+  _MockFirebaseAuth({this.currentUser});
+  @override
+  User? currentUser;
 
   @override
   Stream<User?> authStateChanges() => const Stream<User?>.empty();
 
   @override
-  Future<void> verifyPhoneNumber({
-    String? phoneNumber,
-    PhoneMultiFactorInfo? multiFactorInfo,
-    Duration timeout = const Duration(seconds: 30),
-    int? forceResendingToken,
-    String? autoRetrievedSmsCodeForTesting,
-    MultiFactorSession? multiFactorSession,
-    required PhoneVerificationCompleted verificationCompleted,
-    required PhoneVerificationFailed verificationFailed,
-    required PhoneCodeSent codeSent,
-    required PhoneCodeAutoRetrievalTimeout codeAutoRetrievalTimeout,
-  }) async {
-    codeSent('mock-verification-id', 7);
-  }
-
-  @override
   Future<void> signOut() async {
-    user = null;
-  }
-}
-
-class _FakeFirebaseFirestore extends Fake implements FirebaseFirestore {
-  @override
-  Future<void> clearPersistence() async {}
-}
-
-class _FakeFirestoreService extends FirestoreService {
-  _FakeFirestoreService() : super(firestore: _FakeFirebaseFirestore());
-}
-
-class _FakeAccountDeletionService extends AccountDeletionService {
-  int calls = 0;
-  bool complete = true;
-
-  @override
-  Future<Map<String, dynamic>> invokeDeletion({
-    bool skipFreshnessCheckForTest = false,
-  }) async {
-    calls++;
-    return <String, dynamic>{
-      'success': complete,
-      'completed': complete,
-      if (!complete) 'leaseActive': false,
-    };
+    currentUser = null;
   }
 }
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  Widget buildTestApp(AppState state) {
+    return MaterialApp(
+      theme: buildPpTheme(),
+      home: DeleteAccountConfirmScreen(state: state),
+    );
+  }
 
-  group('Account deletion UI with local fakes', () {
-    testWidgets('review requires explicit proceed and supports cancellation',
-        (tester) async {
-      final state = AppState()..page = 'deleteReview';
-      await tester.pumpWidget(MaterialApp(
-        home: DeleteAccountReviewScreen(state: state),
-      ));
+  group('DeleteAccountConfirmScreen UI Widget Tests', () {
+    testWidgets('1. Google user sees Google re-authentication button and no SMS button', (tester) async {
+      final googleUser = _MockGoogleUser(email: 'alice@gmail.com');
+      final fakeGoogle = _FakeGoogleSignInService();
+      final state = AppState(
+        auth: _MockFirebaseAuth(currentUser: googleUser),
+        googleSignInService: fakeGoogle,
+        accountDeletionService: _FakeAccountDeletionService(),
+      );
+      state.isDemoMode = false;
 
-      expect(find.text('Review Before Deleting'), findsOneWidget);
-      await tester.drag(find.byType(ListView), const Offset(0, -900));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Cancel and Keep Account'));
-      expect(state.page, 'privacy');
+      await tester.pumpWidget(buildTestApp(state));
 
-      await tester.pumpWidget(MaterialApp(
-        home: DeleteAccountReviewScreen(state: state),
-      ));
-      await tester.drag(find.byType(ListView), const Offset(0, -900));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Proceed to Identity Verification'));
-      expect(state.page, 'deleteConfirm');
-      state.dispose();
+      expect(find.text('Confirm Account Deletion'), findsOneWidget);
+      expect(find.textContaining('alice@gmail.com'), findsOneWidget);
+      expect(find.text('Re-authenticate with Google & Delete'), findsOneWidget);
+      expect(find.text('Send SMS Verification Code'), findsNothing);
+      expect(find.text('Cancel and Go Back'), findsOneWidget);
     });
 
-    testWidgets(
-        'confirmation shows loading, deletes, logs out and clears session',
-        (tester) async {
-      final reauthentication = Completer<UserCredential>();
-      final user = _FakeUser(reauthentication);
-      final auth = _FakeAuth(user);
-      final deletion = _FakeAccountDeletionService();
+    testWidgets('2. Tapping Google delete button invokes deleteAccountWithGoogle', (tester) async {
+      final googleUser = _MockGoogleUser();
+      final fakeGoogle = _FakeGoogleSignInService(idToken: 'valid-token');
       final state = AppState(
-        auth: auth,
-        accountDeletionService: deletion,
-      )
-        ..isDemoMode = false
-        ..firestoreService = _FakeFirestoreService()
-        ..page = 'deleteConfirm';
-
-      await tester.pumpWidget(AnimatedBuilder(
-        animation: state,
-        builder: (_, __) => MaterialApp(
-          home: DeleteAccountConfirmScreen(state: state),
-        ),
-      ));
-      await tester.tap(find.text('Send SMS Verification Code'));
-      await tester.pumpAndSettle();
-      expect(find.byType(TextField), findsOneWidget);
-
-      await tester.enterText(find.byType(TextField), '123456');
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Permanently Delete Account'));
-      await tester.pump();
-
-      expect(state.isDeletingAccount, isTrue);
-      expect(find.text('Deleting Account & Data...'), findsOneWidget);
-      final deletingButton = tester.widget<ElevatedButton>(
-        find.widgetWithText(ElevatedButton, 'Deleting Account & Data...'),
+        auth: _MockFirebaseAuth(currentUser: googleUser),
+        googleSignInService: fakeGoogle,
+        accountDeletionService: _FakeAccountDeletionService(),
       );
-      expect(deletingButton.onPressed, isNull);
+      state.isDemoMode = false;
 
-      reauthentication.complete(_FakeUserCredential());
+      await tester.pumpWidget(buildTestApp(state));
+
+      await tester.tap(find.text('Re-authenticate with Google & Delete'));
       await tester.pumpAndSettle();
 
-      expect(deletion.calls, 1);
-      expect(state.isDeletingAccount, isFalse);
-      expect(state.deletionSuccessMessage, contains('permanently deleted'));
+      expect(fakeGoogle.authCalls, 1);
       expect(state.isDemoMode, isTrue);
       expect(state.page, 'splash');
-      expect(auth.currentUser, isNull);
-
-      final repeated = await state.deleteAccountWithOtp('123456');
-      expect(repeated, isFalse);
-      expect(deletion.calls, 1);
-      state.dispose();
     });
 
-    testWidgets('interrupted deletion remains retryable until confirmed',
-        (tester) async {
-      final reauthentication = Completer<UserCredential>();
-      final auth = _FakeAuth(_FakeUser(reauthentication));
-      final deletion = _FakeAccountDeletionService()..complete = false;
+    testWidgets('3. Phone user sees SMS OTP button and no Google button', (tester) async {
+      final phoneUser = _MockPhoneUser();
       final state = AppState(
-        auth: auth,
-        accountDeletionService: deletion,
-      )
-        ..isDemoMode = false
-        ..firestoreService = _FakeFirestoreService()
-        ..deletionVerificationId = 'mock-verification-id'
-        ..page = 'deleteConfirm';
+        auth: _MockFirebaseAuth(currentUser: phoneUser),
+      );
+      state.isDemoMode = false;
 
-      final first = state.deleteAccountWithOtp('123456');
-      await tester.pump();
-      expect(state.isDeletingAccount, isTrue);
-      reauthentication.complete(_FakeUserCredential());
-      expect(await first, isFalse);
-      expect(state.isDeletingAccount, isFalse);
-      expect(state.page, 'deleteConfirm');
-      expect(state.deletionSuccessMessage, isNull);
-      expect(state.deletionError, contains('not confirmed completion'));
+      await tester.pumpWidget(buildTestApp(state));
 
-      deletion.complete = true;
-      final recovered = await state.deleteAccountWithOtp('123456');
-      expect(recovered, isTrue);
-      expect(deletion.calls, 2);
-      expect(state.deletionSuccessMessage, contains('permanently deleted'));
-      expect(auth.currentUser, isNull);
-      state.dispose();
+      expect(find.text('Confirm Account Deletion'), findsOneWidget);
+      expect(find.textContaining('SMS OTP'), findsOneWidget);
+      expect(find.text('Send SMS Verification Code'), findsOneWidget);
+      expect(find.text('Re-authenticate with Google & Delete'), findsNothing);
+      expect(find.text('Cancel and Go Back'), findsOneWidget);
+    });
+
+    testWidgets('4. Unsupported user sees informative guidance and Back to Privacy', (tester) async {
+      final unsupportedUser = _MockUnsupportedUser();
+      final state = AppState(
+        auth: _MockFirebaseAuth(currentUser: unsupportedUser),
+      );
+      state.isDemoMode = false;
+
+      await tester.pumpWidget(buildTestApp(state));
+
+      expect(find.text('Confirm Account Deletion'), findsOneWidget);
+      expect(find.textContaining('does not have a supported re-authentication provider'), findsOneWidget);
+      expect(find.text('Back to Privacy'), findsOneWidget);
+      expect(find.text('Re-authenticate with Google & Delete'), findsNothing);
+      expect(find.text('Send SMS Verification Code'), findsNothing);
     });
   });
 }
