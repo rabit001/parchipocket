@@ -83,4 +83,25 @@ class GenerationRecognitionListenerTest {
         assertEquals(listOf("status"), events)
         assertEquals(true, router.isActive(generation))
     }
+
+    @Test
+    fun cancellingGenerationSuppressesLateListenerCallbacks() {
+        val events = mutableListOf<String>()
+        val router = RecognitionGenerationRouter { _, type, _ -> events += type }
+        val generation = router.begin()
+        val listener = listener(generation, router)
+        events.clear()
+
+        router.cancel(generation)
+        assertEquals(listOf("terminal"), events)
+        events.clear()
+
+        listener.onReadyForSpeech(null)
+        listener.onBeginningOfSpeech()
+        listener.onEndOfSpeech()
+        listener.onResults(Bundle())
+        listener.onError(7)
+
+        assertEquals(emptyList<String>(), events)
+    }
 }

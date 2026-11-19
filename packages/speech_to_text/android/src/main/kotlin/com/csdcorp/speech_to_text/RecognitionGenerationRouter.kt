@@ -52,4 +52,18 @@ internal class RecognitionGenerationRouter(
         emit(generation, "terminal", null)
         activeGeneration = null
     }
+
+    @Synchronized
+    fun cancel(generation: Long? = activeGeneration): Boolean {
+        val target = generation ?: return false
+        if (!isActive(target)) return false
+        terminal(target)
+        return true
+    }
+
+    @Synchronized
+    fun dispose() {
+        val active = activeGeneration ?: return
+        terminal(active)
+    }
 }

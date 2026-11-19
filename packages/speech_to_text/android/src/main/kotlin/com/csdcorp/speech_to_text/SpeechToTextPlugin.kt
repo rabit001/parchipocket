@@ -161,6 +161,24 @@ public class SpeechToTextPlugin :
     }
 
     override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
+        timer?.cancel()
+        timer = null
+        optionallyStopBluetooth()
+        val recognizer = speechRecognizer
+        speechRecognizer = null
+        val destroyAction = Runnable {
+            try {
+                recognizer?.destroy()
+            } catch (e: Exception) {
+                debugLog("SpeechRecognizer destroy error: ${e.message}")
+            }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            destroyAction.run()
+        } else {
+            handler.post(destroyAction)
+        }
+        generationRouter.dispose()
         this.pluginContext = null;
         channel?.setMethodCallHandler(null)
         channel = null
@@ -375,15 +393,27 @@ public class SpeechToTextPlugin :
             return
         }
         debugLog("Cancel listening")
-        val generation = generationRouter.currentGeneration() ?: run {
-            result.success(false)
-            return
+        val generation = generationRouter.currentGeneration()
+        if (generation != null) {
+            notifyListening(isRecording = false, generation = generation)
+            generationRouter.cancel(generation)
+        } else {
+            listening = false
+            optionallyStopBluetooth()
         }
-        handler.post {
-            run {
+        timer?.cancel()
+        timer = null
+        val cancelAction = Runnable {
+            try {
                 speechRecognizer?.cancel()
-                notifyListening(isRecording = false, generation = generation)
+            } catch (e: Exception) {
+                debugLog("SpeechRecognizer cancel error: ${e.message}")
             }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            cancelAction.run()
+        } else {
+            handler.post(cancelAction)
         }
         result.success(true)
         debugLog("Cancel listening done")

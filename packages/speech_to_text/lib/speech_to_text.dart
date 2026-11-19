@@ -786,8 +786,8 @@ class SpeechToText {
         _notifiedDone = true;
         _listening = false;
         _lastStatus = doneStatus;
-        statusListener?.call(doneStatus);
         _activeNativeGenerationId = null;
+        statusListener?.call(doneStatus);
         return;
       }
       if (eventType == 'status') {

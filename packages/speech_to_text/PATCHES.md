@@ -18,16 +18,18 @@ fork through a repository-relative path dependency.
   active generation. Other platform implementations retain their existing
   string-based event handling.
 - JUnit tests cover generation routing, listener identity, event ordering,
-  empty final results, stale callbacks, and terminal suppression.
+  empty final results, stale callbacks, cancellation idempotency, disposal,
+  and terminal suppression.
 
-## Cancellation limitation
+## Cancellation and lifecycle handling
 
-Android `SpeechRecognizer.cancel()` does not synchronously confirm that native
-recognition has terminated. The router keeps the generation locked until the
-matching native `onResults` or `onError` callback arrives. If Android never
-sends either callback, voice recognition remains blocked for the app process;
-the plugin does not fabricate a cancellation acknowledgement. The application
-asks the user to fully restart it and keeps manual purchase entry available.
+Android `SpeechRecognizer.cancel()` does not guarantee that native callbacks
+(`onError` or `onResults`) will be delivered. The `RecognitionGenerationRouter`
+provides explicit `cancel(generation)` and `dispose()` methods that immediately
+release the active generation lock, emit a terminal event to Dart, and transition
+the plugin to an idle state without relying on Android callbacks. Late callbacks
+from cancelled generations are safely suppressed, preventing deadlocks and
+allowing subsequent listening sessions (`listen → cancel → listen`) to succeed.
 
 ## Modified and added fork files
 
