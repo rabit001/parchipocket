@@ -293,7 +293,7 @@ class _AppUpdatePromptHostState extends State<AppUpdatePromptHost> {
       _promptShown = false;
       return;
     }
-    if (!await widget.manager.shouldShowAutomaticPrompt() || !mounted) {
+    if (!widget.manager.shouldShowAutomaticPrompt || !mounted) {
       _dialogOpen = false;
       return;
     }

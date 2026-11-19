@@ -193,7 +193,7 @@ void main() {
 
     expect(openUpdates, 0);
     expect(manager.isPromptDismissedForSession, isTrue);
-    expect(await manager.shouldShowAutomaticPrompt(), isFalse);
+    expect(manager.shouldShowAutomaticPrompt, isFalse);
     expect(find.text('Download & Install'), findsNothing);
 
     // Returning from background during the same launch does not reopen prompt

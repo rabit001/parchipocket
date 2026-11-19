@@ -56,8 +56,6 @@ class AppUpdateManager extends ChangeNotifier {
     );
   }
 
-  static const Duration automaticCheckInterval = Duration(hours: 24);
-  static const Duration promptDeferral = Duration(days: 7);
   static const String _lastAttemptKey = 'app_update.beta.last_attempt_ms';
   static const String _lastSuccessKey = 'app_update.beta.last_success_ms';
   static const String _deferredUntilKey = 'app_update.beta.deferred_until_ms';
@@ -159,11 +157,8 @@ class AppUpdateManager extends ChangeNotifier {
     }
   }
 
-  Future<bool> shouldShowAutomaticPrompt() async {
-    if (status != AppUpdateStatus.available) return false;
-    if (_sessionPromptDismissed) return false;
-    return true;
-  }
+  bool get shouldShowAutomaticPrompt =>
+      status == AppUpdateStatus.available && !_sessionPromptDismissed;
 
   Future<void> deferAutomaticPrompt() async {
     _sessionPromptDismissed = true;

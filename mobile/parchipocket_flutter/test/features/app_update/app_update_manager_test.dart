@@ -96,12 +96,12 @@ void main() {
     'Later dismisses prompt for current launch and does not persist 7-day deferral',
     () async {
       await manager.checkForUpdates();
-      expect(await manager.shouldShowAutomaticPrompt(), isTrue);
+      expect(manager.shouldShowAutomaticPrompt, isTrue);
       expect(manager.isPromptDismissedForSession, isFalse);
 
       await manager.deferAutomaticPrompt();
       expect(manager.isPromptDismissedForSession, isTrue);
-      expect(await manager.shouldShowAutomaticPrompt(), isFalse);
+      expect(manager.shouldShowAutomaticPrompt, isFalse);
 
       // Verify no persistent 7-day deferral key remains in SharedPreferences
       final prefs = await SharedPreferences.getInstance();
@@ -110,7 +110,7 @@ void main() {
       // Returning from background during same session maintains session dismissal
       await manager.onAppResumed();
       expect(manager.isPromptDismissedForSession, isTrue);
-      expect(await manager.shouldShowAutomaticPrompt(), isFalse);
+      expect(manager.shouldShowAutomaticPrompt, isFalse);
 
       // Next fresh launch (new AppUpdateManager instance) re-prompts for the available update
       final nextLaunchManager = AppUpdateManager(
@@ -126,7 +126,7 @@ void main() {
       await nextLaunchManager.checkForUpdates();
       expect(nextLaunchManager.status, AppUpdateStatus.available);
       expect(nextLaunchManager.isPromptDismissedForSession, isFalse);
-      expect(await nextLaunchManager.shouldShowAutomaticPrompt(), isTrue);
+      expect(nextLaunchManager.shouldShowAutomaticPrompt, isTrue);
     },
   );
 
