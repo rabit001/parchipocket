@@ -16,9 +16,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  quality-gate:
+    name: Mandatory release quality gates
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/release-quality-gates.yml
+
   build-signed-apk:
     name: Build and verify signed release APK
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/full-app-runtime-audit'
+    needs: quality-gate
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment:
@@ -26,6 +32,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify release baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -41,7 +57,7 @@ jobs:
 
       - name: Fetch Flutter dependencies
         working-directory: mobile/parchipocket_flutter
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Decode upload keystore to runner temp
         shell: bash
