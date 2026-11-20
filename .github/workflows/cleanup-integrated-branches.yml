@@ -1,92 +1,102 @@
 name: Clean up integrated branches
 
 on:
-  workflow_run:
-    workflows:
-      - ParchiPocket backend validation
-    types:
-      - completed
-    branches:
-      - main
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Simulate cleanup without deleting any branch (default: true)"
+        type: boolean
+        required: true
+        default: true
+      target_branch:
+        description: "Protected target branch that candidate branches must be merged into"
+        type: string
+        required: false
+        default: "main"
+      branch_filter:
+        description: "Optional branch name filter regex (leave empty to evaluate all branches)"
+        type: string
+        required: false
+        default: ""
 
 permissions:
-  contents: write
+  contents: read
   pull-requests: read
 
+concurrency:
+  group: branch-cleanup
+  cancel-in-progress: false
+
 jobs:
-  cleanup:
-    name: Delete reviewed and closed task branches
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+  evaluate-branches:
+    name: Evaluate candidate branches (dry-run & safety audit)
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      eligible_branches: ${{ steps.evaluate.outputs.eligible_branches }}
+      eligible_count: ${{ steps.evaluate.outputs.eligible_count }}
+      dry_run: ${{ steps.evaluate.outputs.dry_run }}
     steps:
-      - name: Delete branches already consolidated into main
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Evaluate branches for safe cleanup
+        id: evaluate
         uses: actions/github-script@v7
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          BRANCH_FILTER: ${{ inputs.branch_filter }}
         with:
           script: |
-            const { owner, repo } = context.repo;
-            const keep = new Set(["main", "develop"]);
-            const staleBranches = [
-              "chore/professionalize-repository",
-              "chore/repository-structure-and-release-cleanup",
-              "ci/direct-apk-release-workflow",
-              "dependabot/github_actions/actions/checkout-7",
-              "dependabot/github_actions/actions/download-artifact-8",
-              "dependabot/github_actions/actions/setup-node-7",
-              "dependabot/github_actions/actions/upload-artifact-7",
-              "dependabot/npm_and_yarn/functions/firebase-admin-14.5.0",
-              "dependabot/npm_and_yarn/functions/firebase-functions-7.4.0",
-              "dependabot/npm_and_yarn/functions/mocha-12.0.3",
-              "dependabot/pub/mobile/parchipocket_flutter/crypto-3.0.8",
-              "dependabot/pub/mobile/parchipocket_flutter/cupertino_icons-2.0.0",
-              "dependabot/pub/mobile/parchipocket_flutter/flutter_lints-6.0.0",
-              "dependabot/pub/mobile/parchipocket_flutter/mobile_scanner-7.5.0",
-              "dependabot/pub/mobile/parchipocket_flutter/multi-d82fa78240",
-              "feature/daily-expense-tracker",
-              "fix/daily-log-integration-and-telemetry",
-              "fix/full-app-runtime-audit",
-              "fix/input-validation-edge-cases",
-              "fix/logout-state-race",
-              "fix/pin-flutter-ci-toolchain",
-              "security/app-check-and-deletion-ci"
-            ];
+            const engine = require('./.github/scripts/cleanup_branches.js');
+            const dryRun = process.env.DRY_RUN !== 'false';
+            const targetBranch = process.env.TARGET_BRANCH || 'main';
+            const branchFilter = process.env.BRANCH_FILTER || '';
 
-            for (const branch of staleBranches) {
-              if (keep.has(branch)) continue;
+            await engine.evaluateAndPlan({
+              github,
+              context,
+              core,
+              options: { dryRun, targetBranch, branchFilter }
+            });
 
-              const openPulls = await github.paginate(github.rest.pulls.list, {
-                owner,
-                repo,
-                state: "open",
-                head: `${owner}:${branch}`,
-                per_page: 100
-              });
+  delete-branches:
+    name: Execute verified branch cleanup
+    needs: evaluate-branches
+    if: github.ref == 'refs/heads/main' && inputs.dry_run == false && needs.evaluate-branches.outputs.eligible_count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
 
-              if (openPulls.length > 0) {
-                core.warning(`Keeping ${branch}: it still has ${openPulls.length} open pull request(s).`);
-                continue;
-              }
+      - name: Execute verified branch deletion
+        uses: actions/github-script@v7
+        env:
+          ELIGIBLE_BRANCHES_JSON: ${{ needs.evaluate-branches.outputs.eligible_branches }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+        with:
+          script: |
+            const engine = require('./.github/scripts/cleanup_branches.js');
+            const eligibleBranches = JSON.parse(process.env.ELIGIBLE_BRANCHES_JSON || '[]');
+            const targetBranch = process.env.TARGET_BRANCH || 'main';
 
-              try {
-                await github.rest.git.getRef({
-                  owner,
-                  repo,
-                  ref: `heads/${branch}`
-                });
-              } catch (error) {
-                if (error.status === 404) {
-                  core.info(`Already absent: ${branch}`);
-                  continue;
-                }
-                throw error;
-              }
-
-              await github.rest.git.deleteRef({
-                owner,
-                repo,
-                ref: `heads/${branch}`
-              });
-              core.info(`Deleted integrated branch: ${branch}`);
-            }
-
-            core.info("Cleanup complete. main and develop are preserved.");
+            await engine.executeDeletion({
+              github,
+              context,
+              core,
+              eligibleBranches,
+              options: { targetBranch }
+            });

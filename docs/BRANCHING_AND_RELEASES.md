@@ -41,7 +41,43 @@ Configure GitHub rules for `main`:
 - Block force pushes and branch deletion.
 - Require an independent approval only when another maintainer is available; do not make the solo-maintainer workflow impossible.
 
-Keep `develop` as the only active working branch. Old merged task branches and obsolete automation branches should be deleted after confirming their changes are already in `main` or intentionally abandoned.
+Keep `develop` as the only active working branch. Old merged task branches and obsolete automation branches should be deleted only after confirming their changes are already integrated into `main` or intentionally abandoned.
+
+## Safe automated branch cleanup
+
+Branch cleanup is managed safely and conservatively via `.github/workflows/cleanup-integrated-branches.yml`.
+
+### Safety rules and eligibility
+
+A branch is **never deleted merely because it lacks an open pull request**. Deletion strictly requires verifiable cryptographic and metadata evidence of full integration:
+
+1. **Merged PR Verification:** The branch must have an associated pull request that is closed, marked `merged_at`, and whose base branch is the protected target branch (`main`).
+2. **Commit SHA Match:** The current live branch head SHA must exactly match the `pr.head.sha` recorded at the time of merge. If additional commits were pushed to the branch after the PR was merged, the branch is **preserved** to prevent loss of unmerged work.
+3. **Protected Branches Excluded:** `main`, `develop`, repository default branches, release/beta branches (`release/*`, `beta/*`, `v*`), and branches marked as protected in GitHub rulesets are permanently preserved from deletion.
+4. **Preserve on Uncertainty:** Branches without pull requests, branches with closed but unmerged pull requests, branches with active open PRs, or branches encountering API errors/rate limits are automatically **preserved**.
+
+### Atomic concurrency safeguards (TOCTOU race protection)
+
+Standard GitHub REST reference deletion (`DELETE /repos/{owner}/{repo}/git/refs/{ref}`) only accepts the ref name without an expected commit SHA. This creates a **time-of-check-to-time-of-use (TOCTOU) race window**: if a developer pushes a new commit after an API pre-check but before the DELETE call completes, the branch would be deleted anyway, permanently destroying unmerged commits.
+
+To provide true atomicity, the cleanup engine uses **Git transport atomic reference deletion with an explicit expected-SHA lease**:
+
+```bash
+git push --force-with-lease=refs/heads/<branch>:<expected_sha> origin :refs/heads/<branch>
+```
+
+- **Server-Side Atomic Compare-and-Swap (CAS):** The Git server executes the lease check and deletion in a single atomic transaction.
+- **Concurrent Commits Preserved:** If the remote branch moves or receives new commits at any millisecond before deletion, the server immediately rejects the push with `(stale info)`. The engine catches this rejection, aborts the operation, classifies the outcome as `CONCURRENT_MODIFICATION_ABORTED`, and guarantees the branch remains preserved.
+- **No Unsafe REST Fallback:** The workflow never falls back to unconditioned REST deletion. If conditional Git transport fails for any reason, the branch remains intact.
+- **PR Re-verification:** Pull request merge status and target base branch are re-verified immediately prior to deletion to defend against reopened or modified pull requests.
+
+### Execution modes
+
+The cleanup workflow is strictly **manual (`workflow_dispatch`)** and restricted to execution from `main`:
+
+- **Dry-run simulation (Default):** Run with `dry_run: true` (or leave as default). The inspection job runs with read-only permissions (`contents: read`, `pull-requests: read`), audits all candidate branches, logs the classification for each branch, and publishes a complete Markdown breakdown to the workflow step summary. No branch is deleted.
+- **Explicit live cleanup:** Triggered only by explicitly setting `dry_run: false`. Only branches verified as eligible in the planning phase are forwarded to the deletion job, which operates under least-privilege `contents: write` permissions and re-verifies ref integrity immediately before issuing the deletion API call.
+- **Branch filter:** An optional `branch_filter` input allows targeting specific branches or patterns (e.g. `feat/*`, `dependabot/*`) while preserving all other branches.
 
 ## Beta release process
 
