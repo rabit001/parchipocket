@@ -128,7 +128,7 @@ service cloud.firestore {
 
     function isValidBill(data) {
       return data.keys().hasAll(['id', 'store', 'items', 'createdAt', 'paymentMode']) &&
-             data.keys().hasOnly(['id', 'store', 'items', 'createdAt', 'paymentMode', 'customerPhone', 'isUdhaar', 'isSettled', 'isSaved']) &&
+             data.keys().hasOnly(['id', 'store', 'items', 'createdAt', 'paymentMode', 'customerPhone', 'isUdhaar', 'isSettled', 'isSaved', 'settledAt']) &&
              data.id is string && data.id.size() > 0 && data.id.size() <= 50 &&
              data.store is string && data.store.size() > 0 && data.store.size() <= 100 &&
              data.paymentMode is string && data.paymentMode.size() > 0 && data.paymentMode.size() <= 50 &&
@@ -137,7 +137,8 @@ service cloud.firestore {
              (!data.keys().hasAny(['customerPhone']) || (data.customerPhone is string && data.customerPhone.size() <= 30)) &&
              (!data.keys().hasAny(['isUdhaar']) || data.isUdhaar is bool) &&
              (!data.keys().hasAny(['isSettled']) || data.isSettled is bool) &&
-             (!data.keys().hasAny(['isSaved']) || data.isSaved is bool);
+             (!data.keys().hasAny(['isSaved']) || data.isSaved is bool) &&
+             (!data.keys().hasAny(['settledAt']) || data.settledAt is timestamp);
     }
 
     function isBillUpdateAllowed(existingData, newData) {
@@ -174,6 +175,13 @@ service cloud.firestore {
               newData.isSettled == existingData.isSettled ||
               (existingData.isSettled == false &&
                newData.isSettled == true)) &&
+
+             // settledAt: immutable once set; may only be added/updated when isSettled transitions from false to true.
+             (!existingData.keys().hasAny(['settledAt']) ||
+              newData.settledAt == existingData.settledAt) &&
+             (!newData.keys().hasAny(['settledAt']) ||
+              (existingData.keys().hasAny(['settledAt']) && newData.settledAt == existingData.settledAt) ||
+              (existingData.isSettled == false && newData.isSettled == true && newData.settledAt is timestamp)) &&
 
              isValidBill(newData);
     }

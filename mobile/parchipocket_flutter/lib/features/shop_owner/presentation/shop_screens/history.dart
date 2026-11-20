@@ -25,8 +25,8 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
           bill.customerPhone.toLowerCase().contains(q) ||
           bill.store.toLowerCase().contains(q);
       final paymentMatches = filter == 'All' ||
-          (filter == 'Paid' && !bill.isUdhaar) ||
-          (filter == 'Udhaar' && bill.isUdhaar);
+          (filter == 'Paid' && (!bill.isUdhaar || bill.isSettled)) ||
+          (filter == 'Udhaar' && bill.isUdhaar && !bill.isSettled);
       return matches && paymentMatches;
     }).toList();
     return PpScaffold(
@@ -61,10 +61,14 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
                       itemCount: bills.length,
                       itemBuilder: (context, index) {
                         final bill = bills[index];
+                        final statusLabel = bill.isUdhaar
+                            ? (bill.isSettled ? 'Udhaar (Settled)' : 'Udhaar (Pending)')
+                            : bill.paymentMode;
                         return PpTransactionTile(
+                            key: ValueKey(bill.id),
                             title: bill.displayNumber,
                             subtitle:
-                                '${bill.store} · ${formatDateTime(bill.createdAt)} · ${bill.paymentMode}',
+                                '${bill.store} · ${formatDateTime(bill.createdAt)} · $statusLabel',
                             trailing: money(bill.total),
                             icon: Icons.receipt_long_outlined,
                             onTap: () => widget.state.openBill(bill));

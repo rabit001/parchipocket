@@ -6,8 +6,10 @@ class ShopHomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCloudAuthenticated = !state.isDemoMode && state.isAuthenticated;
-    final todayBills = state.shopBills.where((b) => !b.isUdhaar).toList();
-    final todaySales = todayBills.fold<double>(0, (sum, b) => sum + b.total);
+    final todayBills = state.shopBills
+        .where((b) => state.isSameDay(b.createdAt, DateTime.now()))
+        .toList();
+    final todaySales = state.todayGrossSales();
     return PpScaffold(
         state: state,
         title: state.shopName,
@@ -106,7 +108,7 @@ class ShopHomeScreen extends StatelessWidget {
           const SizedBox(height: 10),
           PpDemoNotice(
               message: isCloudAuthenticated
-                  ? 'Your cloud account is active. New bills appear here after Firestore confirms the save. Sales exclude Udhaar and are not a profit calculation.'
+                  ? 'Your cloud account is active. New bills appear here after Firestore confirms the save. Sales figures reflect recorded sales and are not a profit calculation.'
                   : 'Figures are based on sample/local records. This is not a profit calculation and is not synced to a server.'),
         ]));
   }

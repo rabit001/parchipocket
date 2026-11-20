@@ -6,9 +6,6 @@ class SalesReportsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bills = state.shopBills;
-    final paid = bills
-        .where((bill) => !bill.isUdhaar)
-        .fold<double>(0, (sum, bill) => sum + bill.total);
     final count = bills.length;
     return PpScaffold(
         state: state,
@@ -22,35 +19,40 @@ class SalesReportsScreen extends StatelessWidget {
           const SizedBox(height: 12),
           PpMetricCard(
               label: 'Recorded sales',
-              value: money(paid),
+              value: money(state.grossSales),
               subtitle: '$count recorded bills'),
           const SizedBox(height: 13),
           Row(children: <Widget>[
             Expanded(
                 child: PpMetricCard(
-                    label: 'Expenses recorded',
-                    value: money(state.expensesTotal),
-                    color: PpColors.error)),
+                    label: 'Payments collected',
+                    value: money(state.collectedPayments),
+                    color: PpColors.forest)),
             const SizedBox(width: 9),
             Expanded(
                 child: PpMetricCard(
                     label: 'Udhaar outstanding',
                     value: money(state.outstandingTotal),
-                    color: PpColors.error))
+                    color: PpColors.error)),
           ]),
           const SizedBox(height: 12),
           Row(children: <Widget>[
             Expanded(
                 child: PpMetricCard(
                     label: 'Paid bills',
-                    value: '${bills.where((b) => !b.isUdhaar).length}')),
+                    value: '${state.paidBills.length}')),
             const SizedBox(width: 9),
             Expanded(
                 child: PpMetricCard(
                     label: 'Pending bills',
                     value: '${state.udhaarBills.length}',
-                    color: PpColors.error))
+                    color: PpColors.error)),
           ]),
+          const SizedBox(height: 12),
+          PpMetricCard(
+              label: 'Expenses recorded',
+              value: money(state.expensesTotal),
+              color: PpColors.error),
           const SizedBox(height: 16),
           const PpSectionTitle('Recent sales'),
           const SizedBox(height: 6),
@@ -99,7 +101,17 @@ class ExportReportPreviewScreen extends StatelessWidget {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
               const SizedBox(height: 14),
               _ReportRow(
-                  label: 'Recorded sales', value: money(state.recordedSales)),
+                  label: 'Recorded sales', value: money(state.grossSales)),
+              const Divider(),
+              _ReportRow(
+                  label: 'Payments collected',
+                  value: money(state.collectedPayments),
+                  color: PpColors.forest),
+              const Divider(),
+              _ReportRow(
+                  label: 'Udhaar outstanding',
+                  value: money(state.outstandingTotal),
+                  color: PpColors.error),
               const Divider(),
               _ReportRow(
                   label: 'Expenses recorded',
@@ -107,11 +119,9 @@ class ExportReportPreviewScreen extends StatelessWidget {
                   color: PpColors.error),
               const Divider(),
               _ReportRow(
-                  label: 'Udhaar outstanding',
-                  value: money(state.outstandingTotal)),
-              const Divider(),
-              _ReportRow(
-                  label: 'Bills recorded', value: '${state.shopBills.length}'),
+                  label: 'Bills recorded',
+                  value:
+                      '${state.shopBills.length} (${state.paidBills.length} paid, ${state.udhaarBills.length} pending)'),
             ])),
         const SizedBox(height: 15),
         const PpDemoNotice(

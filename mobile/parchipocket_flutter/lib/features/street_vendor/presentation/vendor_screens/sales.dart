@@ -15,9 +15,7 @@ class _VendorSalesScreenState extends State<VendorSalesScreen> {
         .where((bill) => bill.store == widget.state.vendorName)
         .toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    final total = bills
-        .where((bill) => !bill.isUdhaar)
-        .fold<double>(0, (sum, bill) => sum + bill.total);
+    final total = bills.fold<double>(0, (sum, bill) => sum + bill.total);
     return PpScaffold(
         state: widget.state,
         title: 'Sales & history',

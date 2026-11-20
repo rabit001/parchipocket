@@ -8,9 +8,7 @@ class VendorHomeScreen extends StatelessWidget {
     final isCloudAuthenticated = !state.isDemoMode && state.isAuthenticated;
     final bills =
         state.bills.where((bill) => bill.store == state.vendorName).toList();
-    final sales = bills
-        .where((bill) => !bill.isUdhaar)
-        .fold<double>(0, (sum, bill) => sum + bill.total);
+    final sales = bills.fold<double>(0, (sum, bill) => sum + bill.total);
     return PpScaffold(
         state: state,
         title: 'ParchiPocket',

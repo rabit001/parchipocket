@@ -33,6 +33,7 @@ class DemoBill {
     this.isUdhaar = false,
     this.isSettled = false,
     this.isSaved = true,
+    this.settledAt,
   });
 
   final String id;
@@ -44,6 +45,7 @@ class DemoBill {
   bool isUdhaar;
   bool isSettled;
   bool isSaved;
+  DateTime? settledAt;
   String get displayNumber {
     if (id.startsWith('PP-')) return id;
     return 'PP-$id';

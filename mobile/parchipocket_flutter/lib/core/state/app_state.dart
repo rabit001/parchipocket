@@ -1560,15 +1560,79 @@ class AppState extends ChangeNotifier {
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
   List<DemoBill> get udhaarBills =>
-      bills.where((bill) => bill.isUdhaar && !bill.isSettled).toList();
+      shopBills.where((bill) => bill.isUdhaar && !bill.isSettled).toList();
 
-  double get recordedSales => shopBills
-      .where((b) => !b.isUdhaar)
-      .fold<double>(0, (sum, bill) => sum + bill.total);
-  double get expensesTotal =>
-      expenses.fold<double>(0, (sum, item) => sum + item.amount);
+  List<DemoBill> get settledUdhaarBills =>
+      shopBills.where((bill) => bill.isUdhaar && bill.isSettled).toList();
+
+  List<DemoBill> get paidBills =>
+      shopBills.where((bill) => !bill.isUdhaar || bill.isSettled).toList();
+
+  double get grossSales =>
+      shopBills.fold<double>(0, (sum, bill) => sum + bill.total);
+
+  double get recordedSales => grossSales;
+
+  double get collectedPayments =>
+      paidBills.fold<double>(0, (sum, bill) => sum + bill.total);
+
   double get outstandingTotal =>
       udhaarBills.fold<double>(0, (sum, bill) => sum + bill.total);
+
+  double get expensesTotal =>
+      expenses.fold<double>(0, (sum, item) => sum + item.amount);
+
+  bool isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  bool isSameMonth(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month;
+
+  double todayGrossSales({DateTime? now}) {
+    final target = now ?? DateTime.now();
+    return shopBills
+        .where((b) => isSameDay(b.createdAt, target))
+        .fold<double>(0, (sum, b) => sum + b.total);
+  }
+
+  double todayCollectedPayments({DateTime? now}) {
+    final target = now ?? DateTime.now();
+    return shopBills.where((b) {
+      if (!b.isUdhaar) {
+        return isSameDay(b.createdAt, target);
+      }
+      if (b.isSettled) {
+        if (b.settledAt != null) {
+          return isSameDay(b.settledAt!, target);
+        }
+        return isSameDay(b.createdAt, target);
+      }
+      return false;
+    }).fold<double>(0, (sum, b) => sum + b.total);
+  }
+
+  double monthlyGrossSales({DateTime? now}) {
+    final target = now ?? DateTime.now();
+    return shopBills
+        .where((b) => isSameMonth(b.createdAt, target))
+        .fold<double>(0, (sum, b) => sum + b.total);
+  }
+
+  double monthlyCollectedPayments({DateTime? now}) {
+    final target = now ?? DateTime.now();
+    return shopBills.where((b) {
+      if (!b.isUdhaar) {
+        return isSameMonth(b.createdAt, target);
+      }
+      if (b.isSettled) {
+        if (b.settledAt != null) {
+          return isSameMonth(b.settledAt!, target);
+        }
+        return isSameMonth(b.createdAt, target);
+      }
+      return false;
+    }).fold<double>(0, (sum, b) => sum + b.total);
+  }
 
   void openBill(DemoBill bill) {
     selectedClaimedReceipt = null;
@@ -1821,11 +1885,14 @@ class AppState extends ChangeNotifier {
   }
 
   Future<bool> saveSelectedBill() async {
-    if (selectedBill == null) return false;
+    final bill = selectedBill;
+    if (bill == null) return false;
     if (isCloudLoading || isSigningOut) return false;
 
     if (isDemoMode || !isAuthenticated) {
-      selectedBill!.isSaved = true;
+      bill.isSaved = true;
+      final billIndex = bills.indexWhere((b) => b.id == bill.id);
+      if (billIndex != -1) bills[billIndex].isSaved = true;
       lastNotice = 'Receipt saved (demo).';
       cloudError = null;
       _isOffline = false;
@@ -1840,14 +1907,15 @@ class AppState extends ChangeNotifier {
     final authGeneration = _authEventGeneration;
 
     final updatedBill = DemoBill(
-      id: selectedBill!.id,
-      store: selectedBill!.store,
-      items: selectedBill!.items,
-      createdAt: selectedBill!.createdAt,
-      paymentMode: selectedBill!.paymentMode,
-      customerPhone: selectedBill!.customerPhone,
-      isUdhaar: selectedBill!.isUdhaar,
-      isSettled: selectedBill!.isSettled,
+      id: bill.id,
+      store: bill.store,
+      items: bill.items,
+      createdAt: bill.createdAt,
+      paymentMode: bill.paymentMode,
+      customerPhone: bill.customerPhone,
+      isUdhaar: bill.isUdhaar,
+      isSettled: bill.isSettled,
+      settledAt: bill.settledAt,
       isSaved: true,
     );
 
@@ -1856,7 +1924,11 @@ class AppState extends ChangeNotifier {
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
         return false;
       }
-      selectedBill!.isSaved = true;
+      if (selectedBill?.id == bill.id) {
+        selectedBill!.isSaved = true;
+      }
+      final billIndex = bills.indexWhere((b) => b.id == bill.id);
+      if (billIndex != -1) bills[billIndex].isSaved = true;
       lastNotice = 'Receipt saved to cloud.';
       cloudError = null;
       _isOffline = false;
@@ -1869,10 +1941,8 @@ class AppState extends ChangeNotifier {
       lastNotice = 'Failed to save receipt to cloud: $e';
       return false;
     } finally {
-      if (uid != null && _isCurrentAuthenticatedSession(uid, authGeneration)) {
-        isCloudLoading = false;
-        notifyListeners();
-      }
+      isCloudLoading = false;
+      notifyListeners();
     }
   }
 
@@ -1888,8 +1958,10 @@ class AppState extends ChangeNotifier {
     }
 
     if (bill.isSettled) return true;
+    final now = DateTime.now();
     if (isDemoMode || !isAuthenticated) {
       bill.isSettled = true;
+      bill.settledAt = now;
       lastNotice = '${bill.id} settled (demo).';
       cloudError = null;
       _isOffline = false;
@@ -1912,6 +1984,7 @@ class AppState extends ChangeNotifier {
       customerPhone: bill.customerPhone,
       isUdhaar: bill.isUdhaar,
       isSettled: true,
+      settledAt: now,
       isSaved: bill.isSaved,
     );
 
@@ -1921,6 +1994,7 @@ class AppState extends ChangeNotifier {
         return false;
       }
       bill.isSettled = true;
+      bill.settledAt = now;
       lastNotice = '${bill.id} marked as settled.';
       cloudError = null;
       _isOffline = false;

@@ -526,23 +526,29 @@ class FirestoreService {
     await doc.collection('bills').doc(bill.id).update(_serializeBill(bill));
   }
 
-  Map<String, dynamic> _serializeBill(DemoBill bill) => {
-        'id': bill.id,
-        'store': bill.store,
-        'items': bill.items
-            .map((item) => {
-                  'name': item.name,
-                  'quantity': item.quantity,
-                  'unitPrice': item.unitPrice,
-                })
-            .toList(),
-        'createdAt': Timestamp.fromDate(bill.createdAt),
-        'paymentMode': bill.paymentMode,
-        'customerPhone': bill.customerPhone,
-        'isUdhaar': bill.isUdhaar,
-        'isSettled': bill.isSettled,
-        'isSaved': bill.isSaved,
-      };
+  Map<String, dynamic> _serializeBill(DemoBill bill) {
+    final map = <String, dynamic>{
+      'id': bill.id,
+      'store': bill.store,
+      'items': bill.items
+          .map((item) => {
+                'name': item.name,
+                'quantity': item.quantity,
+                'unitPrice': item.unitPrice,
+              })
+          .toList(),
+      'createdAt': Timestamp.fromDate(bill.createdAt),
+      'paymentMode': bill.paymentMode,
+      'customerPhone': bill.customerPhone,
+      'isUdhaar': bill.isUdhaar,
+      'isSettled': bill.isSettled,
+      'isSaved': bill.isSaved,
+    };
+    if (bill.settledAt != null) {
+      map['settledAt'] = Timestamp.fromDate(bill.settledAt!);
+    }
+    return map;
+  }
 
   bool _isSameBillIdentity(
     Map<String, dynamic> existing,
@@ -609,6 +615,14 @@ class FirestoreService {
         createdAt = DateTime.tryParse(createdAtTs) ?? DateTime.now();
       }
 
+      final settledAtTs = data['settledAt'];
+      DateTime? settledAt;
+      if (settledAtTs is Timestamp) {
+        settledAt = settledAtTs.toDate();
+      } else if (settledAtTs is String) {
+        settledAt = DateTime.tryParse(settledAtTs);
+      }
+
       return DemoBill(
         // The Firestore document path is the authoritative bill identity.
         id: docSnap.id,
@@ -619,6 +633,7 @@ class FirestoreService {
         customerPhone: data['customerPhone'] as String? ?? '',
         isUdhaar: data['isUdhaar'] as bool? ?? false,
         isSettled: data['isSettled'] as bool? ?? false,
+        settledAt: settledAt,
         isSaved: data['isSaved'] as bool? ?? true,
       );
     }).toList();
