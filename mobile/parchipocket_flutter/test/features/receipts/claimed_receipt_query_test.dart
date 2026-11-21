@@ -237,6 +237,107 @@ void main() {
       expect(results.last.sourceBillId, 'bill-0');
     });
 
+    test('Direct index deserialization loads receipts without secondary reads', () async {
+      final claimedTime = DateTime(2026, 10, 5, 12, 0);
+      final indexDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[
+        FakeQueryDocSnapshot(<String, dynamic>{
+          'ownerUid': 'seller-fast',
+          'sourceBillId': 'bill-direct',
+          'receipt': <String, dynamic>{
+            'id': 'bill-direct',
+            'store': 'Direct Store',
+            'paymentMode': 'UPI',
+            'createdAt': Timestamp.fromDate(claimedTime),
+            'items': <dynamic>[
+              <String, dynamic>{
+                'name': 'Milk',
+                'quantity': 2,
+                'unitPrice': 30.0,
+              }
+            ],
+          },
+          'claimedAt': Timestamp.fromDate(claimedTime),
+        }),
+      ];
+
+      // Empty receiptStore proves zero secondary reads are attempted
+      final userDoc = FakeUserDocRef(
+        indexDocs: indexDocs,
+        receiptStore: <String, FakeReceiptDocSnapshot>{},
+      );
+      final service = FirestoreService(
+        firestore: FakeFirestore(userDoc),
+        auth: FakeReceiptAuth(FakeAuthUser()),
+      );
+
+      final results = await service.loadClaimedReceipts();
+      expect(results.length, 1);
+      expect(results.first.ownerUid, 'seller-fast');
+      expect(results.first.sourceBillId, 'bill-direct');
+      expect(results.first.bill.store, 'Direct Store');
+      expect(results.first.bill.items.length, 1);
+      expect(results.first.bill.items.first.name, 'Milk');
+      expect(results.first.bill.items.first.quantity, 2);
+      expect(results.first.bill.items.first.unitPrice, 30.0);
+    });
+
+    test('Malformed or missing receipt fields in index are skipped gracefully', () async {
+      final validTime = DateTime(2026, 10, 5, 12, 0);
+      final indexDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[
+        // Corrupted 1: Missing ownerUid
+        FakeQueryDocSnapshot(<String, dynamic>{
+          'sourceBillId': 'bill-1',
+          'receipt': <String, dynamic>{},
+          'claimedAt': Timestamp.fromDate(validTime),
+        }),
+        // Corrupted 2: Malformed receipt item shape
+        FakeQueryDocSnapshot(<String, dynamic>{
+          'ownerUid': 'seller-1',
+          'sourceBillId': 'bill-2',
+          'receipt': <String, dynamic>{
+            'id': 'bill-2',
+            'store': 'Store',
+            'paymentMode': 'Cash',
+            'createdAt': Timestamp.fromDate(validTime),
+            'items': 'not-a-list',
+          },
+          'claimedAt': Timestamp.fromDate(validTime),
+        }),
+        // Valid item
+        FakeQueryDocSnapshot(<String, dynamic>{
+          'ownerUid': 'seller-1',
+          'sourceBillId': 'bill-3',
+          'receipt': <String, dynamic>{
+            'id': 'bill-3',
+            'store': 'Good Store',
+            'paymentMode': 'Cash',
+            'createdAt': Timestamp.fromDate(validTime),
+            'items': <dynamic>[
+              <String, dynamic>{
+                'name': 'Bread',
+                'quantity': 1,
+                'unitPrice': 40.0,
+              }
+            ],
+          },
+          'claimedAt': Timestamp.fromDate(validTime),
+        }),
+      ];
+
+      final userDoc = FakeUserDocRef(
+        indexDocs: indexDocs,
+        receiptStore: <String, FakeReceiptDocSnapshot>{},
+      );
+      final service = FirestoreService(
+        firestore: FakeFirestore(userDoc),
+        auth: FakeReceiptAuth(FakeAuthUser()),
+      );
+
+      final results = await service.loadClaimedReceipts();
+      expect(results.length, 1);
+      expect(results.first.sourceBillId, 'bill-3');
+    });
+
     test('Missing receipt copy throws ReceiptClaimException with specific notice', () async {
       final indexDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[
         FakeQueryDocSnapshot(<String, dynamic>{

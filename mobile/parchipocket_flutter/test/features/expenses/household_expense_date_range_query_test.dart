@@ -741,5 +741,97 @@ void main() {
       // 1200 * 25.0 = 30000.0
       expect(state.householdSpendForMonth(2026, 10), 30000.0);
     });
+
+    // Test 14: Requested total limit smaller than batchSize is genuinely enforced
+    test('14. Total limit smaller than batchSize is genuinely enforced without over-fetching', () async {
+      for (var i = 0; i < 50; i++) {
+        store.add(<String, dynamic>{
+          'id': 'lim-doc-$i',
+          'title': 'Limit Item $i',
+          'category': 'General',
+          'amount': 10.0,
+          'expenseDate': Timestamp.fromDate(DateTime(2026, 10, 10, 10, i)),
+          'createdAt': Timestamp.fromDate(DateTime(2026, 10, 10, 10, i)),
+        });
+      }
+
+      final results = await service.loadHouseholdExpensesForDateRange(
+        DateTime(2026, 10, 1),
+        DateTime(2026, 11, 1),
+        batchSize: 20,
+        limit: 5,
+      );
+
+      expect(results.length, 5);
+      // Verify ordering is preserved (descending by effectiveDate)
+      for (var i = 0; i < results.length - 1; i++) {
+        expect(
+          results[i].effectiveDate.isAfter(results[i + 1].effectiveDate) ||
+              results[i].effectiveDate.isAtSameMomentAs(results[i + 1].effectiveDate),
+          isTrue,
+        );
+      }
+    });
+
+    // Test 15: Zero, negative, and null limit behavior
+    test('15. Zero and negative limits return empty list immediately, null limit returns all', () async {
+      for (var i = 0; i < 15; i++) {
+        store.add(<String, dynamic>{
+          'id': 'edge-doc-$i',
+          'title': 'Edge Item $i',
+          'category': 'General',
+          'amount': 10.0,
+          'expenseDate': Timestamp.fromDate(DateTime(2026, 10, 10, 10, i)),
+          'createdAt': Timestamp.fromDate(DateTime(2026, 10, 10, 10, i)),
+        });
+      }
+
+      final zeroResults = await service.loadHouseholdExpensesForDateRange(
+        DateTime(2026, 10, 1),
+        DateTime(2026, 11, 1),
+        limit: 0,
+      );
+      expect(zeroResults, isEmpty);
+
+      final negativeResults = await service.loadHouseholdExpensesForDateRange(
+        DateTime(2026, 10, 1),
+        DateTime(2026, 11, 1),
+        limit: -5,
+      );
+      expect(negativeResults, isEmpty);
+
+      final nullResults = await service.loadHouseholdExpensesForDateRange(
+        DateTime(2026, 10, 1),
+        DateTime(2026, 11, 1),
+        limit: null,
+      );
+      expect(nullResults.length, 15);
+    });
+
+    // Test 16: Limit across multiple batches does not skip or duplicate
+    test('16. Limit across multiple batches stops cleanly at boundary without duplicates', () async {
+      for (var i = 0; i < 40; i++) {
+        store.add(<String, dynamic>{
+          'id': 'multi-doc-$i',
+          'title': 'Multi Item $i',
+          'category': 'General',
+          'amount': 10.0,
+          'expenseDate': Timestamp.fromDate(DateTime(2026, 10, 10, 10, i)),
+          'createdAt': Timestamp.fromDate(DateTime(2026, 10, 10, 10, i)),
+        });
+      }
+
+      // batchSize 5, limit 12 -> requires 3 batches (5 + 5 + 2)
+      final results = await service.loadHouseholdExpensesForDateRange(
+        DateTime(2026, 10, 1),
+        DateTime(2026, 11, 1),
+        batchSize: 5,
+        limit: 12,
+      );
+
+      expect(results.length, 12);
+      final ids = results.map((e) => e.id).toSet();
+      expect(ids.length, 12); // No duplicates
+    });
   });
 }

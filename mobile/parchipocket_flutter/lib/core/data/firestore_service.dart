@@ -514,53 +514,105 @@ class FirestoreService {
   Future<List<ClaimedReceipt>> loadClaimedReceipts() async {
     final user = _userDoc;
     if (user == null) return <ClaimedReceipt>[];
-    final index = await user.collection('claimedReceiptsIndex').get();
+
+    QuerySnapshot<Map<String, dynamic>> index;
+    try {
+      index = await user.collection('claimedReceiptsIndex').get();
+      lastOperationWasOffline = false;
+    } catch (e) {
+      if (_isNetworkOrOfflineError(e)) {
+        lastOperationWasOffline = true;
+        try {
+          index = await user
+              .collection('claimedReceiptsIndex')
+              .get(const GetOptions(source: Source.cache));
+        } catch (_) {
+          return <ClaimedReceipt>[];
+        }
+      } else {
+        rethrow;
+      }
+    }
+
     if (index.docs.isEmpty) return <ClaimedReceipt>[];
 
     final results = <ClaimedReceipt>[];
-    final docs = index.docs;
-    const effectiveBatchSize = 10;
+    final missingCopyEntries = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
 
-    for (var i = 0; i < docs.length; i += effectiveBatchSize) {
-      final chunk = docs.sublist(i, min(i + effectiveBatchSize, docs.length));
-      final chunkResults = await Future.wait(
-        chunk.map((entry) async {
-          final data = entry.data();
-          final ownerUid = data['ownerUid'];
-          final billId = data['sourceBillId'];
-          if (ownerUid is! String || billId is! String) return null;
-          final copy = await user
-              .collection('claimedReceipts')
-              .doc(ownerUid)
-              .collection('bills')
-              .doc(billId)
-              .get();
-          if (!copy.exists) {
-            throw const ReceiptClaimException(
-                'A saved receipt copy is missing. Contact support before retrying this claim.');
-          }
-          final copyData = copy.data();
-          if (copyData == null) {
-            throw const ReceiptClaimException(
-                'A saved receipt copy is missing. Contact support before retrying this claim.');
-          }
-          final receiptMap = copyData['receipt'];
-          final claimedAtTs = copyData['claimedAt'];
-          if (receiptMap is! Map<String, dynamic> ||
-              claimedAtTs is! Timestamp) {
-            throw const ReceiptClaimException(
-                'Saved receipt copy has invalid or corrupted data.');
-          }
-          return _claimedReceipt(
+    for (final entry in index.docs) {
+      final data = entry.data();
+      final ownerUid = data['ownerUid'];
+      final billId = data['sourceBillId'];
+      final receiptMap = data['receipt'];
+      final claimedAtTs = data['claimedAt'];
+
+      if (ownerUid is! String || billId is! String) {
+        continue;
+      }
+
+      // Fast path: direct deserialization from index document
+      if (receiptMap is Map<String, dynamic> && claimedAtTs is Timestamp) {
+        try {
+          final claimed = _claimedReceipt(
             ownerUid,
             billId,
             receiptMap,
             claimedAtTs,
           );
-        }),
-      );
-      for (final r in chunkResults) {
-        if (r != null) {
+          results.add(claimed);
+        } catch (_) {
+          // Skip corrupted or unparseable item without aborting the load
+        }
+        continue;
+      }
+
+      // Backward-compatible fallback for legacy index documents missing inline receipt
+      missingCopyEntries.add(entry);
+    }
+
+    if (missingCopyEntries.isNotEmpty) {
+      const effectiveBatchSize = 10;
+      for (var i = 0; i < missingCopyEntries.length; i += effectiveBatchSize) {
+        final chunk = missingCopyEntries.sublist(
+          i,
+          min(i + effectiveBatchSize, missingCopyEntries.length),
+        );
+        final chunkResults = await Future.wait(
+          chunk.map((entry) async {
+            final data = entry.data();
+            final ownerUid = data['ownerUid'] as String;
+            final billId = data['sourceBillId'] as String;
+            final copy = await user
+                .collection('claimedReceipts')
+                .doc(ownerUid)
+                .collection('bills')
+                .doc(billId)
+                .get();
+            if (!copy.exists) {
+              throw const ReceiptClaimException(
+                  'A saved receipt copy is missing. Contact support before retrying this claim.');
+            }
+            final copyData = copy.data();
+            if (copyData == null) {
+              throw const ReceiptClaimException(
+                  'A saved receipt copy is missing. Contact support before retrying this claim.');
+            }
+            final receiptMap = copyData['receipt'];
+            final claimedAtTs = copyData['claimedAt'];
+            if (receiptMap is! Map<String, dynamic> ||
+                claimedAtTs is! Timestamp) {
+              throw const ReceiptClaimException(
+                  'Saved receipt copy has invalid or corrupted data.');
+            }
+            return _claimedReceipt(
+              ownerUid,
+              billId,
+              receiptMap,
+              claimedAtTs,
+            );
+          }),
+        );
+        for (final r in chunkResults) {
           results.add(r);
         }
       }
@@ -1459,17 +1511,28 @@ class FirestoreService {
   }
 
   /// Fetches all documents matching [baseQuery] across pages using cursor-based
-  /// pagination until the query is exhausted.
+  /// pagination until the query is exhausted or [maxTotalDocuments] is reached.
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
       _fetchAllRangeDocuments(
     Query<Map<String, dynamic>> baseQuery,
-    int batchSize,
-  ) async {
+    int batchSize, {
+    int? maxTotalDocuments,
+  }) async {
+    if (maxTotalDocuments != null && maxTotalDocuments <= 0) {
+      return <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    }
+    final effectiveBatchSize = batchSize > 0 ? batchSize : 500;
     final docs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     DocumentSnapshot<Map<String, dynamic>>? lastDoc;
 
     while (true) {
-      var query = baseQuery.limit(batchSize);
+      final remaining = maxTotalDocuments != null
+          ? (maxTotalDocuments - docs.length)
+          : effectiveBatchSize;
+      if (remaining <= 0) break;
+      final currentBatch = min(effectiveBatchSize, remaining);
+
+      var query = baseQuery.limit(currentBatch);
       if (lastDoc != null) {
         query = query.startAfterDocument(lastDoc);
       }
@@ -1478,6 +1541,7 @@ class FirestoreService {
         snapshot = await query.get();
       } catch (e) {
         if (_isNetworkOrOfflineError(e)) {
+          lastOperationWasOffline = true;
           try {
             snapshot =
                 await query.get(const GetOptions(source: Source.cache));
@@ -1493,7 +1557,7 @@ class FirestoreService {
       }
       docs.addAll(snapshot.docs);
       lastDoc = snapshot.docs.last;
-      if (snapshot.docs.length < batchSize) {
+      if (snapshot.docs.length < currentBatch) {
         break;
       }
     }
@@ -1507,7 +1571,8 @@ class FirestoreService {
   /// Merges results from querying by expenseDate and by createdAt to capture
   /// both modern custom-dated entries and legacy documents without expenseDate.
   /// Cursor-based pagination is used to fetch all matching records across both
-  /// queries in [batchSize] batches until exhausted, avoiding silent truncation.
+  /// queries in [batchSize] batches until exhausted or [limit] is reached,
+  /// avoiding silent truncation while respecting requested caps.
   Future<List<HouseholdExpense>> loadHouseholdExpensesForDateRange(
     DateTime startDate,
     DateTime endDate, {
@@ -1518,20 +1583,27 @@ class FirestoreService {
       traceName: 'monthly_expense_aggregation',
       action: () async {
         try {
+          if (limit != null && limit <= 0) {
+            return <HouseholdExpense>[];
+          }
+
           final doc = _userDoc;
           if (doc == null) {
             final all = await loadHouseholdExpenses();
-            return all.where((e) {
+            final matches = all.where((e) {
               if (e.isVoided) return false;
               final effective = e.effectiveDate;
               return !effective.isBefore(startDate) &&
                   effective.isBefore(endDate);
             }).toList()
               ..sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+            if (limit != null && matches.length > limit) {
+              return matches.take(limit).toList();
+            }
+            return matches;
           }
 
-          final effectiveBatchSize =
-              (limit ?? batchSize) > 0 ? (limit ?? batchSize) : 500;
+          final effectiveBatchSize = batchSize > 0 ? batchSize : 500;
           final collection = doc.collection('householdExpenses');
           final startTimestamp = Timestamp.fromDate(startDate);
           final endTimestamp = Timestamp.fromDate(endDate);
@@ -1547,8 +1619,16 @@ class FirestoreService {
               .orderBy('createdAt');
 
           final results = await Future.wait([
-            _fetchAllRangeDocuments(expenseDateQuery, effectiveBatchSize),
-            _fetchAllRangeDocuments(createdAtQuery, effectiveBatchSize),
+            _fetchAllRangeDocuments(
+              expenseDateQuery,
+              effectiveBatchSize,
+              maxTotalDocuments: limit,
+            ),
+            _fetchAllRangeDocuments(
+              createdAtQuery,
+              effectiveBatchSize,
+              maxTotalDocuments: limit,
+            ),
           ]);
 
           final merged = <String, HouseholdExpense>{};
@@ -1572,17 +1652,24 @@ class FirestoreService {
           }).toList();
 
           filtered.sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+          if (limit != null && filtered.length > limit) {
+            return filtered.take(limit).toList();
+          }
           return filtered;
         } on FirebaseException catch (error) {
           if (error.code != 'no-app') rethrow;
           final all = await loadHouseholdExpenses();
-          return all.where((e) {
+          final matches = all.where((e) {
             if (e.isVoided) return false;
             final effective = e.effectiveDate;
             return !effective.isBefore(startDate) &&
                 effective.isBefore(endDate);
           }).toList()
             ..sort((a, b) => b.effectiveDate.compareTo(a.effectiveDate));
+          if (limit != null && matches.length > limit) {
+            return matches.take(limit).toList();
+          }
+          return matches;
         }
       },
     );
@@ -1600,7 +1687,8 @@ class FirestoreService {
     return loadHouseholdExpensesForDateRange(
       startDate,
       endDate,
-      batchSize: limit ?? batchSize,
+      batchSize: batchSize,
+      limit: limit,
     );
   }
 
