@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -54,6 +56,110 @@ class FirestoreService {
 
   final FirebaseFirestore? _firestore;
   final FirebaseAuth? _auth;
+  bool lastOperationWasOffline = false;
+  bool isOfflineMode = false;
+
+  final Set<String> _pendingBillWrites = <String>{};
+  final Set<String> _pendingExpenseWrites = <String>{};
+  final Set<String> _pendingHouseholdWrites = <String>{};
+
+  void Function(String billId, String uid)? onBillSynced;
+  void Function(String billId, String uid, dynamic error)? onBillRejected;
+  void Function(String expenseId, String uid)? onExpenseSynced;
+  void Function(String expenseId, String uid, dynamic error)? onExpenseRejected;
+  void Function(String expenseId, String uid)? onHouseholdExpenseSynced;
+  void Function(String expenseId, String uid, dynamic error)?
+      onHouseholdExpenseRejected;
+
+  @visibleForTesting
+  Set<String> get rawPendingBillWrites => _pendingBillWrites;
+  @visibleForTesting
+  Set<String> get rawPendingExpenseWrites => _pendingExpenseWrites;
+  @visibleForTesting
+  Set<String> get rawPendingHouseholdWrites => _pendingHouseholdWrites;
+
+  bool isBillPendingSync(String id) => _pendingBillWrites.contains(id);
+  bool isExpensePendingSync(String id) => _pendingExpenseWrites.contains(id);
+  bool isHouseholdExpensePendingSync(String id) =>
+      _pendingHouseholdWrites.contains(id);
+  bool get hasPendingWrites =>
+      _pendingBillWrites.isNotEmpty ||
+      _pendingExpenseWrites.isNotEmpty ||
+      _pendingHouseholdWrites.isNotEmpty;
+  Set<String> get pendingBillIds => Set.unmodifiable(_pendingBillWrites);
+  Set<String> get pendingExpenseIds => Set.unmodifiable(_pendingExpenseWrites);
+  Set<String> get pendingHouseholdExpenseIds =>
+      Set.unmodifiable(_pendingHouseholdWrites);
+
+  final Set<String> _listeningDocIds = <String>{};
+  final List<StreamSubscription> _metadataSubscriptions = [];
+
+  void _listenToPendingDocument(
+    DocumentReference<Map<String, dynamic>> ref,
+    String id,
+    String writeUid,
+    void Function(String id, String uid) onSynced,
+    void Function(String id, String uid, dynamic error) onRejected,
+  ) {
+    if (_listeningDocIds.contains(id)) return;
+    _listeningDocIds.add(id);
+    StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? sub;
+    sub = ref.snapshots(includeMetadataChanges: true).listen(
+      (snap) {
+        if (!snap.metadata.hasPendingWrites) {
+          _listeningDocIds.remove(id);
+          onSynced(id, writeUid);
+          sub?.cancel();
+          if (sub != null) _metadataSubscriptions.remove(sub);
+        }
+      },
+      onError: (err) {
+        _listeningDocIds.remove(id);
+        onRejected(id, writeUid, err);
+        sub?.cancel();
+        if (sub != null) _metadataSubscriptions.remove(sub);
+      },
+    );
+    if (_listeningDocIds.contains(id)) {
+      _metadataSubscriptions.add(sub);
+    } else {
+      sub.cancel();
+    }
+  }
+
+  void clearPendingWrites() {
+    _pendingBillWrites.clear();
+    _pendingExpenseWrites.clear();
+    _pendingHouseholdWrites.clear();
+    _listeningDocIds.clear();
+    for (final sub in _metadataSubscriptions) {
+      sub.cancel();
+    }
+    _metadataSubscriptions.clear();
+  }
+
+  bool isNetworkOrOfflineError(dynamic error) => _isNetworkOrOfflineError(error);
+
+  bool _isNetworkOrOfflineError(dynamic error) {
+    if (error == null) return false;
+    if (error is FirebaseException) {
+      final code = error.code.toLowerCase();
+      if (code == 'unavailable' ||
+          code == 'network-request-failed' ||
+          code == 'deadline-exceeded') {
+        return true;
+      }
+    }
+    final message = error.toString().toLowerCase();
+    return message.contains('network') ||
+        message.contains('offline') ||
+        message.contains('unavailable') ||
+        message.contains('socketexception') ||
+        message.contains('client is offline') ||
+        message.contains('failed host lookup') ||
+        message.contains('connection timed out') ||
+        message.contains('connection closed');
+  }
 
   FirebaseFirestore get firestore {
     if (_firestore != null) return _firestore;
@@ -81,6 +187,26 @@ class FirestoreService {
     final currentUid = uid;
     if (currentUid == null) return null;
     return firestore.collection('users').doc(currentUid);
+  }
+
+  String _docUid(DocumentReference doc) {
+    final currentUid = uid;
+    if (currentUid != null && currentUid.isNotEmpty) {
+      return currentUid;
+    }
+    try {
+      return doc.id;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  bool _snapHasPendingWrites(DocumentSnapshot snap) {
+    try {
+      return snap.metadata.hasPendingWrites;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Allocates an ID using Firestore's collision-resistant document ID generator.
@@ -498,24 +624,73 @@ class FirestoreService {
     if (doc == null) throw Exception('User not authenticated.');
     final billRef = doc.collection('bills').doc(bill.id);
     final data = _serializeBill(bill);
-    final hasConflictingBill =
-        await firestore.runTransaction<bool>((transaction) async {
-      final existing = await transaction.get(billRef);
-      if (existing.exists) {
-        if (_isSameBillIdentity(existing.data()!, data)) {
-          // A prior create may have committed even if its acknowledgement was lost.
-          // Treat an exact retry as success without writing over the existing record.
+
+    if (!isOfflineMode) {
+      try {
+        final hasConflictingBill =
+            await firestore.runTransaction<bool>((transaction) async {
+          final existing = await transaction.get(billRef);
+          if (existing.exists) {
+            if (_isSameBillIdentity(existing.data()!, data)) {
+              // A prior create may have committed even if its acknowledgement was lost.
+              // Treat an exact retry as success without writing over the existing record.
+              return false;
+            }
+            // Return the outcome from the callback. Throwing here interacts poorly with
+            // the Android MethodChannel transaction error protocol, which can complete
+            // the Dart future twice for user-thrown callback errors.
+            return true;
+          }
+          transaction.set(billRef, data);
           return false;
-        }
-        // Return the outcome from the callback. Throwing here interacts poorly with
-        // the Android MethodChannel transaction error protocol, which can complete
-        // the Dart future twice for user-thrown callback errors.
-        return true;
+        });
+        if (hasConflictingBill) throw BillIdCollisionException(bill.id);
+        lastOperationWasOffline = false;
+        return;
+      } catch (e) {
+        if (e is BillIdCollisionException) rethrow;
+        if (!_isNetworkOrOfflineError(e)) rethrow;
       }
-      transaction.set(billRef, data);
-      return false;
-    });
-    if (hasConflictingBill) throw BillIdCollisionException(bill.id);
+    }
+
+    // Offline fallback: transactions fail offline because they require an active
+    // network round-trip. When offline, verify local cache first for collisions or
+    // identical retries, then queue via standard document set.
+      try {
+        final cached =
+            await billRef.get(const GetOptions(source: Source.cache));
+        if (cached.exists) {
+          final existingData = cached.data();
+          if (existingData != null && _isSameBillIdentity(existingData, data)) {
+            // Idempotent retry: already queued or cached locally.
+            lastOperationWasOffline = true;
+            return;
+          }
+          throw BillIdCollisionException(bill.id);
+        }
+      } on BillIdCollisionException {
+        rethrow;
+      } catch (_) {
+        // Document not found in local cache.
+      }
+
+      lastOperationWasOffline = true;
+      _pendingBillWrites.add(bill.id);
+      final writeFuture = billRef.set(data);
+      try {
+        await billRef.get(const GetOptions(source: Source.cache));
+      } catch (_) {
+        // Cache read fallback if cache source is unsupported or empty.
+      }
+
+      final writeUid = _docUid(doc);
+      writeFuture.then((_) {
+        _pendingBillWrites.remove(bill.id);
+        onBillSynced?.call(bill.id, writeUid);
+      }).catchError((error, stackTrace) {
+        _pendingBillWrites.remove(bill.id);
+        onBillRejected?.call(bill.id, writeUid, error);
+      });
   }
 
   /// Applies allowed monotonic bill changes to a record that must already exist.
@@ -593,11 +768,59 @@ class FirestoreService {
   Future<List<DemoBill>> loadBills() async {
     final doc = _userDoc;
     if (doc == null) return [];
-    final snapshot = await doc
-        .collection('bills')
-        .orderBy('createdAt', descending: true)
-        .get();
+    QuerySnapshot<Map<String, dynamic>> snapshot;
+    if (isOfflineMode) {
+      lastOperationWasOffline = true;
+      try {
+        snapshot = await doc
+            .collection('bills')
+            .orderBy('createdAt', descending: true)
+            .get(const GetOptions(source: Source.cache));
+      } catch (_) {
+        return [];
+      }
+    } else {
+      try {
+        snapshot = await doc
+            .collection('bills')
+            .orderBy('createdAt', descending: true)
+            .get();
+        lastOperationWasOffline = false;
+      } catch (e) {
+        if (_isNetworkOrOfflineError(e)) {
+          lastOperationWasOffline = true;
+          try {
+            snapshot = await doc
+                .collection('bills')
+                .orderBy('createdAt', descending: true)
+                .get(const GetOptions(source: Source.cache));
+          } catch (_) {
+            return [];
+          }
+        } else {
+          rethrow;
+        }
+      }
+    }
+    final writeUid = _docUid(doc);
     return snapshot.docs.map((docSnap) {
+      if (_snapHasPendingWrites(docSnap)) {
+        _pendingBillWrites.add(docSnap.id);
+        lastOperationWasOffline = true;
+        _listenToPendingDocument(
+          docSnap.reference,
+          docSnap.id,
+          writeUid,
+          (id, uid) {
+            _pendingBillWrites.remove(id);
+            onBillSynced?.call(id, uid);
+          },
+          (id, uid, err) {
+            _pendingBillWrites.remove(id);
+            onBillRejected?.call(id, uid, err);
+          },
+        );
+      }
       final data = docSnap.data();
       final itemsData = (data['items'] as List<dynamic>? ?? [])
           .map((item) => BillLine(
@@ -623,6 +846,10 @@ class FirestoreService {
         settledAt = DateTime.tryParse(settledAtTs);
       }
 
+      final isSaved = docSnap.metadata.hasPendingWrites
+          ? false
+          : (data['isSaved'] as bool? ?? true);
+
       return DemoBill(
         // The Firestore document path is the authoritative bill identity.
         id: docSnap.id,
@@ -634,7 +861,7 @@ class FirestoreService {
         isUdhaar: data['isUdhaar'] as bool? ?? false,
         isSettled: data['isSettled'] as bool? ?? false,
         settledAt: settledAt,
-        isSaved: data['isSaved'] as bool? ?? true,
+        isSaved: isSaved,
       );
     }).toList();
   }
@@ -653,22 +880,67 @@ class FirestoreService {
       'createdAt': Timestamp.fromDate(expense.createdAt),
     };
 
-    final hasConflictingExpense = await firestore.runTransaction<bool>(
-      (transaction) async {
-        final existing = await transaction.get(expenseRef);
-        if (existing.exists) {
-          // A retry after a lost acknowledgement succeeds only for an exact
-          // match; expense rules deny updates to existing records.
-          return !_isSameExpense(existing.data()!, data);
-        }
-        transaction.set(expenseRef, data);
-        return false;
-      },
-    );
+    if (!isOfflineMode) {
+      try {
+        final hasConflictingExpense = await firestore.runTransaction<bool>(
+          (transaction) async {
+            final existing = await transaction.get(expenseRef);
+            if (existing.exists) {
+              // A retry after a lost acknowledgement succeeds only for an exact
+              // match; expense rules deny updates to existing records.
+              return !_isSameExpense(existing.data()!, data);
+            }
+            transaction.set(expenseRef, data);
+            return false;
+          },
+        );
 
-    if (hasConflictingExpense) {
-      throw ExpenseIdCollisionException(expenseId);
+        if (hasConflictingExpense) {
+          throw ExpenseIdCollisionException(expenseId);
+        }
+        lastOperationWasOffline = false;
+        return;
+      } catch (e) {
+        if (e is ExpenseIdCollisionException) rethrow;
+        if (!_isNetworkOrOfflineError(e)) rethrow;
+      }
     }
+
+    // Offline fallback: check local cache before queueing set.
+      try {
+        final cached =
+            await expenseRef.get(const GetOptions(source: Source.cache));
+        if (cached.exists) {
+          final existingData = cached.data();
+          if (existingData != null && _isSameExpense(existingData, data)) {
+            lastOperationWasOffline = true;
+            return;
+          }
+          throw ExpenseIdCollisionException(expenseId);
+        }
+      } on ExpenseIdCollisionException {
+        rethrow;
+      } catch (_) {
+        // Document not found in local cache.
+      }
+
+      lastOperationWasOffline = true;
+      _pendingExpenseWrites.add(expenseId);
+      final writeFuture = expenseRef.set(data);
+      try {
+        await expenseRef.get(const GetOptions(source: Source.cache));
+      } catch (_) {
+        // Cache read fallback.
+      }
+
+      final writeUid = _docUid(doc);
+      writeFuture.then((_) {
+        _pendingExpenseWrites.remove(expenseId);
+        onExpenseSynced?.call(expenseId, writeUid);
+      }).catchError((error, stackTrace) {
+        _pendingExpenseWrites.remove(expenseId);
+        onExpenseRejected?.call(expenseId, writeUid, error);
+      });
   }
 
   bool _isSameExpense(
@@ -691,11 +963,59 @@ class FirestoreService {
   Future<List<DemoExpense>> loadExpenses() async {
     final doc = _userDoc;
     if (doc == null) return [];
-    final snapshot = await doc
-        .collection('expenses')
-        .orderBy('createdAt', descending: true)
-        .get();
+    QuerySnapshot<Map<String, dynamic>> snapshot;
+    if (isOfflineMode) {
+      lastOperationWasOffline = true;
+      try {
+        snapshot = await doc
+            .collection('expenses')
+            .orderBy('createdAt', descending: true)
+            .get(const GetOptions(source: Source.cache));
+      } catch (_) {
+        return [];
+      }
+    } else {
+      try {
+        snapshot = await doc
+            .collection('expenses')
+            .orderBy('createdAt', descending: true)
+            .get();
+        lastOperationWasOffline = false;
+      } catch (e) {
+        if (_isNetworkOrOfflineError(e)) {
+          lastOperationWasOffline = true;
+          try {
+            snapshot = await doc
+                .collection('expenses')
+                .orderBy('createdAt', descending: true)
+                .get(const GetOptions(source: Source.cache));
+          } catch (_) {
+            return [];
+          }
+        } else {
+          rethrow;
+        }
+      }
+    }
+    final writeUid = _docUid(doc);
     return snapshot.docs.map((docSnap) {
+      if (_snapHasPendingWrites(docSnap)) {
+        _pendingExpenseWrites.add(docSnap.id);
+        lastOperationWasOffline = true;
+        _listenToPendingDocument(
+          docSnap.reference,
+          docSnap.id,
+          writeUid,
+          (id, uid) {
+            _pendingExpenseWrites.remove(id);
+            onExpenseSynced?.call(id, uid);
+          },
+          (id, uid, err) {
+            _pendingExpenseWrites.remove(id);
+            onExpenseRejected?.call(id, uid, err);
+          },
+        );
+      }
       final data = docSnap.data();
       final createdAtTs = data['createdAt'];
       DateTime createdAt = DateTime.now();
@@ -733,21 +1053,67 @@ class FirestoreService {
       data['expenseDate'] = Timestamp.fromDate(expense.expenseDate!);
     }
 
-    final hasConflictingExpense = await firestore.runTransaction<bool>(
-      (transaction) async {
-        final existing = await transaction.get(expenseRef);
-        if (existing.exists) {
-          // An ambiguous retry is safe only if this is the exact same entry.
-          return !_isSameHouseholdExpense(existing.data()!, data);
-        }
-        transaction.set(expenseRef, data);
-        return false;
-      },
-    );
+    if (!isOfflineMode) {
+      try {
+        final hasConflictingExpense = await firestore.runTransaction<bool>(
+          (transaction) async {
+            final existing = await transaction.get(expenseRef);
+            if (existing.exists) {
+              // An ambiguous retry is safe only if this is the exact same entry.
+              return !_isSameHouseholdExpense(existing.data()!, data);
+            }
+            transaction.set(expenseRef, data);
+            return false;
+          },
+        );
 
-    if (hasConflictingExpense) {
-      throw ExpenseIdCollisionException(expense.id);
+        if (hasConflictingExpense) {
+          throw ExpenseIdCollisionException(expenseId);
+        }
+        lastOperationWasOffline = false;
+        return;
+      } catch (e) {
+        if (e is ExpenseIdCollisionException) rethrow;
+        if (!_isNetworkOrOfflineError(e)) rethrow;
+      }
     }
+
+    // Offline fallback: check local cache before queueing set.
+      try {
+        final cached =
+            await expenseRef.get(const GetOptions(source: Source.cache));
+        if (cached.exists) {
+          final existingData = cached.data();
+          if (existingData != null &&
+              _isSameHouseholdExpense(existingData, data)) {
+            lastOperationWasOffline = true;
+            return;
+          }
+          throw ExpenseIdCollisionException(expenseId);
+        }
+      } on ExpenseIdCollisionException {
+        rethrow;
+      } catch (_) {
+        // Document not found in local cache.
+      }
+
+      lastOperationWasOffline = true;
+      _pendingHouseholdWrites.add(expenseId);
+      final writeFuture = expenseRef.set(data);
+      try {
+        await expenseRef.get(const GetOptions(source: Source.cache));
+      } catch (_) {
+        // Cache read fallback.
+      }
+
+      final writeUid = _docUid(doc);
+      writeFuture.then((_) {
+        _pendingHouseholdWrites.remove(expenseId);
+        onHouseholdExpenseSynced?.call(expenseId, writeUid);
+      }).catchError((error, stackTrace) {
+        _pendingHouseholdWrites.remove(expenseId);
+        onHouseholdExpenseRejected?.call(expenseId, writeUid, error);
+      });
   }
 
   Future<void> updateHouseholdExpense(HouseholdExpense expense) async {
@@ -966,8 +1332,46 @@ class FirestoreService {
             query = query.startAfterDocument(startAfter);
           }
           query = query.limit(limit);
-          final snapshot = await query.get();
+          QuerySnapshot<Map<String, dynamic>> snapshot;
+          try {
+            snapshot = await query.get();
+            lastOperationWasOffline = false;
+          } catch (e) {
+            if (_isNetworkOrOfflineError(e)) {
+              lastOperationWasOffline = true;
+              try {
+                snapshot =
+                    await query.get(const GetOptions(source: Source.cache));
+              } catch (_) {
+                return const HouseholdExpensePage(
+                  items: [],
+                  lastDocument: null,
+                  hasMore: false,
+                );
+              }
+            } else {
+              rethrow;
+            }
+          }
+          final writeUid = _docUid(doc);
           final items = snapshot.docs.map((docSnap) {
+            if (_snapHasPendingWrites(docSnap)) {
+              _pendingHouseholdWrites.add(docSnap.id);
+              lastOperationWasOffline = true;
+              _listenToPendingDocument(
+                docSnap.reference,
+                docSnap.id,
+                writeUid,
+                (id, uid) {
+                  _pendingHouseholdWrites.remove(id);
+                  onHouseholdExpenseSynced?.call(id, uid);
+                },
+                (id, uid, err) {
+                  _pendingHouseholdWrites.remove(id);
+                  onHouseholdExpenseRejected?.call(id, uid, err);
+                },
+              );
+            }
             return HouseholdExpense.fromMap(docSnap.data(), id: docSnap.id);
           }).toList();
 
@@ -997,11 +1401,59 @@ class FirestoreService {
   Future<List<HouseholdExpense>> loadHouseholdExpenses() async {
     final doc = _userDoc;
     if (doc == null) return <HouseholdExpense>[];
-    final snapshot = await doc
-        .collection('householdExpenses')
-        .orderBy('createdAt', descending: true)
-        .get();
+    QuerySnapshot<Map<String, dynamic>> snapshot;
+    if (isOfflineMode) {
+      lastOperationWasOffline = true;
+      try {
+        snapshot = await doc
+            .collection('householdExpenses')
+            .orderBy('createdAt', descending: true)
+            .get(const GetOptions(source: Source.cache));
+      } catch (_) {
+        return <HouseholdExpense>[];
+      }
+    } else {
+      try {
+        snapshot = await doc
+            .collection('householdExpenses')
+            .orderBy('createdAt', descending: true)
+            .get();
+        lastOperationWasOffline = false;
+      } catch (e) {
+        if (_isNetworkOrOfflineError(e)) {
+          lastOperationWasOffline = true;
+          try {
+            snapshot = await doc
+                .collection('householdExpenses')
+                .orderBy('createdAt', descending: true)
+                .get(const GetOptions(source: Source.cache));
+          } catch (_) {
+            return <HouseholdExpense>[];
+          }
+        } else {
+          rethrow;
+        }
+      }
+    }
+    final writeUid = _docUid(doc);
     return snapshot.docs.map((docSnap) {
+      if (_snapHasPendingWrites(docSnap)) {
+        _pendingHouseholdWrites.add(docSnap.id);
+        lastOperationWasOffline = true;
+        _listenToPendingDocument(
+          docSnap.reference,
+          docSnap.id,
+          writeUid,
+          (id, uid) {
+            _pendingHouseholdWrites.remove(id);
+            onHouseholdExpenseSynced?.call(id, uid);
+          },
+          (id, uid, err) {
+            _pendingHouseholdWrites.remove(id);
+            onHouseholdExpenseRejected?.call(id, uid, err);
+          },
+        );
+      }
       return HouseholdExpense.fromMap(docSnap.data(), id: docSnap.id);
     }).toList();
   }
@@ -1021,7 +1473,21 @@ class FirestoreService {
       if (lastDoc != null) {
         query = query.startAfterDocument(lastDoc);
       }
-      final snapshot = await query.get();
+      QuerySnapshot<Map<String, dynamic>> snapshot;
+      try {
+        snapshot = await query.get();
+      } catch (e) {
+        if (_isNetworkOrOfflineError(e)) {
+          try {
+            snapshot =
+                await query.get(const GetOptions(source: Source.cache));
+          } catch (_) {
+            break;
+          }
+        } else {
+          rethrow;
+        }
+      }
       if (snapshot.docs.isEmpty) {
         break;
       }

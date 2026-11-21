@@ -78,8 +78,112 @@ class AppState extends ChangeNotifier {
 
   FirestoreService? _firestoreService;
   FirestoreService get firestoreService =>
-      _firestoreService ??= FirestoreService(auth: auth);
-  set firestoreService(FirestoreService service) => _firestoreService = service;
+      _firestoreService ??= _setupFirestoreService(FirestoreService(auth: auth));
+  set firestoreService(FirestoreService service) =>
+      _firestoreService = _setupFirestoreService(service);
+
+  FirestoreService _setupFirestoreService(FirestoreService service) {
+    service.onBillSynced = _handleBillSynced;
+    service.onBillRejected = _handleBillRejected;
+    service.onExpenseSynced = _handleExpenseSynced;
+    service.onExpenseRejected = _handleExpenseRejected;
+    service.onHouseholdExpenseSynced = _handleHouseholdExpenseSynced;
+    service.onHouseholdExpenseRejected = _handleHouseholdExpenseRejected;
+    service.isOfflineMode = _isOffline;
+    return service;
+  }
+
+  void _handleBillSynced(String billId, String writeUid) {
+    final currentUid = auth?.currentUser?.uid;
+    final currentGen = _authEventGeneration;
+    if (currentUid == null ||
+        currentUid != writeUid ||
+        !_isCurrentAuthenticatedSession(currentUid, currentGen)) {
+      return;
+    }
+    final index = bills.indexWhere((b) => b.id == billId);
+    if (index != -1) {
+      bills[index].isSaved = true;
+    }
+    if (selectedBill?.id == billId) {
+      selectedBill!.isSaved = true;
+    }
+    lastNotice = 'Bill synchronized with cloud.';
+    if (!firestoreService.hasPendingWrites) {
+      _isOffline = false;
+    }
+    notifyListeners();
+  }
+
+  void _handleBillRejected(String billId, String writeUid, dynamic error) {
+    final currentUid = auth?.currentUser?.uid;
+    final currentGen = _authEventGeneration;
+    if (currentUid == null ||
+        currentUid != writeUid ||
+        !_isCurrentAuthenticatedSession(currentUid, currentGen)) {
+      return;
+    }
+    cloudError = 'Server rejected offline bill: $error';
+    lastNotice = 'Offline bill sync failed.';
+    notifyListeners();
+  }
+
+  void _handleExpenseSynced(String expenseId, String writeUid) {
+    final currentUid = auth?.currentUser?.uid;
+    final currentGen = _authEventGeneration;
+    if (currentUid == null ||
+        currentUid != writeUid ||
+        !_isCurrentAuthenticatedSession(currentUid, currentGen)) {
+      return;
+    }
+    lastNotice = 'Expense synchronized with cloud.';
+    if (!firestoreService.hasPendingWrites) {
+      _isOffline = false;
+    }
+    notifyListeners();
+  }
+
+  void _handleExpenseRejected(String expenseId, String writeUid, dynamic error) {
+    final currentUid = auth?.currentUser?.uid;
+    final currentGen = _authEventGeneration;
+    if (currentUid == null ||
+        currentUid != writeUid ||
+        !_isCurrentAuthenticatedSession(currentUid, currentGen)) {
+      return;
+    }
+    cloudError = 'Server rejected offline expense: $error';
+    lastNotice = 'Offline expense sync failed.';
+    notifyListeners();
+  }
+
+  void _handleHouseholdExpenseSynced(String expenseId, String writeUid) {
+    final currentUid = auth?.currentUser?.uid;
+    final currentGen = _authEventGeneration;
+    if (currentUid == null ||
+        currentUid != writeUid ||
+        !_isCurrentAuthenticatedSession(currentUid, currentGen)) {
+      return;
+    }
+    lastNotice = 'Household expense synchronized with cloud.';
+    if (!firestoreService.hasPendingWrites) {
+      _isOffline = false;
+    }
+    notifyListeners();
+  }
+
+  void _handleHouseholdExpenseRejected(
+      String expenseId, String writeUid, dynamic error) {
+    final currentUid = auth?.currentUser?.uid;
+    final currentGen = _authEventGeneration;
+    if (currentUid == null ||
+        currentUid != writeUid ||
+        !_isCurrentAuthenticatedSession(currentUid, currentGen)) {
+      return;
+    }
+    cloudError = 'Server rejected offline household expense: $error';
+    lastNotice = 'Offline household expense sync failed.';
+    notifyListeners();
+  }
 
   String verificationId = '';
   int? resendToken;
@@ -194,11 +298,20 @@ class AppState extends ChangeNotifier {
   void setOffline(bool offline) {
     if (_isOffline == offline) return;
     _isOffline = offline;
+    _firestoreService?.isOfflineMode = offline;
     notifyListeners();
   }
 
   bool _isNetworkError(dynamic error) {
     if (error == null) return false;
+    if (error is FirebaseException) {
+      final code = error.code.toLowerCase();
+      if (code == 'unavailable' ||
+          code == 'network-request-failed' ||
+          code == 'deadline-exceeded') {
+        return true;
+      }
+    }
     final message = error.toString().toLowerCase();
     return message.contains('network') ||
         message.contains('offline') ||
@@ -206,17 +319,60 @@ class AppState extends ChangeNotifier {
         message.contains('socketexception') ||
         message.contains('client is offline') ||
         message.contains('failed host lookup') ||
-        message.contains('connection timed out');
+        message.contains('connection timed out') ||
+        message.contains('connection closed');
   }
 
+  bool _isRetryingConnection = false;
+
   Future<void> retryConnection() async {
-    if (isDemoMode || auth?.currentUser == null) {
-      _isOffline = false;
-      notifyListeners();
+    final user = auth?.currentUser;
+    if (_isRetryingConnection || isDemoMode || user == null) {
+      if (isDemoMode || user == null) {
+        _isOffline = false;
+        notifyListeners();
+      }
       return;
     }
-    clearCloudError();
-    await refreshHouseholdExpenses();
+    final uid = user.uid;
+    final authGeneration = _authEventGeneration;
+    _isRetryingConnection = true;
+
+    try {
+      clearCloudError();
+      await refreshHouseholdExpenses();
+      if (_disposed || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return;
+      }
+
+      final cloudBills = await firestoreService.loadBills();
+      final cloudExpenses = await firestoreService.loadExpenses();
+      if (_disposed || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return;
+      }
+
+      if (!isDemoMode && isAuthenticated) {
+        bills
+          ..clear()
+          ..addAll(cloudBills);
+        expenses
+          ..clear()
+          ..addAll(cloudExpenses);
+        _isOffline = firestoreService.lastOperationWasOffline;
+      }
+    } catch (e) {
+      if (_disposed || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return;
+      }
+      if (_isNetworkError(e)) {
+        _isOffline = true;
+      }
+    } finally {
+      _isRetryingConnection = false;
+      if (!_disposed && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        notifyListeners();
+      }
+    }
   }
 
   ThemeMode _themeMode = ThemeMode.system;
@@ -1193,6 +1349,7 @@ class AppState extends ChangeNotifier {
     _retryableCloudBill = null;
     _retryableCloudExpense = null;
     _retryableHouseholdExpense = null;
+    _firestoreService?.clearPendingWrites();
     isDemoMode = true;
     isCloudLoading = false;
     hasExistingCloudProfile = false;
@@ -1368,6 +1525,7 @@ class AppState extends ChangeNotifier {
     _authEventGeneration++;
     _profileLoadGeneration++;
     unawaited(_authSubscription?.cancel());
+    _firestoreService?.clearPendingWrites();
     super.dispose();
   }
 
@@ -1830,13 +1988,27 @@ class AppState extends ChangeNotifier {
           'Your sign-in session changed before the bill was saved.',
         );
       }
-      bills.insert(0, bill);
+      if (!bills.any((b) => b.id == bill.id)) {
+        bills.insert(0, bill);
+      }
       if (identical(_retryableCloudBill, bill)) _retryableCloudBill = null;
       selectedBill = bill;
       page = vendorMode ? 'vendorReceipt' : 'receipt';
-      lastNotice = 'Bill created successfully.';
+      final isPending = firestoreService.isBillPendingSync(bill.id);
+      if (isPending) {
+        bill.isSaved = false;
+        lastNotice = 'Bill saved offline. Pending synchronization when online.';
+        _isOffline = true;
+      } else {
+        bill.isSaved = true;
+        if (!lastNotice.contains('synchronized')) {
+          lastNotice = 'Bill created successfully.';
+        }
+        if (!firestoreService.hasPendingWrites) {
+          _isOffline = false;
+        }
+      }
       cloudError = null;
-      _isOffline = false;
       return bill;
     } catch (e) {
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
@@ -1845,6 +2017,9 @@ class AppState extends ChangeNotifier {
       if (e is BillIdCollisionException &&
           identical(_retryableCloudBill, bill)) {
         _retryableCloudBill = null;
+      }
+      if (_isNetworkError(e)) {
+        _isOffline = true;
       }
       cloudError = e.toString();
       lastNotice = 'Failed to save bill to cloud: $e';
@@ -2086,7 +2261,9 @@ class AppState extends ChangeNotifier {
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
         return false;
       }
-      householdExpenses.insert(0, expense);
+      if (!householdExpenses.any((e) => e.id == expense.id)) {
+        householdExpenses.insert(0, expense);
+      }
       if (identical(_retryableHouseholdExpense, expense)) {
         _retryableHouseholdExpense = null;
       }
@@ -2102,14 +2279,30 @@ class AppState extends ChangeNotifier {
           );
         }
       }
-      lastNotice = 'Household expense saved to cloud.';
+      final isPending =
+          firestoreService.isHouseholdExpensePendingSync(expense.id);
+      if (isPending) {
+        lastNotice =
+            'Household expense saved offline. Pending synchronization when online.';
+        _isOffline = true;
+      } else {
+        if (!lastNotice.contains('synchronized')) {
+          lastNotice = 'Household expense saved to cloud.';
+        }
+        if (!firestoreService.hasPendingWrites) {
+          _isOffline = false;
+        }
+      }
       _pushPage('householdExpenses');
       cloudError = null;
-      _isOffline = false;
       return true;
     } catch (error) {
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
         return false;
+      }
+      if (error is ExpenseIdCollisionException &&
+          identical(_retryableHouseholdExpense, expense)) {
+        _retryableHouseholdExpense = null;
       }
       if (_isNetworkError(error)) {
         _isOffline = true;
@@ -2139,6 +2332,12 @@ class AppState extends ChangeNotifier {
       return false;
     }
 
+    final uid = auth?.currentUser?.uid;
+    final authGeneration = _authEventGeneration;
+    if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+      return false;
+    }
+
     isLoadingMoreHouseholdExpenses = true;
     notifyListeners();
 
@@ -2147,7 +2346,12 @@ class AppState extends ChangeNotifier {
         startAfter: lastDoc,
         limit: pageSize,
       );
-      if (_disposed || isDemoMode) return false;
+      if (_disposed ||
+          isDemoMode ||
+          isSigningOut ||
+          !_isCurrentAuthenticatedSession(uid, authGeneration)) {
+        return false;
+      }
 
       final existingIds = householdExpenses.map((e) => e.id).toSet();
       for (final item in page.items) {
@@ -2162,8 +2366,10 @@ class AppState extends ChangeNotifier {
     } catch (_) {
       return false;
     } finally {
-      isLoadingMoreHouseholdExpenses = false;
-      notifyListeners();
+      if (!_disposed && _isCurrentAuthenticatedSession(uid, authGeneration)) {
+        isLoadingMoreHouseholdExpenses = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -2275,7 +2481,7 @@ class AppState extends ChangeNotifier {
       _loadedMonthlyExpensesYear = now.year;
       _loadedMonthlyExpensesMonth = now.month;
       cloudError = null;
-      _isOffline = false;
+      _isOffline = firestoreService.lastOperationWasOffline;
       notifyListeners();
     } catch (e) {
       if (_disposed ||
@@ -2328,7 +2534,7 @@ class AppState extends ChangeNotifier {
       _loadedMonthlyExpensesYear = now.year;
       _loadedMonthlyExpensesMonth = now.month;
       cloudError = null;
-      _isOffline = false;
+      _isOffline = firestoreService.lastOperationWasOffline;
       notifyListeners();
     } catch (e) {
       if (_disposed ||
@@ -2724,20 +2930,39 @@ class AppState extends ChangeNotifier {
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
         return false;
       }
-      expenses.insert(0, expense);
+      if (!expenses.any((e) => e.id == expense.id)) {
+        expenses.insert(0, expense);
+      }
       if (identical(_retryableCloudExpense, expense)) {
         _retryableCloudExpense = null;
       }
-      lastNotice = 'Expense saved to cloud.';
+      final isPending = firestoreService.isExpensePendingSync(expense.id);
+      if (isPending) {
+        lastNotice = 'Expense saved offline. Pending synchronization when online.';
+        _isOffline = true;
+      } else {
+        if (!lastNotice.contains('synchronized')) {
+          lastNotice = 'Expense saved to cloud.';
+        }
+        if (!firestoreService.hasPendingWrites) {
+          _isOffline = false;
+        }
+      }
       _pushPage('expenseSaved');
       cloudError = null;
-      _isOffline = false;
       return true;
     } catch (e) {
       // A write from the previous account/session must not surface an error
       // into a demo session or a newly authenticated account.
       if (uid == null || !_isCurrentAuthenticatedSession(uid, authGeneration)) {
         return false;
+      }
+      if (e is ExpenseIdCollisionException &&
+          identical(_retryableCloudExpense, expense)) {
+        _retryableCloudExpense = null;
+      }
+      if (_isNetworkError(e)) {
+        _isOffline = true;
       }
       // Keep the same expense ID for an identical retry after an ambiguous
       // acknowledgement, preventing duplicate ledger entries.

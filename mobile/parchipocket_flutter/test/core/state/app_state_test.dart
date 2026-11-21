@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:parchipocket/app_state.dart';
 import 'package:parchipocket/screens/auth_screens.dart';
@@ -20,6 +21,9 @@ class MockFirebaseAuth extends Fake implements FirebaseAuth {
 
   @override
   User? get currentUser => user;
+
+  @override
+  Stream<User?> authStateChanges() => Stream<User?>.value(user);
 
   @override
   Future<void> signOut() async {
@@ -413,6 +417,103 @@ class FailingFirestoreService extends FirestoreService {
     bool includeBusinessFields = true,
   }) async {
     throw Exception('Simulated Firestore write failure');
+  }
+}
+
+class ImmediateSyncMockFirestoreService extends FirestoreService {
+  ImmediateSyncMockFirestoreService({this.syncImmediately = true});
+
+  final bool syncImmediately;
+  final Set<String> _pendingBills = <String>{};
+  final Set<String> _pendingExpenses = <String>{};
+  final Set<String> _pendingHouseholds = <String>{};
+
+  @override
+  bool isBillPendingSync(String id) => _pendingBills.contains(id);
+
+  @override
+  bool isExpensePendingSync(String id) => _pendingExpenses.contains(id);
+
+  @override
+  bool isHouseholdExpensePendingSync(String id) =>
+      _pendingHouseholds.contains(id);
+
+  @override
+  bool get hasPendingWrites =>
+      _pendingBills.isNotEmpty ||
+      _pendingExpenses.isNotEmpty ||
+      _pendingHouseholds.isNotEmpty;
+
+  @override
+  String newBillId() => 'immediate-sync-bill-id';
+
+  @override
+  String newExpenseId() => 'immediate-sync-expense-id';
+
+  @override
+  String newHouseholdExpenseId() => 'immediate-sync-household-id';
+
+  @override
+  Future<void> createBill(DemoBill bill) async {
+    lastOperationWasOffline = true;
+    _pendingBills.add(bill.id);
+    if (syncImmediately) {
+      _pendingBills.remove(bill.id);
+      onBillSynced?.call(bill.id, 'user123');
+    }
+  }
+
+  @override
+  Future<void> addExpense(DemoExpense expense) async {
+    lastOperationWasOffline = true;
+    _pendingExpenses.add(expense.id);
+    if (syncImmediately) {
+      _pendingExpenses.remove(expense.id);
+      onExpenseSynced?.call(expense.id, 'user123');
+    }
+  }
+
+  @override
+  Future<void> addHouseholdExpense(HouseholdExpense expense) async {
+    lastOperationWasOffline = true;
+    _pendingHouseholds.add(expense.id);
+    if (syncImmediately) {
+      _pendingHouseholds.remove(expense.id);
+      onHouseholdExpenseSynced?.call(expense.id, 'user123');
+    }
+  }
+}
+
+// ignore: subtype_of_sealed_class
+class FakeDocumentSnapshot extends Fake implements DocumentSnapshot<Map<String, dynamic>> {}
+
+class ControllablePaginationFirestoreService extends FirestoreService {
+  Completer<HouseholdExpensePage>? pageCompleter;
+  final FakeDocumentSnapshot dummyDoc = FakeDocumentSnapshot();
+
+  @override
+  Future<HouseholdExpensePage> loadHouseholdExpensesPage({
+    dynamic startAfter,
+    int limit = 50,
+  }) async {
+    if (startAfter != null && pageCompleter != null) {
+      return pageCompleter!.future;
+    }
+    return HouseholdExpensePage(
+      items: const <HouseholdExpense>[],
+      lastDocument: dummyDoc,
+      hasMore: true,
+    );
+  }
+
+  @override
+  Future<List<HouseholdExpense>> loadHouseholdExpensesForMonth(
+    int year,
+    int month, {
+    int batchSize = 500,
+    int? limit,
+  }) async {
+    return <HouseholdExpense>[];
   }
 }
 
@@ -1703,6 +1804,188 @@ void main() {
       expect(state.page, 'customerSetup');
 
       state.dispose();
+    });
+
+    group('P0-01: Post-sync state overwrite prevention tests', () {
+      test('createBill preserves synced state when sync acknowledgement resolves immediately', () async {
+        final state = AppState();
+        final service = ImmediateSyncMockFirestoreService(syncImmediately: true);
+        state.isDemoMode = false;
+        state.auth = MockFirebaseAuth();
+        state.firestoreService = service;
+
+        final items = <BillLine>[BillLine(name: 'Tea', quantity: 1, unitPrice: 10)];
+        final bill = await state.createBill(items: items, paymentMode: 'Cash', vendorMode: false);
+
+        expect(bill.isSaved, isTrue, reason: 'Rapid sync acknowledgement must mark bill saved');
+        expect(state.isOffline, isFalse);
+        expect(state.lastNotice, contains('synchronized'));
+        state.dispose();
+      });
+
+      test('createBill marks bill unsaved and shows offline notice when write remains genuinely pending', () async {
+        final state = AppState();
+        final service = ImmediateSyncMockFirestoreService(syncImmediately: false);
+        state.isDemoMode = false;
+        state.auth = MockFirebaseAuth();
+        state.firestoreService = service;
+
+        final items = <BillLine>[BillLine(name: 'Tea', quantity: 1, unitPrice: 10)];
+        final bill = await state.createBill(items: items, paymentMode: 'Cash', vendorMode: false);
+
+        expect(bill.isSaved, isFalse);
+        expect(state.isOffline, isTrue);
+        expect(state.lastNotice, contains('offline'));
+        state.dispose();
+      });
+
+      test('addExpense preserves synced state when sync acknowledgement resolves immediately', () async {
+        final state = AppState();
+        final service = ImmediateSyncMockFirestoreService(syncImmediately: true);
+        state.isDemoMode = false;
+        state.auth = MockFirebaseAuth();
+        state.firestoreService = service;
+
+        final result = await state.addExpense(title: 'Milk', amount: 30, category: 'Groceries');
+
+        expect(result, isTrue);
+        expect(state.isOffline, isFalse);
+        expect(state.lastNotice, contains('synchronized'));
+        state.dispose();
+      });
+
+      test('addHouseholdExpense preserves synced state when sync acknowledgement resolves immediately', () async {
+        final state = AppState();
+        final service = ImmediateSyncMockFirestoreService(syncImmediately: true);
+        state.isDemoMode = false;
+        state.auth = MockFirebaseAuth();
+        state.firestoreService = service;
+
+        final result = await state.addHouseholdExpense(title: 'Veggies', amount: 150, category: 'Food');
+
+        expect(result, isTrue);
+        expect(state.isOffline, isFalse);
+        expect(state.lastNotice, contains('synchronized'));
+        state.dispose();
+      });
+
+      test('multiple simultaneous pending writes track per-document status accurately', () async {
+        final state = AppState();
+        final service = ImmediateSyncMockFirestoreService(syncImmediately: false);
+        state.isDemoMode = false;
+        state.auth = MockFirebaseAuth();
+        state.firestoreService = service;
+
+        final items = <BillLine>[BillLine(name: 'Tea', quantity: 1, unitPrice: 10)];
+        final bill1 = await state.createBill(items: items, paymentMode: 'Cash', vendorMode: false);
+        expect(bill1.isSaved, isFalse);
+        expect(service.hasPendingWrites, isTrue);
+
+        // Acknowledge bill1 sync
+        service._pendingBills.remove(bill1.id);
+        service.onBillSynced?.call(bill1.id, 'user123');
+
+        expect(bill1.isSaved, isTrue);
+        expect(service.hasPendingWrites, isFalse);
+        state.dispose();
+      });
+    });
+
+    group('P1-05: Cross-session pagination leak prevention tests', () {
+      test('loadMoreHouseholdExpenses drops results if user signs out and User B logs in during fetch gap', () async {
+        final service = ControllablePaginationFirestoreService();
+        final completer = Completer<HouseholdExpensePage>();
+        service.pageCompleter = completer;
+
+        final state = AppState();
+        final auth = MockFirebaseAuth();
+        state.auth = auth;
+        state.firestoreService = service;
+        state.isDemoMode = false;
+
+        // Seed a first page so hasMore and _lastHouseholdExpenseDoc are valid
+        final firstPageResult = HouseholdExpense(id: 'first-item', title: 'First Item', amount: 10, category: 'Food', createdAt: DateTime.now());
+        state.householdExpenses.add(firstPageResult);
+        await state.refreshHouseholdExpenses();
+
+        final paginationFuture = state.loadMoreHouseholdExpenses();
+
+        // User A signs out and User B signs in during async gap
+        await state.signOut();
+        auth.user = MockUser();
+        state.isDemoMode = false;
+
+        completer.complete(HouseholdExpensePage(
+          items: [
+            HouseholdExpense(id: 'user-a-secret', title: 'User A Secret Bill', amount: 5000, category: 'Rent', createdAt: DateTime.now()),
+          ],
+          lastDocument: null,
+          hasMore: false,
+        ));
+
+        final result = await paginationFuture;
+
+        expect(result, isFalse, reason: 'Pagination must fail/abort on session switch');
+        expect(state.householdExpenses.any((e) => e.id == 'user-a-secret'), isFalse, reason: 'User A data must never leak into User B');
+        state.dispose();
+      });
+
+      test('loadMoreHouseholdExpenses drops results after AppState is disposed', () async {
+        final service = ControllablePaginationFirestoreService();
+        final completer = Completer<HouseholdExpensePage>();
+        service.pageCompleter = completer;
+
+        final state = AppState();
+        final auth = MockFirebaseAuth();
+        state.auth = auth;
+        state.firestoreService = service;
+        state.isDemoMode = false;
+
+        await state.refreshHouseholdExpenses();
+        final paginationFuture = state.loadMoreHouseholdExpenses();
+
+        // AppState disposed during async gap
+        state.dispose();
+
+        completer.complete(HouseholdExpensePage(
+          items: [
+            HouseholdExpense(id: 'orphan-item', title: 'Orphan Expense', amount: 100, category: 'Food', createdAt: DateTime.now()),
+          ],
+          lastDocument: null,
+          hasMore: false,
+        ));
+
+        final result = await paginationFuture;
+        expect(result, isFalse);
+      });
+
+      test('normal pagination succeeds for current authenticated session', () async {
+        final service = ControllablePaginationFirestoreService();
+        final completer = Completer<HouseholdExpensePage>();
+        service.pageCompleter = completer;
+
+        final state = AppState();
+        final auth = MockFirebaseAuth();
+        state.auth = auth;
+        state.firestoreService = service;
+        state.isDemoMode = false;
+
+        await state.refreshHouseholdExpenses();
+        final paginationFuture = state.loadMoreHouseholdExpenses();
+
+        final expectedItem = HouseholdExpense(id: 'legit-item', title: 'Legit Expense', amount: 200, category: 'Food', createdAt: DateTime.now());
+        completer.complete(HouseholdExpensePage(
+          items: [expectedItem],
+          lastDocument: null,
+          hasMore: false,
+        ));
+
+        final result = await paginationFuture;
+        expect(result, isTrue);
+        expect(state.householdExpenses.any((e) => e.id == 'legit-item'), isTrue);
+        expect(state.hasMoreHouseholdExpenses, isFalse);
+        state.dispose();
+      });
     });
   });
 }
